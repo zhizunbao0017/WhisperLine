@@ -16,7 +16,8 @@
         "NSPhotoLibraryUsageDescription": "To let you choose a custom companion avatar from your photos.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.xietian.myaidiary"
+      "bundleIdentifier": "com.xietian.myaidiary",
+      "buildNumber": "2" // <-- 确保这个值比上一次大
     },
     "android": {
       "adaptiveIcon": {
