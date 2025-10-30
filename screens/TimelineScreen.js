@@ -46,7 +46,7 @@ const TimelineScreen = () => {
     const renderDiaryItem = ({item}) => (
         <TouchableOpacity
             style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push({ pathname: '/add-edit-diary', params: { diary: JSON.stringify(item) } })}
+            onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })}
         >
             <View style={styles.cardHeader}>
                 {/* 智能心情渲染：优先使用图片，兼容旧的Emoji数据 */}
