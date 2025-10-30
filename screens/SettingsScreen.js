@@ -1,4 +1,5 @@
 // screens/SettingsScreen.js
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useContext } from 'react';
@@ -19,29 +20,53 @@ import { SubscriptionContext } from '../context/SubscriptionContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { AVATARS } from '../data/avatars';
 
-// --- 新的、更智能的自定义头像组件 ---
-const CustomAvatarButton = ({ colors, customUri, isSelected, onPress, isPro }) => {
-    const handlePress = () => {
+// Redesigned CustomAvatarButton
+const CustomAvatarButton = ({
+    colors,
+    customUri,
+    isSelected,
+    onSelect,  // called when custom avatar is tapped & customUri exists
+    onPick,    // called when picking/new image is needed
+    isPro,
+}) => {
+    // Main press: call onSelect ONLY if customUri exists, else onPick
+    const handleMainPress = () => {
         if (!isPro) {
-            // 如果不是Pro会员，弹出升级提示
             Alert.alert(
                 'Upgrade to Pro',
                 'Unlock custom companion avatars and other premium features!',
                 [
                     { text: 'Cancel', style: 'cancel' },
-                    // 可以在这里添加一个升级跳转的逻辑
-                    { text: 'Upgrade Now', onPress: () => { /* 调用升级函数 */ } },
                 ]
             );
             return;
         }
-        // 如果是Pro会员，调用图片选择函数
-        onPress();
+        if (customUri) {
+            onSelect && onSelect();
+        } else {
+            onPick && onPick();
+        }
+    };
+
+    // Edit button always calls onPick
+    const handleEditPress = () => {
+        if (!isPro) {
+            Alert.alert(
+                'Upgrade to Pro',
+                'Unlock custom companion avatars and other premium features!',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                ]
+            );
+            return;
+        }
+        onPick && onPick();
     };
 
     return (
         <TouchableOpacity
-            onPress={handlePress}
+            onPress={handleMainPress}
+            activeOpacity={0.85}
             style={[
                 styles.avatarTouchable,
                 {
@@ -49,14 +74,11 @@ const CustomAvatarButton = ({ colors, customUri, isSelected, onPress, isPro }) =
                     backgroundColor: colors.card,
                 },
             ]}
-            activeOpacity={0.85}
             accessibilityLabel="Set custom avatar"
         >
             {customUri ? (
-                // 如果有自定义头像URI，就显示图片
                 <Image source={{ uri: customUri }} style={styles.avatarImage} />
             ) : (
-                // 否则，显示 "+" 号
                 <View style={[styles.plusAvatarCircle, { backgroundColor: colors.background }]}>
                     <Text style={[styles.plusText, { color: colors.primary }]}>+</Text>
                 </View>
@@ -69,10 +91,26 @@ const CustomAvatarButton = ({ colors, customUri, isSelected, onPress, isPro }) =
             >
                 Custom
             </Text>
+            {customUri && (
+                <TouchableOpacity
+                    style={[
+                        styles.editButtonBelowLabel,
+                        { borderColor: colors.border, backgroundColor: colors.background },
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={(e) => {
+                        e && e.stopPropagation && e.stopPropagation();
+                        handleEditPress();
+                    }}
+                    accessibilityLabel="Edit custom avatar"
+                >
+                    <Ionicons name="pencil" size={14} color={colors.primary} style={{ marginRight: 5 }} />
+                    <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit</Text>
+                </TouchableOpacity>
+            )}
         </TouchableOpacity>
     );
 };
-
 
 const SettingsScreen = () => {
     const router = useRouter();
@@ -85,15 +123,14 @@ const SettingsScreen = () => {
         return <ActivityIndicator size="large" style={{ flex: 1 }} />;
     }
 
-    // --- 1. 使用正确的 Context 变量和函数 ---
     const {
         theme,
         toggleTheme,
         colors,
         selectedAvatarId,
         setSelectedAvatarId,
-        pickCustomAvatar,     // <-- 正确的函数名
-        customAvatarUri,      // <-- 正确的变量名
+        pickCustomAvatar,
+        customAvatarUri,
     } = themeContext;
 
     const { isProMember, upgradeToPro } = subContext;
@@ -110,7 +147,7 @@ const SettingsScreen = () => {
         );
     };
 
-    // 渲染系统提供的 Lottie 头像
+    // Render built-in avatar item
     const renderAvatarItem = (item) => {
         const isSelected = selectedAvatarId === item.id;
         return (
@@ -151,21 +188,20 @@ const SettingsScreen = () => {
             style={[styles.scrollContainer, { backgroundColor: colors.background }]}
             contentContainerStyle={{ padding: 24, paddingBottom: 40 }}
         >
-            {/* --- 2. 更新头像选择区域的渲染逻辑 --- */}
+            {/* Avatar selection */}
             <View style={styles.sectionContainer}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
                     Choose Your Companion
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarListContainer}>
-                    {/* 先渲染自定义头像按钮 */}
                     <CustomAvatarButton
                         colors={colors}
                         customUri={customAvatarUri}
                         isSelected={selectedAvatarId === 'custom'}
-                        onPress={pickCustomAvatar}
+                        onSelect={() => setSelectedAvatarId('custom')}
+                        onPick={pickCustomAvatar}
                         isPro={isProMember}
                     />
-                    {/* 然后渲染所有系统头像 */}
                     {AVATARS.map(renderAvatarItem)}
                 </ScrollView>
             </View>
@@ -230,7 +266,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'flex-start',
         width: 88,
-        height: 110, // 增加了高度以容纳标签
+        height: 120, // Height slightly increased for edit button below label
         shadowColor: "#000",
         shadowOpacity: 0.05,
         shadowOffset: { width: 0, height: 3 },
@@ -238,7 +274,7 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     avatarLottie: { width: 70, height: 70, marginBottom: 4 },
-    avatarImage: { width: 70, height: 70, borderRadius: 35, marginBottom: 4 }, // 用于自定义头像
+    avatarImage: { width: 70, height: 70, borderRadius: 35, marginBottom: 4 }, // Used for custom avatar
     avatarLabel: { textAlign: 'center', fontWeight: '500', fontSize: 13 },
     plusAvatarCircle: {
         width: 70,
@@ -252,10 +288,31 @@ const styles = StyleSheet.create({
         borderColor: '#DDDDDD',
     },
     plusText: { fontSize: 36, fontWeight: '300' },
+    // NEW: Button below the label for editing custom avatar
+    editButtonBelowLabel: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'center',
+        marginTop: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 13,
+        borderWidth: 1,
+        minWidth: 48,
+    },
+    editButtonText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
     proButton: { borderRadius: 14, alignItems: 'center', paddingVertical: 18, marginTop: 15, borderWidth: 1.2 },
     proText: { fontSize: 18, fontWeight: 'bold' },
     linkButton: { paddingVertical: 10, alignItems: 'center' },
     linkText: { fontSize: 16, textDecorationLine: 'underline' },
+    editIconButtonFixed: {
+        // No longer needed in new design (was used for overlay edit pencil)
+        display: 'none',
+    },
 });
 
 export default SettingsScreen;

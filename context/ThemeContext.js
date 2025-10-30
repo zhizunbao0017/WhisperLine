@@ -64,7 +64,7 @@ export const ThemeProvider = ({ children }) => {
   const pickCustomAvatar = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.Image, // <-- 使用新的、推荐的写法
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 1,
