@@ -1,7 +1,6 @@
 // screens/AddEditDiaryScreen.js
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
-// --- 1. 从 React 导入 useEffect 和 useMemo ---
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Button, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MoodSelector from '../components/MoodSelector';
@@ -11,8 +10,9 @@ import { ThemeContext } from '../context/ThemeContext';
 import { getAIResponse } from '../services/aiService';
 import { getCurrentWeather } from '../services/weatherService';
 
-// CompanionAvatarView (保持不变)
-const CompanionAvatarView = ({ currentAvatar, size = 80 }) => {
+// CompanionAvatarView refactored: gets currentAvatar from ThemeContext directly
+const CompanionAvatarView = ({ size = 80 }) => {
+    const { currentAvatar } = useContext(ThemeContext);
     if (!currentAvatar) return null;
 
     if (currentAvatar.type === 'system') {
@@ -37,7 +37,6 @@ const CompanionAvatarView = ({ currentAvatar, size = 80 }) => {
 const AddEditDiaryScreen = () => {
     const router = useRouter();
     const params = useLocalSearchParams();
-    // 使用 useMemo 保证 existingDiary 在 params.diary 没变化时不会重新创建
     const existingDiary = useMemo(() => {
         return params.diary ? JSON.parse(params.diary) : null;
     }, [params.diary]);
@@ -54,7 +53,6 @@ const AddEditDiaryScreen = () => {
     const { isProMember } = subscriptionContext;
     const { colors, currentAvatar } = themeContext;
 
-    // --- 2. 将 isEditMode 转化为 State ---
     const [isEditMode, setIsEditMode] = useState(false);
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
@@ -64,11 +62,9 @@ const AddEditDiaryScreen = () => {
     const [aiResponse, setAiResponse] = useState('');
     const [showAIResponse, setShowAIResponse] = useState(false);
     
-    // 您的 AI 试用逻辑可以保持不变
     const { freeTrialUsed, markFreeTrialAsUsed } = diaryContext;
     const canGetAIFeedback = isProMember || !freeTrialUsed;
 
-    // --- 3. 使用 useEffect 在首次加载时，且仅一次，来设置所有初始状态 ---
     useEffect(() => {
         if (existingDiary) {
             setIsEditMode(true);
@@ -77,7 +73,7 @@ const AddEditDiaryScreen = () => {
             setSelectedMood(existingDiary.mood || null);
             setWeather(existingDiary.weather || null);
         }
-    }, [existingDiary]); // 依赖数组中只有 existingDiary，确保只在它变化时执行
+    }, [existingDiary]);
 
     const handleGetWeather = async () => {
         setIsFetchingWeather(true);
@@ -86,18 +82,16 @@ const AddEditDiaryScreen = () => {
         setIsFetchingWeather(false);
     };
 
-    // --- 4. handleSave 函数现在可以完全信任 isEditMode 的值了 ---
     const handleSave = () => {
-        console.log("--- Save Button Pressed ---"); // 日志1：确认函数被调用
+        console.log("--- Save Button Pressed ---");
 
         if (!title.trim() || !content.trim() || !selectedMood) {
             alert('Please select a mood and fill in the title and content.');
             return;
         }
 
-        // --- 保存/更新日记的核心逻辑 ---
         if (isEditMode) {
-            console.log("Mode: Editing existing diary."); // 日志2：确认进入编辑模式
+            console.log("Mode: Editing existing diary.");
             const diaryData = { 
                 id: existingDiary.id, 
                 title, content, mood: selectedMood, weather, 
@@ -105,65 +99,46 @@ const AddEditDiaryScreen = () => {
             };
             updateDiary(diaryData);
         } else {
-            console.log("Mode: Adding new diary."); // 日志3：确认进入添加模式
+            console.log("Mode: Adding new diary.");
             const diaryData = { 
                 title, content, mood: selectedMood, weather 
             };
             addDiary(diaryData);
         }
-        console.log("Diary data has been saved/updated."); // 日志4：确认保存动作完成
+        console.log("Diary data has been saved/updated.");
 
-        // --- 决定下一步导航的逻辑 ---
-        console.log(`Checking AI feedback eligibility. canGetAIFeedback = ${canGetAIFeedback}`); // 日志5：检查AI资格
+        console.log(`Checking AI feedback eligibility. canGetAIFeedback = ${canGetAIFeedback}`);
 
         if (canGetAIFeedback) {
             const response = getAIResponse(content);
-            console.log("AI response received:", response); // 日志6：查看AI返回了什么
+            console.log("AI response received:", response);
 
             if (!isProMember) {
                 markFreeTrialAsUsed();
                 console.log("Free trial has been marked as used.");
             }
             
-            // --- 关键修复：只有在response真实有效时才显示AI页面 ---
             if (response && response.trim() !== '') {
-                console.log("Response is valid. Showing AI Response screen."); // 日志7
+                console.log("Response is valid. Showing AI Response screen.");
                 setAiResponse(response);
                 setShowAIResponse(true);
             } else {
-                console.log("Response is empty or invalid. Navigating back."); // 日志8
-                router.back(); // 如果AI没有返回有效内容，也直接返回
+                console.log("Response is empty or invalid. Navigating back.");
+                router.back();
             }
         } else {
             console.log("No AI feedback eligibility. Navigating back.");
-            // --- 修改开始 ---
-            router.replace('/'); // 同样使用 replace
-            // --- 修改结束 ---
+            router.replace('/');
         }
     };
 
-    // --- 下面的 JSX 渲染部分保持不变 ---
     if (showAIResponse) {
-        // Render the AI Response modal/section
         return (
             <View style={[styles.aiContainer, { backgroundColor: colors.background }]}>
                 <View style={[styles.aiCard, { backgroundColor: colors.card }]}>
                     <View style={{ alignItems: 'center', marginBottom: 8 }}>
-                        {/* Avatar robust render logic */}
-                        {currentAvatar && currentAvatar.type === 'system' && currentAvatar.source ? (
-                            <LottieView
-                                source={currentAvatar.source}
-                                autoPlay
-                                loop
-                                style={styles.lottieAvatar}
-                            />
-                        ) : currentAvatar && currentAvatar.type === 'custom' && currentAvatar.image ? (
-                            <Image
-                                source={currentAvatar.image}
-                                style={styles.lottieAvatar}
-                                resizeMode="contain"
-                            />
-                        ) : null}
+                        {/* Use CompanionAvatarView instead of direct logic */}
+                        <CompanionAvatarView size={150} />
                     </View>
                     <Text style={[styles.aiTitle, { color: colors.text }]}>AI Feedback</Text>
                     <Text style={[styles.aiText, { color: colors.text }]}>{aiResponse}</Text>
@@ -171,9 +146,7 @@ const AddEditDiaryScreen = () => {
                         style={[styles.aiDoneButton, { backgroundColor: colors.primary }]}
                         onPress={() => {
                             setShowAIResponse(false);
-                            // --- 修改开始 ---
-                            router.replace('/'); // 使用 replace 直接替换当前页面为首页
-                            // --- 修改结束 ---
+                            router.replace('/');
                         }}
                     >
                         <Text style={styles.aiDoneButtonText}>Done</Text>
@@ -191,21 +164,8 @@ const AddEditDiaryScreen = () => {
         >
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
                 <View style={styles.avatarSection}>
-                    {/* Avatar robust render logic */}
-                    {currentAvatar && currentAvatar.type === 'system' && currentAvatar.source ? (
-                        <LottieView
-                            source={currentAvatar.source}
-                            autoPlay
-                            loop
-                            style={styles.lottieAvatar}
-                        />
-                    ) : currentAvatar && currentAvatar.type === 'custom' && currentAvatar.image ? (
-                        <Image
-                            source={currentAvatar.image}
-                            style={styles.lottieAvatar}
-                            resizeMode="contain"
-                        />
-                    ) : null}
+                    {/* Use CompanionAvatarView instead of direct logic */}
+                    <CompanionAvatarView size={150} />
                 </View>
                 <MoodSelector onSelectMood={setSelectedMood} selectedMood={selectedMood} />
                 <View style={[styles.weatherContainer, { backgroundColor: colors.card }]}>

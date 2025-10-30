@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import React, { createContext, useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { ActivityIndicator, useColorScheme } from 'react-native';
 import { AVATARS } from '../data/avatars.js';
 
 export const lightColors = {
@@ -27,6 +27,7 @@ export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(colorScheme || 'light');
   const [selectedAvatarId, setSelectedAvatarIdState] = useState('1'); // default avatar id = '1'
   const [customAvatarUri, setCustomAvatarUri] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Function to set and persist avatar ID
   const setSelectedAvatarId = async (newId) => {
@@ -52,6 +53,8 @@ export const ThemeProvider = ({ children }) => {
         }
       } catch (err) {
         console.warn('Failed to load avatar preferences:', err);
+      } finally {
+        setIsLoading(false);
       }
     };
     loadAvatarPreferences();
@@ -80,13 +83,11 @@ export const ThemeProvider = ({ children }) => {
 
   let currentAvatar;
   if (selectedAvatarId === 'custom' && customAvatarUri) {
-    // --- 开始修改 ---
     currentAvatar = { 
       id: 'custom', 
-      type: 'custom', // <-- 新增！为自定义头像对象添加 type 属性
-      image: customAvatarUri // <-- 我们也应该用一个更清晰的属性名
+      type: 'custom',
+      image: customAvatarUri
     };
-    // --- 结束修改 ---
   } else {
     currentAvatar = AVATARS.find(avatar => avatar.id === selectedAvatarId) || AVATARS[0];
   }
@@ -106,6 +107,15 @@ export const ThemeProvider = ({ children }) => {
     customAvatarUri,
     selectedAvatarId,
   };
+
+  if (isLoading) {
+    return (
+      <ActivityIndicator
+        size="large"
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+      />
+    );
+  }
 
   return (
     <ThemeContext.Provider value={value}>
