@@ -42,34 +42,47 @@ const TimelineScreen = () => {
         return <ActivityIndicator style={{ flex: 1, backgroundColor: colors.background }} size="large" />;
     }
 
+    // --- 开始修改：升级 renderDiaryItem 函数 ---
     const renderDiaryItem = ({item}) => (
         <TouchableOpacity
             style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => router.push({ pathname: '/add-edit-diary', params: { diary: JSON.stringify(item) } })}
         >
             <View style={styles.cardHeader}>
-                {item.mood && <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>}
-                <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
-                {item.weather && (
-                    <Image
-                        source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
-                        style={styles.weatherIcon}
-                    />
+                {/* 智能心情渲染：优先使用图片，兼容旧的Emoji数据 */}
+                {item.mood?.image && (
+                    <Image source={item.mood.image} style={styles.moodImage} />
                 )}
+                {item.mood?.emoji && !item.mood.image && (
+                    <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>
+                )}
+                
+                <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+                
+                {/* 天气图标被移动到了右侧，更美观 */}
             </View>
             <Text style={[styles.cardContent, { color: colors.text }]} numberOfLines={2}>
                 {item.content}
             </Text>
             <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
-                {item.weather && (
-                    <Text style={[styles.footerText, { color: colors.text }]}>{item.weather.city}</Text>
-                )}
+                <View style={styles.footerLeft}>
+                    {item.weather && (
+                        <>
+                            <Image
+                                source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
+                                style={styles.weatherIcon}
+                            />
+                            <Text style={[styles.footerText, { color: colors.text, marginLeft: 5 }]}>{item.weather.city}</Text>
+                        </>
+                    )}
+                </View>
                 <Text style={[styles.footerText, { color: colors.text }]}>
                     {new Date(item.createdAt).toLocaleDateString()}
                 </Text>
             </View>
         </TouchableOpacity>
     );
+    // --- 结束修改 ---
 
     const renderCalendarHeader = () => (
         <Calendar
@@ -94,30 +107,48 @@ const TimelineScreen = () => {
         </View>
     );
 
+    // --- 开始修改：为屏幕添加一个根 View，确保 FlatList 可以滚动 ---
     return (
-        <FlatList
-            style={{ flex: 1, backgroundColor: colors.background }}
-            data={filteredDiaries}
-            renderItem={renderDiaryItem}
-            keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
-            ListHeaderComponent={renderCalendarHeader}
-            ListEmptyComponent={renderEmptyComponent}
-            contentContainerStyle={{ flexGrow: 1 }}
-        />
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <FlatList
+                data={filteredDiaries}
+                renderItem={renderDiaryItem}
+                keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
+                ListHeaderComponent={renderCalendarHeader}
+                ListEmptyComponent={renderEmptyComponent}
+                contentContainerStyle={{ paddingBottom: 20 }} // 给列表底部增加一些边距
+            />
+        </View>
     );
+    // --- 结束修改 ---
 };
 
+// --- 开始修改：更新样式表 ---
 const styles = StyleSheet.create({
     emptyContainer: { padding: 20, alignItems: 'center', marginTop: 20 },
     emptyText: { fontSize: 16, color: 'gray' },
-    card: { borderRadius: 8, padding: 15, marginVertical: 8, marginHorizontal: 10, borderWidth: 1 },
+    card: { 
+        borderRadius: 12, // 更圆润的卡片
+        padding: 15, 
+        marginVertical: 8, 
+        marginHorizontal: 16, // 增加水平边距
+        borderWidth: 1,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2.22,
+        elevation: 3,
+    },
     cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    moodImage: { width: 32, height: 32, marginRight: 12 }, // 心情图片的新样式
     moodEmoji: { fontSize: 24, marginRight: 10 },
     cardTitle: { fontSize: 18, fontWeight: 'bold', flex: 1 },
-    weatherIcon: { width: 30, height: 30 },
-    cardContent: { fontSize: 14, marginBottom: 15 },
+    weatherIcon: { width: 25, height: 25 }, // 天气图标略微缩小
+    cardContent: { fontSize: 14, marginBottom: 15, color: '#666' },
     cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 10 },
+    footerLeft: { flexDirection: 'row', alignItems: 'center' },
     footerText: { fontSize: 12 },
 });
+// --- 结束修改 ---
 
 export default TimelineScreen;
