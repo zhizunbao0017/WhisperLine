@@ -11,11 +11,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-     // ... (已有的其他权限)
-     "NSLocationWhenInUseUsageDescription": "We need your location to get the current weather for your diary entry.",
-     "NSFaceIDUsageDescription": "My AI Diary uses Face ID to securely lock and protect your entries.",
-     "NSPhotoLibraryUsageDescription": "To let you choose a custom companion avatar from your photos."
-    }
+        "NSLocationWhenInUseUsageDescription": "We need your location to get the current weather for your diary entry.",
+        "NSFaceIDUsageDescription": "My AI Diary uses Face ID to securely lock and protect your entries.",
+        "NSPhotoLibraryUsageDescription": "To let you choose a custom companion avatar from your photos.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.xietian.myaidiary"
     },
     "android": {
       "adaptiveIcon": {
@@ -50,6 +51,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3614840b-2261-4dde-86a2-c90591e4cf17"
+      }
     }
   }
 }
