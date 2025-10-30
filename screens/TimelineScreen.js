@@ -1,12 +1,85 @@
 // screens/TimelineScreen.js
 import { useRouter } from 'expo-router';
-import React, { useContext, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
+
+// 新增 AnimatedDiaryItem 组件
+const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
+    const opacity = useRef(new Animated.Value(0)).current;
+    const translateY = useRef(new Animated.Value(20)).current;
+
+    useEffect(() => {
+        Animated.timing(opacity, {
+            toValue: 1,
+            duration: 350,
+            delay: index * 100,
+            useNativeDriver: true,
+        }).start();
+        Animated.timing(translateY, {
+            toValue: 0,
+            duration: 350,
+            delay: index * 100,
+            useNativeDriver: true,
+        }).start();
+    }, [opacity, translateY, index]);
+
+    return (
+        <Animated.View
+            style={[
+                styles.card,
+                { 
+                    backgroundColor: colors.card, 
+                    borderColor: colors.border,
+                    opacity,
+                    transform: [{ translateY }],
+                },
+            ]}
+        >
+            <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={onPress}
+            >
+                <View style={styles.cardHeader}>
+                    {/* 智能心情渲染：优先使用图片，兼容旧的Emoji数据 */}
+                    {item.mood?.image && (
+                        <Image source={item.mood.image} style={styles.moodImage} />
+                    )}
+                    {item.mood?.emoji && !item.mood.image && (
+                        <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>
+                    )}
+
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+                    
+                    {/* 天气图标被移动到了右侧，更美观 */}
+                </View>
+                <Text style={[styles.cardContent, { color: colors.text }]} numberOfLines={2}>
+                    {item.content}
+                </Text>
+                <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
+                    <View style={styles.footerLeft}>
+                        {item.weather && (
+                            <>
+                                <Image
+                                    source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
+                                    style={styles.weatherIcon}
+                                />
+                                <Text style={[styles.footerText, { color: colors.text, marginLeft: 5 }]}>{item.weather.city}</Text>
+                            </>
+                        )}
+                    </View>
+                    <Text style={[styles.footerText, { color: colors.text }]}>
+                        {new Date(item.createdAt).toLocaleDateString()}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+        </Animated.View>
+    );
+};
 
 const TimelineScreen = () => {
     const router = useRouter();
@@ -42,48 +115,6 @@ const TimelineScreen = () => {
         return <ActivityIndicator style={{ flex: 1, backgroundColor: colors.background }} size="large" />;
     }
 
-    // --- 开始修改：升级 renderDiaryItem 函数 ---
-    const renderDiaryItem = ({item}) => (
-        <TouchableOpacity
-            style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })}
-        >
-            <View style={styles.cardHeader}>
-                {/* 智能心情渲染：优先使用图片，兼容旧的Emoji数据 */}
-                {item.mood?.image && (
-                    <Image source={item.mood.image} style={styles.moodImage} />
-                )}
-                {item.mood?.emoji && !item.mood.image && (
-                    <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>
-                )}
-                
-                <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
-                
-                {/* 天气图标被移动到了右侧，更美观 */}
-            </View>
-            <Text style={[styles.cardContent, { color: colors.text }]} numberOfLines={2}>
-                {item.content}
-            </Text>
-            <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
-                <View style={styles.footerLeft}>
-                    {item.weather && (
-                        <>
-                            <Image
-                                source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
-                                style={styles.weatherIcon}
-                            />
-                            <Text style={[styles.footerText, { color: colors.text, marginLeft: 5 }]}>{item.weather.city}</Text>
-                        </>
-                    )}
-                </View>
-                <Text style={[styles.footerText, { color: colors.text }]}>
-                    {new Date(item.createdAt).toLocaleDateString()}
-                </Text>
-            </View>
-        </TouchableOpacity>
-    );
-    // --- 结束修改 ---
-
     const renderCalendarHeader = () => (
         <Calendar
             theme={{
@@ -107,12 +138,21 @@ const TimelineScreen = () => {
         </View>
     );
 
-    // --- 开始修改：为屏幕添加一个根 View，确保 FlatList 可以滚动 ---
+    // 用 AnimatedDiaryItem 替换 FlatList 的渲染方法
     return (
         <View style={{ flex: 1, backgroundColor: colors.background }}>
             <FlatList
                 data={filteredDiaries}
-                renderItem={renderDiaryItem}
+                renderItem={({ item, index }) => (
+                    <AnimatedDiaryItem
+                        item={item}
+                        index={index}
+                        onPress={() =>
+                            router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })
+                        }
+                        colors={colors}
+                    />
+                )}
                 keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
                 ListHeaderComponent={renderCalendarHeader}
                 ListEmptyComponent={renderEmptyComponent}
@@ -120,7 +160,6 @@ const TimelineScreen = () => {
             />
         </View>
     );
-    // --- 结束修改 ---
 };
 
 // --- 开始修改：更新样式表 ---
