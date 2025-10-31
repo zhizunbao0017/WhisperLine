@@ -2,13 +2,16 @@
 import { Ionicons } from '@expo/vector-icons'; // 我们将使用一个漂亮的图标库
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useContext } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
+import { MOODS } from '../data/moods';
 
 const DiaryDetailScreen = () => {
     const router = useRouter();
     const params = useLocalSearchParams();
     const { colors } = useContext(ThemeContext);
+    const { deleteDiary } = useContext(DiaryContext);
 
     // 从参数中解析出日记数据
     const diary = params.diary ? JSON.parse(params.diary) : null;
@@ -26,20 +29,50 @@ const DiaryDetailScreen = () => {
         router.push({ pathname: '/add-edit-diary', params: { diary: JSON.stringify(diary) } });
     };
 
+    // 删除日记的处理函数
+    const handleDelete = () => {
+        Alert.alert(
+            'Delete Diary',
+            'Are you sure you want to delete this diary entry?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                    text: 'Delete', 
+                    style: 'destructive',
+                    onPress: () => {
+                        deleteDiary(diary.id);
+                        router.replace('/');
+                    }
+                }
+            ],
+            { cancelable: true }
+        );
+    };
+
     return (
         <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* --- 顶部栏，包含编辑按钮 --- */}
+            {/* --- 顶部栏，包含编辑和删除按钮 --- */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={handleEdit} style={styles.editButton}>
-                    <Ionicons name="create-outline" size={28} color={colors.primary} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row' }}>
+                    <TouchableOpacity onPress={handleEdit} style={styles.editButton}>
+                        <Ionicons name="create-outline" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleDelete} style={styles.deleteButton} accessibilityLabel="Delete diary">
+                        <Ionicons name="trash-outline" size={28} color={colors.error || '#e53935'} />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* --- 心情和标题区域 --- */}
             <View style={styles.titleContainer}>
-                {diary.mood?.image && (
-                    <Image source={diary.mood.image} style={styles.moodImage} />
-                )}
+                {(() => {
+                    const moodName = typeof diary.mood === 'string' ? diary.mood : diary.mood?.name;
+                    const moodData = MOODS.find(m => m.name === moodName);
+                    if (moodData?.image) {
+                        return <Image source={moodData.image} style={styles.moodImage} />;
+                    }
+                    return null;
+                })()}
                 <Text style={[styles.title, { color: colors.text }]}>{diary.title}</Text>
             </View>
 
@@ -86,6 +119,10 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     editButton: {
+        padding: 5,
+        marginRight: 10,
+    },
+    deleteButton: {
         padding: 5,
     },
     titleContainer: {

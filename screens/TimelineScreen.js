@@ -5,6 +5,7 @@ import { ActivityIndicator, Animated, FlatList, Image, StyleSheet, Text, Touchab
 import { Calendar } from 'react-native-calendars';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
+import { MOODS } from '../data/moods';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -45,13 +46,18 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                 onPress={onPress}
             >
                 <View style={styles.cardHeader}>
-                    {/* 智能心情渲染：优先使用图片，兼容旧的Emoji数据 */}
-                    {item.mood?.image && (
-                        <Image source={item.mood.image} style={styles.moodImage} />
-                    )}
-                    {item.mood?.emoji && !item.mood.image && (
-                        <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>
-                    )}
+                    {/* 智能心情渲染：从字符串查找图片，兼容旧的 Emoji 数据 */}
+                    {(() => {
+                        const moodName = typeof item.mood === 'string' ? item.mood : item.mood?.name;
+                        const moodData = MOODS.find(m => m.name === moodName);
+                        if (moodData?.image) {
+                            return <Image source={moodData.image} style={styles.moodImage} />;
+                        }
+                        if (item.mood?.emoji && !moodData?.image) {
+                            return <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>;
+                        }
+                        return null;
+                    })()}
 
                     <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
                     

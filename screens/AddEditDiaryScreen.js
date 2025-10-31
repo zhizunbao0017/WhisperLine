@@ -56,7 +56,7 @@ const AddEditDiaryScreen = () => {
     const [isEditMode, setIsEditMode] = useState(false);
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
-    const [selectedMood, setSelectedMood] = useState(null);
+    const [selectedMood, setSelectedMood] = useState(existingDiary?.mood || null);
     const [weather, setWeather] = useState(null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
     const [aiResponse, setAiResponse] = useState('');

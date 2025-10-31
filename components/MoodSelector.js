@@ -18,8 +18,8 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
             <Text style={[styles.label, { color: colors.text }]}>How are you feeling?</Text>
             <View style={styles.moodsContainer}>
                 {MOODS.map((mood) => {
-                    // --- 2. 判断当前心情是否被选中 ---
-                    const isSelected = selectedMood?.name === mood.name;
+                    // --- 2. 判断当前心情是否被选中（selectedMood 为字符串） ---
+                    const isSelected = selectedMood === mood.name;
 
                     // --- 3. 根据是否选中，应用不同的动画样式 ---
                     const animatedStyle = {
@@ -30,8 +30,8 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
                     return (
                         <TouchableOpacity
                             key={mood.name}
-                            // 点击时，传递完整的心情对象回去
-                            onPress={() => onSelectMood(mood)}
+                            // 点击时，仅传递心情名称字符串回去
+                            onPress={() => onSelectMood(mood.name)}
                             // accessibility anaytics - a11y
                             accessibilityLabel={mood.name}
                             accessibilityState={{ selected: isSelected }}
