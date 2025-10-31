@@ -1,10 +1,11 @@
 // screens/InsightsScreen.js
 import React, { useContext, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
+import { PieChart } from 'react-native-chart-kit';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { MOODS } from '../data/moods'; // 导入我们带有颜色的心情数据
+import { MOODS } from '../data/moods';
 
 const InsightsScreen = () => {
     const { colors } = useContext(ThemeContext);
@@ -22,17 +23,56 @@ const InsightsScreen = () => {
                 // 如果当天还没有被标记，并且找到了对应的心情颜色
                 if (!marks[dateString] && moodData) {
                     marks[dateString] = {
-                        // 使用 'period' 标记类型
                         startingDay: true,
                         endingDay: true,
-                        color: moodData.color, // 使用我们在 moods.js 中定义的颜色
-                        textColor: 'white', // 日期数字的颜色
+                        color: moodData.color,
+                        textColor: 'white',
                     };
                 }
             });
         }
         return marks;
-    }, [diaries]); // 仅当 diaries 数组变化时，才重新计算
+    }, [diaries]);
+
+    // --- 2. 计算最近 30 天的心情统计，并生成 PieChart 所需数据 ---
+    const pieChartData = useMemo(() => {
+        if (!diaries || diaries.length === 0) return [];
+
+        // a. 只保留最近 30 天的日记
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29); // 包含今天
+
+        const recentDiaries = diaries.filter(diary => {
+            const d = new Date(diary.createdAt);
+            // 保证 d 不是未来，并 >= thirtyDaysAgo
+            return d >= thirtyDaysAgo && d <= new Date();
+        });
+
+        // b. 统计各 mood 出现次数
+        const moodCount = {};
+        recentDiaries.forEach(diary => {
+            if (diary.mood) {
+                moodCount[diary.mood] = (moodCount[diary.mood] || 0) + 1;
+            }
+        });
+
+        // c. 转换为 PieChart 需要的数据
+        // 只展示统计中出现的 mood
+        const result = Object.keys(moodCount).map(moodName => {
+            const moodData = MOODS.find(m => m.name === moodName) || {};
+            return {
+                name: moodName,
+                population: moodCount[moodName],
+                color: moodData.color || '#ccc',
+                legendFontColor: colors.text,
+                legendFontSize: 14,
+            };
+        });
+
+        return result;
+    }, [diaries, colors.text]);
+
+    const chartWidth = Dimensions.get("window").width - 40;
 
     return (
         <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -42,12 +82,9 @@ const InsightsScreen = () => {
                     A colorful overview of your emotional journey.
                 </Text>
 
-                {/* --- 2. 渲染日历组件 --- */}
                 <Calendar
-                    // markingType 告诉日历我们要使用哪种标记样式
                     markingType={'period'}
                     markedDates={markedDates}
-                    // 为日历应用当前的主题颜色
                     theme={{
                         calendarBackground: colors.background,
                         textSectionTitleColor: colors.primary,
@@ -69,12 +106,35 @@ const InsightsScreen = () => {
                     }}
                 />
             </View>
-            
-            {/* 我们可以在这里为未来的“心情统计”图表预留位置 */}
             <View style={styles.section}>
                 <Text style={[styles.title, { color: colors.text }]}>Mood Statistics</Text>
-                <View style={[styles.placeholder, { backgroundColor: colors.card }]}>
-                    <Text style={{ color: colors.text }}>Pie chart coming soon...</Text>
+                <View style={[styles.placeholder, { backgroundColor: colors.card, minHeight: 220, height: undefined }]}>
+                    {pieChartData.length > 0 ? (
+                        <PieChart
+                            data={pieChartData}
+                            width={chartWidth}
+                            height={220}
+                            chartConfig={{
+                                backgroundColor: 'transparent',
+                                backgroundGradientFrom: colors.card,
+                                backgroundGradientTo: colors.card,
+                                color: () => colors.text,
+                                labelColor: () => colors.text,
+                                propsForLabels: {
+                                    fontSize: 12,
+                                }
+                            }}
+                            accessor="population"
+                            backgroundColor="transparent"
+                            paddingLeft="15"
+                            style={{
+                                borderRadius: 12,
+                            }}
+                            absolute
+                        />
+                    ) : (
+                        <Text style={{ color: colors.text }}>No mood statistics for the last 30 days.</Text>
+                    )}
                 </View>
             </View>
         </ScrollView>
@@ -99,7 +159,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     placeholder: {
-        height: 200,
+        minHeight: 200,
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: 12,

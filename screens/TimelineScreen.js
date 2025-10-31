@@ -15,7 +15,7 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
     const opacity = useRef(new Animated.Value(0)).current;
     const translateY = useRef(new Animated.Value(20)).current;
 
-    // Get mood data from the MOODS array
+    // Find the mood data object
     const moodData = MOODS.find(m => m.name === item.mood);
 
     useEffect(() => {
@@ -46,6 +46,7 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
             ]}
         >
             <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
+                {/* Card Header */}
                 <View style={styles.cardHeader}>
                     {moodData && moodData.image && (
                         <Image source={moodData.image} style={styles.moodImage} />
@@ -54,12 +55,16 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                         {item.title}
                     </Text>
                 </View>
+
+                {/* Diary Content Preview */}
                 <Text
                     style={[styles.cardContent, { color: colors.text }]}
                     numberOfLines={2}
                 >
                     {item.content}
                 </Text>
+
+                {/* Card Footer */}
                 <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
                     <View style={styles.footerLeft}>
                         {item.weather && (
@@ -70,7 +75,12 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                                     }}
                                     style={styles.weatherIcon}
                                 />
-                                <Text style={[styles.footerText, { color: colors.text, marginLeft: 5 }]}>
+                                <Text
+                                    style={[
+                                        styles.footerText,
+                                        { color: colors.text, marginLeft: 5 },
+                                    ]}
+                                >
                                     {item.weather.city}
                                 </Text>
                             </>
