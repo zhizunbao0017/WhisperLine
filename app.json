@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lifyn",
     "slug": "Lifyn",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myaidiary",
@@ -17,7 +17,7 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.xietian.myaidiary",
-      "buildNumber": "2" // <-- 确保这个值比上一次大
+      "buildNumber": "4" // <-- 确保这个值比上一次大
     },
     "android": {
       "adaptiveIcon": {
