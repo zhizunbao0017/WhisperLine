@@ -14,6 +14,8 @@ function getTodayDateString() {
 export const DiaryProvider = ({ children }) => {
   const [diaries, setDiaries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Global selected date for timeline/calendar (YYYY-MM-DD)
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString());
 
   // ---- AI Usage Count State ----
   const [aiUsageCount, setAIUsageCount] = useState({
@@ -97,7 +99,8 @@ export const DiaryProvider = ({ children }) => {
     const newEntry = { 
       id: Date.now().toString(),
       ...newDiary, 
-      createdAt: new Date().toISOString(),
+      // Respect provided createdAt (e.g., from selected calendar date); fallback to now
+      createdAt: newDiary?.createdAt ?? new Date().toISOString(),
     };
     const updatedDiaries = [newEntry, ...diaries];
     setDiaries(updatedDiaries);
@@ -130,6 +133,8 @@ export const DiaryProvider = ({ children }) => {
         isLoading,
         aiUsageCount,
         incrementAIUsage,
+        selectedDate,
+        setSelectedDate,
       }}
     >
       {children}

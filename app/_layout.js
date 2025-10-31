@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useContext } from 'react';
 import { ActivityIndicator, TouchableOpacity, View } from 'react-native';
 import { AuthContext, AuthProvider } from '../context/AuthContext';
+import { DiaryContext } from '../context/DiaryContext';
 import { DiaryProvider } from '../context/DiaryContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { ThemeContext, ThemeProvider } from '../context/ThemeContext';
@@ -13,9 +14,10 @@ import UnlockScreen from '../screens/UnlockScreen';
 function RootLayoutNav() {
     const router = useRouter();
     const authContext = useContext(AuthContext);
+    const diaryContext = useContext(DiaryContext);
     const themeContext = useContext(ThemeContext);
 
-    if (!authContext || !themeContext) {
+    if (!authContext || !themeContext || !diaryContext) {
         return (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                 <ActivityIndicator size="large" />
@@ -25,6 +27,7 @@ function RootLayoutNav() {
 
     const { isUnlocked, authenticate, isLockEnabled } = authContext;
     const { theme, colors } = themeContext;
+    const { selectedDate } = diaryContext;
 
     if (isLockEnabled && !isUnlocked) {
         return <UnlockScreen onUnlock={authenticate} />;
@@ -49,7 +52,7 @@ function RootLayoutNav() {
                         headerLeft: () => null, 
                         // --- 3. 保留右上角的“新建”按钮 ---
                         headerRight: () => (
-                            <TouchableOpacity onPress={() => router.push('/add-edit-diary')} style={{ marginRight: 15 }}>
+                            <TouchableOpacity onPress={() => router.push({ pathname: '/add-edit-diary', params: { date: selectedDate } })} style={{ marginRight: 15 }}>
                                 <Ionicons name="add-circle" size={28} color={colors.primary} />
                             </TouchableOpacity>
                         ),

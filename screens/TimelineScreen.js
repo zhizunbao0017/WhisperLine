@@ -1,18 +1,22 @@
 // screens/TimelineScreen.js
 import { useRouter } from 'expo-router';
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, Animated, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { MOODS } from '../data/moods';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
 // 新增 AnimatedDiaryItem 组件
+import { MOODS } from '../data/moods';
+
 const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
     const opacity = useRef(new Animated.Value(0)).current;
     const translateY = useRef(new Animated.Value(20)).current;
+
+    // Get mood data from the MOODS array
+    const moodData = MOODS.find(m => m.name === item.mood);
 
     useEffect(() => {
         Animated.timing(opacity, {
@@ -33,37 +37,27 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
         <Animated.View
             style={[
                 styles.card,
-                { 
-                    backgroundColor: colors.card, 
+                {
+                    backgroundColor: colors.card,
                     borderColor: colors.border,
                     opacity,
                     transform: [{ translateY }],
                 },
             ]}
         >
-            <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onPress}
-            >
+            <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
                 <View style={styles.cardHeader}>
-                    {/* 智能心情渲染：从字符串查找图片，兼容旧的 Emoji 数据 */}
-                    {(() => {
-                        const moodName = typeof item.mood === 'string' ? item.mood : item.mood?.name;
-                        const moodData = MOODS.find(m => m.name === moodName);
-                        if (moodData?.image) {
-                            return <Image source={moodData.image} style={styles.moodImage} />;
-                        }
-                        if (item.mood?.emoji && !moodData?.image) {
-                            return <Text style={styles.moodEmoji}>{item.mood.emoji}</Text>;
-                        }
-                        return null;
-                    })()}
-
-                    <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
-                    
-                    {/* 天气图标被移动到了右侧，更美观 */}
+                    {moodData && moodData.image && (
+                        <Image source={moodData.image} style={styles.moodImage} />
+                    )}
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>
+                        {item.title}
+                    </Text>
                 </View>
-                <Text style={[styles.cardContent, { color: colors.text }]} numberOfLines={2}>
+                <Text
+                    style={[styles.cardContent, { color: colors.text }]}
+                    numberOfLines={2}
+                >
                     {item.content}
                 </Text>
                 <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
@@ -71,10 +65,14 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                         {item.weather && (
                             <>
                                 <Image
-                                    source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
+                                    source={{
+                                        uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png`,
+                                    }}
                                     style={styles.weatherIcon}
                                 />
-                                <Text style={[styles.footerText, { color: colors.text, marginLeft: 5 }]}>{item.weather.city}</Text>
+                                <Text style={[styles.footerText, { color: colors.text, marginLeft: 5 }]}>
+                                    {item.weather.city}
+                                </Text>
                             </>
                         )}
                     </View>
@@ -91,7 +89,7 @@ const TimelineScreen = () => {
     const router = useRouter();
     const diaryContext = useContext(DiaryContext);
     const themeContext = useContext(ThemeContext);
-    const [selectedDate, setSelectedDate] = useState(getTodayDateString());
+    const { selectedDate, setSelectedDate } = diaryContext || {};
 
     if (!diaryContext || !themeContext) {
         return <ActivityIndicator size="large" style={{ flex: 1 }} />;
@@ -131,7 +129,7 @@ const TimelineScreen = () => {
                 monthTextColor: colors.text,
                 arrowColor: colors.primary,
             }}
-            onDayPress={day => setSelectedDate(day.dateString)}
+            onDayPress={day => setSelectedDate && setSelectedDate(day.dateString)}
             markedDates={markedDates}
         />
     );

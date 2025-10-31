@@ -100,8 +100,16 @@ const AddEditDiaryScreen = () => {
             updateDiary(diaryData);
         } else {
             console.log("Mode: Adding new diary.");
+            const dateParam = params?.date;
+            let createdAtOverride;
+            if (dateParam && typeof dateParam === 'string') {
+                // Construct start-of-day timestamp from provided date string (YYYY-MM-DD)
+                // new Date(dateParam) is parsed as UTC midnight for ISO-like formats
+                createdAtOverride = new Date(dateParam).toISOString();
+            }
             const diaryData = { 
-                title, content, mood: selectedMood, weather 
+                title, content, mood: selectedMood, weather,
+                ...(createdAtOverride ? { createdAt: createdAtOverride } : {}),
             };
             addDiary(diaryData);
         }
