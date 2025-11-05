@@ -47,7 +47,7 @@ function RootLayoutNav() {
                 <Stack.Screen
                     name="(tabs)"
                     options={{
-                        headerTitle: 'Lifyn',
+                        headerTitle: 'WhisperLine',
                         // --- 2. 移除旧的 headerLeft ---
                         headerLeft: () => null, 
                         // --- 3. 保留右上角的“新建”按钮 ---

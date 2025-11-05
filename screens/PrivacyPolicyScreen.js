@@ -15,16 +15,16 @@ const PrivacyPolicyScreen = () => {
 
     return (
         <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
-            <Text style={[styles.title, { color: colors.text }]}>Privacy Policy for Lifyn</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Privacy Policy for WhisperLine</Text>
             <Text style={[styles.lastUpdated, { color: colors.text }]}>Last Updated: October 28, 2025</Text>
 
             <Text style={[styles.paragraph, { color: colors.text }]}>
-                Thank you for choosing Lifyn ("the App"). Your privacy is our highest priority. This policy explains what information the App handles and how it is protected.
+                Thank you for choosing WhisperLine ("the App"). Your privacy is our highest priority. This policy explains what information the App handles and how it is protected.
             </Text>
 
             <Text style={[styles.heading, { color: colors.text }]}>Core Principle: Your Data is Yours</Text>
             <Text style={[styles.paragraph, { color: colors.text }]}>
-                Lifyn is designed to be a completely private space. We, the developers, have **no access** to your diary entries or any personal content you create. All your data is stored exclusively on your device.
+                WhisperLine is designed to be a completely private space. We, the developers, have **no access** to your diary entries or any personal content you create. All your data is stored exclusively on your device.
             </Text>
 
             <Text style={[styles.heading, { color: colors.text }]}>1. Information We Do Not Collect</Text>
