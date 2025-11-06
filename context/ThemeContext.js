@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import React, { createContext, useEffect, useState } from 'react';
-import { ActivityIndicator, useColorScheme } from 'react-native';
+import { ActivityIndicator, InteractionManager, useColorScheme } from 'react-native';
 import { AVATARS } from '../data/avatars.js';
 
 export const lightColors = {
@@ -10,6 +10,15 @@ export const lightColors = {
   card: '#F5F5F5',
   primary: '#007AFF',
   border: '#DDDDDD',
+          moods: {
+            // High-brightness background colors based on psychological color principles (light mode)
+            Happy: '#FFF9E6',      // Warm light yellow, bright and energetic
+            Sad: '#E3F2FD',        // Soft light blue, calm and peaceful
+            Angry: '#FFEBEE',      // Soft light red, gentle but energetic
+            Calm: '#E8F5E9',       // Soft light green/mint, peaceful and serene
+            Excited: '#FFF3E0',    // Bright light orange/coral, energetic
+            Tired: '#F5F5F5',      // Soft light gray, calm and relaxed
+          },
 };
 
 export const darkColors = {
@@ -18,6 +27,16 @@ export const darkColors = {
   card: '#1E1E1E',
   primary: '#0A84FF',
   border: '#2C2C2E',
+          moods: {
+            // High-brightness background colors based on psychological color principles (dark mode)
+            // Use slightly deeper colors in dark mode while maintaining high brightness and readability
+            Happy: '#2A2410',      // Deep golden yellow, warm but not harsh
+            Sad: '#1A2332',        // Deep blue, peaceful and soothing
+            Angry: '#2A1F1F',      // Deep red, energetic but not harsh
+            Calm: '#1A2A1A',       // Deep green, peaceful and serene
+            Excited: '#2A1F15',    // Deep orange, energetic
+            Tired: '#1F1F1F',      // Deep gray, calm and relaxed
+          },
 };
 
 export const ThemeContext = createContext(null);
@@ -41,7 +60,11 @@ export const ThemeProvider = ({ children }) => {
 
   // Load avatar ID and custom avatar URI from AsyncStorage on mount
   useEffect(() => {
-    const loadAvatarPreferences = async () => {
+    // Immediately set loading to false to let UI render first
+    setIsLoading(false);
+    
+    // Delay loading avatar preferences to avoid blocking startup
+    InteractionManager.runAfterInteractions(async () => {
       try {
         const savedId = await AsyncStorage.getItem('@selectedAvatarId');
         if (savedId && (savedId === 'custom' || AVATARS.some(avatar => avatar.id === savedId))) {
@@ -53,11 +76,8 @@ export const ThemeProvider = ({ children }) => {
         }
       } catch (err) {
         console.warn('Failed to load avatar preferences:', err);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    loadAvatarPreferences();
+    });
   }, []);
 
   // Image picking logic for custom avatar

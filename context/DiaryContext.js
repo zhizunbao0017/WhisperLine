@@ -1,10 +1,13 @@
 // context/DiaryContext.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useEffect, useState } from 'react';
+import { InteractionManager } from 'react-native';
 
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
 const AI_USAGE_KEY = '@MyAIDiary:aiUsageCount';
+const FREE_TRIAL_USED_KEY = '@MyAIDiary:freeTrialUsed';
+const DATA_CLEANED_KEY = '@MyAIDiary:hasDataBeenCleaned';
 
 // Helper to get today's date in YYYY-MM-DD format
 function getTodayDateString() {
@@ -23,21 +26,32 @@ export const DiaryProvider = ({ children }) => {
     count: 0,
   });
 
+  // ---- Free Trial Used State ----
+  const [freeTrialUsed, setFreeTrialUsed] = useState(false);
+
   // Load aiUsageCount from AsyncStorage on mount
   useEffect(() => {
-    const loadAIUsage = async () => {
+    // Delay loading to avoid blocking startup
+    InteractionManager.runAfterInteractions(async () => {
       try {
         const usageJson = await AsyncStorage.getItem(AI_USAGE_KEY);
         const today = getTodayDateString();
         if (usageJson !== null) {
-          const stored = JSON.parse(usageJson);
-          if (stored.date === today) {
-            setAIUsageCount(stored);
-          } else {
-            // New day, reset count
+          try {
+            const stored = JSON.parse(usageJson);
+            if (stored.date === today) {
+              setAIUsageCount(stored);
+            } else {
+              // New day, reset count
+              const reset = { date: today, count: 0 };
+              setAIUsageCount(reset);
+              await AsyncStorage.setItem(AI_USAGE_KEY, JSON.stringify(reset));
+            }
+          } catch (parseError) {
+            console.error('Failed to parse AI usage count:', parseError);
+            // Reset on parse failure
             const reset = { date: today, count: 0 };
             setAIUsageCount(reset);
-            await AsyncStorage.setItem(AI_USAGE_KEY, JSON.stringify(reset));
           }
         } else {
           // First launch
@@ -48,8 +62,31 @@ export const DiaryProvider = ({ children }) => {
       } catch (e) {
         console.error('Failed to load AI usage count.', e);
       }
-    };
-    loadAIUsage();
+    });
+  }, []);
+
+  // Load freeTrialUsed from AsyncStorage on mount
+  useEffect(() => {
+    // Delay loading to avoid blocking startup
+    InteractionManager.runAfterInteractions(async () => {
+      try {
+        const freeTrialJson = await AsyncStorage.getItem(FREE_TRIAL_USED_KEY);
+        if (freeTrialJson !== null) {
+          try {
+            setFreeTrialUsed(JSON.parse(freeTrialJson));
+          } catch (parseError) {
+            console.error('Failed to parse free trial status:', parseError);
+            setFreeTrialUsed(false);
+          }
+        } else {
+          // First launch, free trial not used yet
+          setFreeTrialUsed(false);
+        }
+      } catch (e) {
+        console.error('Failed to load free trial status.', e);
+        setFreeTrialUsed(false);
+      }
+    });
   }, []);
 
   // Function to increment AI Usage
@@ -70,23 +107,102 @@ export const DiaryProvider = ({ children }) => {
     }
   };
 
+  // Function to mark free trial as used
+  const markFreeTrialAsUsed = async () => {
+    try {
+      setFreeTrialUsed(true);
+      await AsyncStorage.setItem(FREE_TRIAL_USED_KEY, JSON.stringify(true));
+    } catch (e) {
+      console.error('Failed to mark free trial as used.', e);
+    }
+  };
+
   useEffect(() => {
     const loadDiaries = async () => {
       try {
         const jsonValue = await AsyncStorage.getItem(DIARY_STORAGE_KEY);
         if (jsonValue !== null) {
-          setDiaries(JSON.parse(jsonValue));
+          // Check data size, warn if too large
+          const dataSize = jsonValue.length;
+          if (dataSize > 10 * 1024 * 1024) { // 10MB
+            console.warn(`Large diary data detected: ${(dataSize / 1024 / 1024).toFixed(2)}MB. This may cause performance issues.`);
+          }
+          
+          // Use InteractionManager to parse after interactions complete, avoid blocking startup
+          InteractionManager.runAfterInteractions(async () => {
+            try {
+              const parsed = JSON.parse(jsonValue);
+              
+              // --- Data cleanup logic: remove old diaries containing Base64 images ---
+              const hasBeenCleaned = await AsyncStorage.getItem(DATA_CLEANED_KEY);
+              
+              if (!hasBeenCleaned) {
+                console.log('Starting data cleanup: removing diaries with Base64 images...');
+                
+                const cleanedDiaries = parsed.filter((diary) => {
+                  // Check diary.content field
+                  const content = diary.content || diary.contentHTML || '';
+                  
+                  // If content length is less than 1000 characters, keep (likely plain text)
+                  if (content.length <= 1000) {
+                    return true;
+                  }
+                  
+                  // Check if contains Base64 image characteristic strings
+                  const hasBase64Image = 
+                    content.includes('data:image/') && 
+                    content.includes('base64,');
+                  
+                  if (hasBase64Image) {
+                    console.log(`Removing diary with Base64 image: ${diary.title || diary.id}`);
+                    return false; // Filter out diaries containing Base64
+                  }
+                  
+                  // Doesn't contain Base64, keep
+                  return true;
+                });
+                
+                // Save cleaned data
+                if (cleanedDiaries.length !== parsed.length) {
+                  const removedCount = parsed.length - cleanedDiaries.length;
+                  console.log(`Data cleanup complete: removed ${removedCount} diary entries with Base64 images.`);
+                  
+                  // Update state and storage
+                  setDiaries(cleanedDiaries);
+                  await AsyncStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(cleanedDiaries));
+                  
+                  // Mark cleanup as complete
+                  await AsyncStorage.setItem(DATA_CLEANED_KEY, 'true');
+                } else {
+                  // No data to clean, set directly
+                  setDiaries(parsed);
+                  // Mark cleanup as complete (even if no data needed cleaning)
+                  await AsyncStorage.setItem(DATA_CLEANED_KEY, 'true');
+                }
+              } else {
+                // Already cleaned, use directly
+                setDiaries(parsed);
+              }
+            } catch (parseError) {
+              console.error('Failed to parse diaries JSON:', parseError);
+              // If parsing fails, set to empty array to avoid crash
+              setDiaries([]);
+            }
+          });
         }
       } catch (e) {
         console.error('Failed to load diaries.', e);
+        // Ensure loading is set to false even on error
+        setDiaries([]);
       } finally {
+        // Immediately set loading to false to let UI render first
         setIsLoading(false);
       }
     };
     loadDiaries();
   }, []);
 
-  // 封装一个函数，用于将更新后的日记数组保存到AsyncStorage
+  // Encapsulate a function to save updated diary array to AsyncStorage
   const saveDiariesToStorage = async (updatedDiaries) => {
     try {
       await AsyncStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(updatedDiaries));
@@ -107,7 +223,7 @@ export const DiaryProvider = ({ children }) => {
     await saveDiariesToStorage(updatedDiaries);
   };
 
-  // --- 新增函数 ---
+  // --- New function ---
   const updateDiary = async (diaryToUpdate) => {
     const updatedDiaries = diaries.map(diary => 
       diary.id === diaryToUpdate.id ? diaryToUpdate : diary
@@ -116,7 +232,7 @@ export const DiaryProvider = ({ children }) => {
     await saveDiariesToStorage(updatedDiaries);
   };
 
-  // --- 新增函数 ---
+  // --- New function ---
   const deleteDiary = async (idToDelete) => {
     const updatedDiaries = diaries.filter(diary => diary.id !== idToDelete);
     setDiaries(updatedDiaries);
@@ -135,6 +251,8 @@ export const DiaryProvider = ({ children }) => {
         incrementAIUsage,
         selectedDate,
         setSelectedDate,
+        freeTrialUsed,
+        markFreeTrialAsUsed,
       }}
     >
       {children}

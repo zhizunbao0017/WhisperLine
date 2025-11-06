@@ -8,7 +8,14 @@ import { ThemeContext } from '../context/ThemeContext';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
-// 新增 AnimatedDiaryItem 组件
+// Helper function: extract plain text from HTML
+const extractTextFromHTML = (html) => {
+    if (!html) return '';
+    // Remove all HTML tags, keep plain text
+    return html.replace(/<[^>]*>?/gm, '').trim();
+};
+
+// New AnimatedDiaryItem component
 import { MOODS } from '../data/moods';
 
 const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
@@ -61,7 +68,7 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                     style={[styles.cardContent, { color: colors.text }]}
                     numberOfLines={2}
                 >
-                    {item.content}
+                    {extractTextFromHTML(item.content || item.contentHTML || '')}
                 </Text>
 
                 {/* Card Footer */}
@@ -152,7 +159,7 @@ const TimelineScreen = () => {
         </View>
     );
 
-    // 用 AnimatedDiaryItem 替换 FlatList 的渲染方法
+    // Replace FlatList render method with AnimatedDiaryItem
     return (
         <View style={{ flex: 1, backgroundColor: colors.background }}>
             <FlatList
@@ -170,21 +177,21 @@ const TimelineScreen = () => {
                 keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
                 ListHeaderComponent={renderCalendarHeader}
                 ListEmptyComponent={renderEmptyComponent}
-                contentContainerStyle={{ paddingBottom: 20 }} // 给列表底部增加一些边距
+                contentContainerStyle={{ paddingBottom: 20 }} // Add some margin to the bottom of the list
             />
         </View>
     );
 };
 
-// --- 开始修改：更新样式表 ---
+// --- Start modification: update stylesheet ---
 const styles = StyleSheet.create({
     emptyContainer: { padding: 20, alignItems: 'center', marginTop: 20 },
     emptyText: { fontSize: 16, color: 'gray' },
     card: { 
-        borderRadius: 12, // 更圆润的卡片
+        borderRadius: 12, // More rounded card
         padding: 15, 
         marginVertical: 8, 
-        marginHorizontal: 16, // 增加水平边距
+        marginHorizontal: 16, // Increase horizontal margin
         borderWidth: 1,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
@@ -193,15 +200,15 @@ const styles = StyleSheet.create({
         elevation: 3,
     },
     cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-    moodImage: { width: 32, height: 32, marginRight: 12 }, // 心情图片的新样式
+    moodImage: { width: 32, height: 32, marginRight: 12 }, // New style for mood image
     moodEmoji: { fontSize: 24, marginRight: 10 },
     cardTitle: { fontSize: 18, fontWeight: 'bold', flex: 1 },
-    weatherIcon: { width: 25, height: 25 }, // 天气图标略微缩小
+    weatherIcon: { width: 25, height: 25 }, // Weather icon slightly smaller
     cardContent: { fontSize: 14, marginBottom: 15, color: '#666' },
     cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 10 },
     footerLeft: { flexDirection: 'row', alignItems: 'center' },
     footerText: { fontSize: 12 },
 });
-// --- 结束修改 ---
+// --- End modification ---
 
 export default TimelineScreen;

@@ -1,6 +1,7 @@
 // context/SubscriptionContext.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useEffect, useState } from 'react';
+import { InteractionManager } from 'react-native';
 
 export const SubscriptionContext = createContext(null);
 
@@ -11,7 +12,11 @@ export const SubscriptionProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const loadSubscriptionStatus = async () => {
+    // Immediately set loading to false to let UI render first
+    setIsLoading(false);
+    
+    // Delay loading subscription status to avoid blocking startup
+    InteractionManager.runAfterInteractions(async () => {
       try {
         const stored = await AsyncStorage.getItem(PRO_MEMBER_KEY);
         const proStatus = stored === 'true';
@@ -19,11 +24,8 @@ export const SubscriptionProvider = ({ children }) => {
       } catch (e) {
         console.error('Failed to load subscription status:', e);
         setIsProMember(false);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    loadSubscriptionStatus();
+    });
   }, []);
 
   const upgradeToPro = async () => {

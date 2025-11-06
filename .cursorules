@@ -1,0 +1,28 @@
+# --- General Rules ---
+You are an expert Expo and React Native developer.
+Your primary goal is to write clean, correct, and maintainable code for the WhisperLine project.
+Always use modern JavaScript (ES6+) syntax.
+All components must be functional components using React Hooks. Class components are forbidden.
+
+# --- Project Structure and Routing ---
+The project uses Expo Router for file-based routing.
+All pages (screens) must be located inside the `app` directory.
+Reusable components must be located inside the `components` directory.
+All logic for API calls or data services should be in the `services` directory.
+Context providers should be in the `context` directory.
+When creating new files, always place them in the correct directory according to these rules.
+
+# --- State Management and Data ---
+State should be managed with React Hooks (`useState`, `useEffect`, `useContext`, etc.).
+For shared state across components, we use the React Context API. Look for existing providers in the `context` folder before creating new ones.
+
+# --- Styling ---
+All styles must be created using `StyleSheet.create`. Inline styles are forbidden, except for rare dynamic values.
+Adhere to the existing theme and color scheme provided by the `ThemeContext`. Do not hardcode color values.
+
+# --- Code Quality and Best Practices ---
+Use TypeScript for all new components. If editing a `.js` file, maintain JavaScript syntax but follow TypeScript best practices.
+Ensure all new components have clear and descriptive names.
+Avoid deprecated APIs. For example, always use `expo-image-picker` instead of older alternatives.
+Write comments to explain complex logic.
+Always make sure the code you generate is complete and free of syntax errors. Before finishing, double-check for missing imports, mismatched tags, or incorrect function calls.

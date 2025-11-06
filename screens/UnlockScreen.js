@@ -3,16 +3,16 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-// 1. 确保组件正确地接收 onUnlock 这个 prop
+// 1. Ensure component correctly receives onUnlock prop
 const UnlockScreen = ({ onUnlock }) => {
   return (
     <View style={styles.container}>
       <Ionicons name="lock-closed" size={64} color="white" />
       
-      {/* 2. 我们使用TouchableOpacity来实现更灵活的样式 */}
+      {/* 2. We use TouchableOpacity for more flexible styling */}
       <TouchableOpacity 
         style={styles.button} 
-        // 3. 这是最关键的一步：将按钮的 onPress 事件绑定到传入的 onUnlock 函数
+        // 3. This is the key step: bind button's onPress event to the passed onUnlock function
         onPress={onUnlock}
       >
         <Text style={styles.buttonText}>Unlock My Diary</Text>
@@ -26,11 +26,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212', // 使用我们的暗黑模式背景色
+    backgroundColor: '#121212', // Use our dark mode background color
   },
   button: {
     marginTop: 40,
-    backgroundColor: '#0A84FF', // 使用我们的暗黑模式主色
+    backgroundColor: '#0A84FF', // Use our dark mode primary color
     paddingVertical: 15,
     paddingHorizontal: 60,
     borderRadius: 30,

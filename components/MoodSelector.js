@@ -1,14 +1,14 @@
 // components/MoodSelector.js
 import { useContext } from 'react';
-import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemeContext } from '../context/ThemeContext';
-// --- 1. 导入我们新的心情数据源 ---
+// --- 1. Import our new mood data source ---
 import { MOODS } from '../data/moods';
 
 const MoodSelector = ({ onSelectMood, selectedMood }) => {
     const { colors } = useContext(ThemeContext);
 
-    // 如果主题颜色还没加载好，就暂时不渲染任何东西
+    // If theme colors haven't loaded yet, don't render anything
     if (!colors) {
         return null;
     }
@@ -18,44 +18,71 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
             <Text style={[styles.label, { color: colors.text }]}>How are you feeling?</Text>
             <View style={styles.moodsContainer}>
                 {MOODS.map((mood) => {
-                    // --- 2. 判断当前心情是否被选中 ---
-                    const isSelected = selectedMood?.name === mood.name;
-
-                    // --- 3. 根据是否选中，应用不同的动画样式 ---
-                    const animatedStyle = {
-                        transform: [{ scale: isSelected ? 1.15 : 1 }], // 选中时放大
-                        opacity: isSelected ? 1 : 0.7, // 未选中时半透明
-                    };
+                    // --- 2. Check if current mood is selected ---
+                    // Compatible with selectedMood being either a string or an object
+                    const isSelected = typeof selectedMood === 'string' 
+                        ? selectedMood === mood.name 
+                        : selectedMood?.name === mood.name;
 
                     return (
                         <TouchableOpacity
                             key={mood.name}
-                            // 点击时，传递完整的心情对象回去
-                            onPress={() => onSelectMood(mood.name)}
-                            // accessibility anaytics - a11y
+                            // Pass full mood object when clicked
+                            onPress={() => onSelectMood(mood)}
+                            // accessibility analytics - a11y
                             accessibilityLabel={mood.name}
                             accessibilityState={{ selected: isSelected }}
                             accessibilityRole="button"
+                            activeOpacity={isSelected ? 0.9 : 0.7} // Keep high brightness when selected, reduce dimming on press
                         >
-                            <Animated.View style={[styles.moodWrapper, animatedStyle]}>
+                            <View 
+                                style={[
+                                    styles.moodWrapper,
+                                    // Apply styles directly when selected to ensure high brightness persists
+                                    isSelected && styles.moodWrapperSelected,
+                                    { opacity: isSelected ? 1 : 0.35 } // Reduce opacity when not selected for contrast
+                                ]}
+                            >
+                                {/* Background highlight circle when selected - maintains high brightness */}
+                                {isSelected && (
+                                    <View style={[styles.selectedBackground, { backgroundColor: colors.primary + '45' }]} />
+                                )}
                                 <View 
                                     style={[
                                         styles.imageContainer,
-                                        { backgroundColor: colors.card },
-                                        // --- 4. 为选中的图标添加一个漂亮的边框 ---
+                                        { 
+                                            // Use brighter theme color background when selected, maintains high brightness
+                                            backgroundColor: isSelected ? colors.primary + '40' : colors.card,
+                                        },
+                                        // --- 4. Add prominent border and highlight effect for selected icon, maintains ---
                                         isSelected && {
                                             borderColor: colors.primary,
-                                            borderWidth: 3,
+                                            borderWidth: 3.5,
+                                            shadowColor: colors.primary,
+                                            shadowOffset: { width: 0, height: 0 },
+                                            shadowOpacity: 0.8,
+                                            shadowRadius: 14,
+                                            elevation: 14,
                                         }
                                     ]}
                                 >
-                                    {/* --- 5. 使用 Image 组件渲染我们的图标 --- */}
-                                    <Image source={mood.image} style={styles.moodImage} />
+                                    {/* --- 5. Use Image component to render our icon --- */}
+                                    <Image 
+                                        source={mood.image} 
+                                        style={[
+                                            styles.moodImage,
+                                            isSelected && styles.moodImageSelected // Icon brighter when selected, maintains
+                                        ]} 
+                                    />
                                 </View>
-                                <Text style={[styles.moodLabel, { color: isSelected ? colors.primary : colors.text }]}>
+                                <Text style={[styles.moodLabel, { 
+                                    color: isSelected ? colors.primary : colors.text,
+                                    fontWeight: isSelected ? '700' : '400', // Bolder when selected, maintains
+                                    fontSize: isSelected ? 13 : 12, // Slightly larger when selected, maintains
+                                }]}>
                                     {mood.name}
                                 </Text>
-                            </Animated.View>
+                            </View>
                         </TouchableOpacity>
                     );
                 })}
@@ -64,35 +91,53 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
     );
 };
 
-// --- 我们将样式移到组件外部，这是React Native的最佳实践 ---
+// --- We move styles outside the component, this is React Native best practice ---
 const styles = StyleSheet.create({
     container: {
         marginBottom: 25,
     },
     label: {
         fontSize: 18,
-        fontWeight: '600', // 使用 600 (semibold) 而不是 'bold'，看起来更柔和
+        fontWeight: '600', // Use 600 (semibold) instead of 'bold', looks softer
         marginBottom: 15,
-        textAlign: 'center', // 标签居中
+        textAlign: 'center', // Center labels
     },
     moodsContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
+        justifyContent: 'center', // Center alignment
         alignItems: 'flex-start',
-        paddingHorizontal: 10, // <-- 新增！给容器左右增加内边距
+        flexWrap: 'nowrap', // Ensure no wrapping, six labels in one row
+        paddingHorizontal: 10, // Appropriate left/right padding, ensure labels aren't obscured
+        width: '100%', // Ensure container takes full width
     },
     moodWrapper: {
         alignItems: 'center',
-        width: 65, // 给每个图标一个固定的宽度，方便对齐
+        justifyContent: 'center',
+        width: 58, // Fixed width, ensure six labels can display in one row
+        marginHorizontal: 3, // Spacing between labels, appropriate gap
+        position: 'relative', // Position for selected background
+    },
+    moodWrapperSelected: {
+        transform: [{ scale: 1.1 }], // Slightly larger when selected, maintains
+    },
+    selectedBackground: {
+        position: 'absolute',
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        top: -6,
+        left: -7,
+        zIndex: -1, // Behind icon
     },
     imageContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 30, // 完美的圆形
+        width: 56, // Slightly smaller to fit six in one row
+        height: 56,
+        borderRadius: 28, // Perfect circle
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 8,
-        // 添加一些阴影效果，让图标看起来有“浮起来”的感觉
+        marginBottom: 6,
+        position: 'relative', // Position for selected marker
+        // Shadow effect when not selected
         shadowColor: "#000",
         shadowOffset: {
             width: 0,
@@ -103,9 +148,12 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
     moodImage: {
-        width: '70%', // 图片占容器的70%，留出一些边距
+        width: '70%', // Image takes 70% of container, leave some margin
         height: '70%',
         resizeMode: 'contain',
+    },
+    moodImageSelected: {
+        opacity: 1.0, // Icon fully opaque when selected, brighter
     },
     moodLabel: {
         fontSize: 12,

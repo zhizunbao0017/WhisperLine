@@ -2,44 +2,51 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import React, { createContext, useEffect, useState } from 'react';
+import { InteractionManager } from 'react-native';
 
 const LOCK_ENABLED_KEY = '@MyAIDiary:isLockEnabled';
 
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  // 1. 默认启用锁，但允许被AsyncStorage覆盖
+  // 1. Default lock enabled, but allow AsyncStorage to override
   const [isLockEnabled, setIsLockEnabled] = useState(true);
   
-  // 2. 关键：isUnlocked的初始值取决于isLockEnabled
-  // 如果锁是禁用的，那App天生就是“已解锁”状态
+  // 2. Key: isUnlocked initial value depends on isLockEnabled
+  // If lock is disabled, the app is inherently "unlocked"
   const [isUnlocked, setIsUnlocked] = useState(!isLockEnabled);
   
   const [isLoading, setIsLoading] = useState(true);
 
-  // 3. 在App启动时，从AsyncStorage加载用户的偏好设置
+  // 3. Load user preferences from AsyncStorage on app startup
   useEffect(() => {
-    const loadLockPreference = async () => {
+    // Immediately set loading to false to let UI render first
+    setIsLoading(false);
+    
+    // Delay loading preferences to avoid blocking startup
+    InteractionManager.runAfterInteractions(async () => {
       try {
         const storedPreference = await AsyncStorage.getItem(LOCK_ENABLED_KEY);
-        // 如果存储中有值，就用它来更新状态
+        // If there's a value in storage, use it to update state
         if (storedPreference !== null) {
-          const isEnabled = JSON.parse(storedPreference);
-          setIsLockEnabled(isEnabled);
-          // 再次根据加载到的偏好，更新isUnlocked的初始状态
-          setIsUnlocked(!isEnabled); 
+          try {
+            const isEnabled = JSON.parse(storedPreference);
+            setIsLockEnabled(isEnabled);
+            // Update isUnlocked initial state again based on loaded preference
+            setIsUnlocked(!isEnabled);
+          } catch (parseError) {
+            console.error('Failed to parse lock preference:', parseError);
+            // Use default value on parse failure
+          }
         }
       } catch (e) {
         console.error('Failed to load lock preference.', e);
-      } finally {
-        setIsLoading(false); // 加载完成
       }
-    };
-    loadLockPreference();
+    });
   }, []);
 
   const authenticate = async () => {
-    // (authenticate 函数本身是正确的，保持不变)
+    // (authenticate function itself is correct, keep unchanged)
     try {
       const results = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock My AI Diary',
@@ -56,7 +63,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const newPreference = !isLockEnabled;
       setIsLockEnabled(newPreference);
-      // 当用户关闭锁时，App应立即变为“已解锁”状态
+      // When user disables lock, app should immediately become "unlocked"
       if (!newPreference) {
           setIsUnlocked(true);
       }
@@ -66,7 +73,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
   
-  // 如果还在加载偏好设置，可以显示一个空白屏幕，避免闪烁
+  // If still loading preferences, can show a blank screen to avoid flickering
   if (isLoading) {
       return null;
   }

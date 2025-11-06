@@ -1,16 +1,20 @@
 // screens/DiaryDetailScreen.js
-import { Ionicons } from '@expo/vector-icons'; // 我们将使用一个漂亮的图标库
+import { Ionicons } from '@expo/vector-icons'; // We'll use a nice icon library
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useContext } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useContext, useMemo } from 'react';
+import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import RenderHTML from 'react-native-render-html';
 import { ThemeContext } from '../context/ThemeContext';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DiaryDetailScreen = () => {
     const router = useRouter();
     const params = useLocalSearchParams();
     const { colors } = useContext(ThemeContext);
+    const { width } = useWindowDimensions(); // Get screen width for responsive layout
 
-    // 从参数中解析出日记数据
+    // Parse diary data from parameters
     const diary = params.diary ? JSON.parse(params.diary) : null;
 
     if (!diary) {
@@ -21,21 +25,84 @@ const DiaryDetailScreen = () => {
         );
     }
 
-    // 跳转到编辑页的函数
+    // Get diary content (prefer HTML format, fallback to plain text if not available)
+    const diaryContent = diary.contentHTML || diary.content || '';
+
+    // Custom style configuration
+    const renderHTMLConfig = useMemo(() => ({
+        tagsStyles: {
+            p: {
+                marginTop: 10,
+                marginBottom: 10,
+                fontSize: 18,
+                lineHeight: 28,
+                color: colors.text,
+            },
+            img: {
+                marginTop: 15,
+                marginBottom: 15,
+                borderRadius: 8,
+            },
+            ul: {
+                marginTop: 10,
+                marginBottom: 10,
+                paddingLeft: 30,
+            },
+            ol: {
+                marginTop: 10,
+                marginBottom: 10,
+                paddingLeft: 30,
+            },
+            li: {
+                marginTop: 5,
+                marginBottom: 5,
+                fontSize: 18,
+                lineHeight: 28,
+                color: colors.text,
+            },
+            strong: {
+                fontWeight: 'bold',
+                color: colors.text,
+            },
+            em: {
+                fontStyle: 'italic',
+                color: colors.text,
+            },
+            u: {
+                textDecorationLine: 'underline',
+                color: colors.text,
+            },
+        },
+        baseStyle: {
+            fontSize: 18,
+            lineHeight: 28,
+            color: colors.text,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        },
+    }), [colors.text]);
+
+    // Function to navigate to edit page
     const handleEdit = () => {
-        router.push({ pathname: '/add-edit-diary', params: { diary: JSON.stringify(diary) } });
+        console.log('Edit button pressed, diary:', diary);
+        // Use object format for navigation, path format consistent with _layout.js
+        router.push({
+            pathname: '/add-edit-diary',
+            params: { 
+                diary: JSON.stringify(diary) 
+            }
+        });
     };
 
     return (
         <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* --- 顶部栏，包含编辑按钮 --- */}
+            {/* --- Top bar with edit button --- */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={handleEdit} style={styles.editButton}>
                     <Ionicons name="create-outline" size={28} color={colors.primary} />
                 </TouchableOpacity>
             </View>
 
-            {/* --- 心情和标题区域 --- */}
+            {/* --- Mood and title area --- */}
             <View style={styles.titleContainer}>
                 {diary.mood?.image && (
                     <Image source={diary.mood.image} style={styles.moodImage} />
@@ -43,7 +110,7 @@ const DiaryDetailScreen = () => {
                 <Text style={[styles.title, { color: colors.text }]}>{diary.title}</Text>
             </View>
 
-            {/* --- 日期和天气信息 --- */}
+            {/* --- Date and weather information --- */}
             <View style={styles.metaContainer}>
                 <Text style={[styles.metaText, { color: colors.text }]}>
                     {new Date(diary.createdAt).toLocaleDateString('en-US', {
@@ -65,13 +132,62 @@ const DiaryDetailScreen = () => {
                 )}
             </View>
 
-            {/* --- 分隔线 --- */}
+            {/* --- Divider --- */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            {/* --- 日记正文 --- */}
-            <Text style={[styles.content, { color: colors.text }]}>
-                {diary.content}
-            </Text>
+            {/* --- Diary content --- */}
+            {diary.content || diary.contentHTML ? (
+                // Use RenderHTML to render (supports images and rich text formatting)
+                <View style={styles.htmlContainer}>
+                    <RenderHTML
+                        contentWidth={width - 40} // Use useWindowDimensions width
+                        source={{ html: diary.content || diary.contentHTML || '' }}
+                        tagsStyles={renderHTMLConfig.tagsStyles}
+                        baseStyle={renderHTMLConfig.baseStyle}
+                        systemFonts={['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']}
+                        renderersProps={{
+                            img: {
+                                // Ensure local file URI images can load correctly
+                                enableExperimentalPercentWidth: true,
+                            },
+                        }}
+                        // Custom image renderer to ensure local file URIs display correctly
+                        renderers={{
+                            img: ({ TDefaultRenderer, ...props }) => {
+                                const { src } = props.tnode.attributes;
+                                // Handle local file URI (file:// or direct path)
+                                if (src && (src.startsWith('file://') || src.startsWith('/'))) {
+                                    return (
+                                        <Image
+                                            source={{ uri: src }}
+                                            style={{
+                                                width: '100%',
+                                                height: undefined,
+                                                aspectRatio: 1,
+                                                marginTop: 15,
+                                                marginBottom: 15,
+                                                borderRadius: 8,
+                                            }}
+                                            resizeMode="contain"
+                                        />
+                                    );
+                                }
+                                // Use default renderer for other cases
+                                return <TDefaultRenderer {...props} />;
+                            },
+                        }}
+                        // Ensure images can render local file URIs correctly
+                        defaultTextProps={{
+                            selectable: true,
+                        }}
+                    />
+                </View>
+            ) : (
+                // If no content, show message
+                <Text style={[styles.content, { color: colors.text }]}>
+                    No content available.
+                </Text>
+            )}
         </ScrollView>
     );
 };
@@ -128,8 +244,12 @@ const styles = StyleSheet.create({
     },
     content: {
         fontSize: 18,
-        lineHeight: 28, // 增加行高，提升阅读体验
-        textAlign: 'justify', // 两端对齐
+        lineHeight: 28, // Increase line height for better reading experience
+        textAlign: 'justify', // Justify text
+    },
+    htmlContainer: {
+        width: '100%',
+        marginBottom: 20,
     },
 });
 
