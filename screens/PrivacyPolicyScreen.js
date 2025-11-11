@@ -11,48 +11,102 @@ const PrivacyPolicyScreen = () => {
     }
     const { colors } = themeContext;
 
-    const contactEmail = 'YOUR_SUPPORT_EMAIL@example.com'; // Replace with your email
+    const contactEmail = 'j8t@163.com';
 
     return (
         <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
-            <Text style={[styles.title, { color: colors.text }]}>Privacy Policy for WhisperLine</Text>
-            <Text style={[styles.lastUpdated, { color: colors.text }]}>Last Updated: October 28, 2025</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Privacy Policy · WhisperLine</Text>
+            <Text style={[styles.lastUpdated, { color: colors.text }]}>Last Updated: November 11, 2025</Text>
 
             <Text style={[styles.paragraph, { color: colors.text }]}>
-                Thank you for choosing WhisperLine ("the App"). Your privacy is our highest priority. This policy explains what information the App handles and how it is protected.
+                WhisperLine is a personal diary designed to keep your reflections private. This policy explains what data stays on
+                your device, when information leaves the device, and how permissions are used.
             </Text>
 
             <Text style={[styles.heading, { color: colors.text }]}>Core Principle: Your Data is Yours</Text>
             <Text style={[styles.paragraph, { color: colors.text }]}>
-                WhisperLine is designed to be a completely private space. We, the developers, have **no access** to your diary entries or any personal content you create. All your data is stored exclusively on your device.
+                We do not run cloud servers for WhisperLine. Diary content, mood analytics, settings, and images remain on the iOS
+                device you use. We never collect, sell, or profile your information.
             </Text>
 
-            <Text style={[styles.heading, { color: colors.text }]}>1. Information We Do Not Collect</Text>
-            <Text style={[styles.paragraph, { color: colors.text }]}>
-                We do not collect, store, or transmit any of the following personal information to our servers:
-                - Your name, email address, or any other contact information.
-                - The content of your diary entries, including text, titles, moods, or associated metadata.
-                - Your precise GPS coordinates.
-            </Text>
-
-            <Text style={[styles.heading, { color: colors.text }]}>2. Information the App Handles Locally</Text>
-            <Text style={[styles.paragraph, { color: colors.text }]}>
-                The App handles the following information, which is stored **only on your personal device**:
-                - **Diary Entries:** Your journal entries are stored locally on your device's secure storage.
-                - **Weather and Location Data (Optional):** If you choose to add weather, the App requests one-time location access. Your coordinates are sent anonymously to the OpenWeatherMap API. The App only saves the city name and weather; precise coordinates are immediately discarded.
-            </Text>
-
-            <Text style={[styles.heading, { color: colors.text }]}>3. App Lock and Biometric Data</Text>
-            <Text style={[styles.paragraph, { color: colors.text }]}>
-                If you enable App Lock, the App uses Apple's native Face ID or Touch ID service. Your biometric data is never accessed by our App and is handled securely by iOS.
-            </Text>
-
-            <Text style={[styles.heading, { color: colors.text }]}>4. Contact Us</Text>
-            <Text style={[styles.paragraph, { color: colors.text }]}>
-                If you have any questions about this Privacy Policy, you can contact us at:
-                <Text style={{ color: colors.primary }} onPress={() => Linking.openURL(`mailto:${contactEmail}`)}>
-                    {' '}{contactEmail}
+            <Text style={[styles.heading, { color: colors.text }]}>1. Information Stored Locally</Text>
+            <View style={styles.list}>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • <Text style={styles.bold}>Diary entries & attachments</Text>: Text, images, moods, and weather notes are stored
+                    in iOS local storage (AsyncStorage and the app documents directory).
                 </Text>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • <Text style={styles.bold}>Mood insights</Text>: Sentiment scores and wellness suggestions are generated on-device
+                    and saved with the related entry so Insights can visualize trends offline.
+                </Text>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • <Text style={styles.bold}>App preferences</Text>: Theme choice, avatar selection, and lock-state are recorded
+                    locally.
+                </Text>
+            </View>
+
+            <Text style={[styles.heading, { color: colors.text }]}>2. Information We Do Not Collect</Text>
+            <View style={styles.list}>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • We do not require an account, and we do not collect your name or email address.
+                </Text>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • We never upload diary text, images, moods, or analytics to our servers.
+                </Text>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • We do not log precise location history or background location data.
+                </Text>
+            </View>
+
+            <Text style={[styles.heading, { color: colors.text }]}>3. Optional Third-Party Requests</Text>
+            <Text style={[styles.paragraph, { color: colors.text }]}>
+                WhisperLine can fetch local weather so you can tag entries with the day’s conditions. When you tap “Add Current
+                Weather,” iOS asks for permission to use approximate location. If you agree:
+            </Text>
+            <View style={styles.list}>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • Coordinates are sent directly from your device to the OpenWeatherMap service ({' '}
+                    <Text style={{ color: colors.primary }} onPress={() => Linking.openURL('https://openweathermap.org/privacy-policy')}>
+                        privacy policy
+                    </Text>
+                    ) solely for that request.
+                </Text>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • WhisperLine stores only the returned city, temperature (°C), and conditions string. Coordinates are not saved.
+                </Text>
+            </View>
+
+            <Text style={[styles.heading, { color: colors.text }]}>4. Permissions Explained</Text>
+            <View style={styles.list}>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • <Text style={styles.bold}>Photos</Text>: Needed to insert pictures from your library. Images stay within the
+                    app’s documents directory.
+                </Text>
+                <Text style={[styles.listItem, { color: colors.text }]}>
+                    • <Text style={styles.bold}>Location</Text>: Optional, used only when you request weather.
+                </Text>
+            </View>
+
+            <Text style={[styles.heading, { color: colors.text }]}>5. App Lock and Security</Text>
+            <Text style={[styles.paragraph, { color: colors.text }]}>
+                Enabling App Lock uses Apple’s Face ID or Touch ID APIs. WhisperLine never sees or stores your biometric data; the
+                check happens in iOS. While data is kept locally, it is stored in the standard iOS app sandbox. Please ensure your
+                device passcode is enabled for additional protection.
+            </Text>
+
+            <Text style={[styles.heading, { color: colors.text }]}>6. Children’s Privacy</Text>
+            <Text style={[styles.paragraph, { color: colors.text }]}>
+                WhisperLine is not directed to children under 13 and should be used by adults or with adult supervision. We do not
+                knowingly collect personal information from children.
+            </Text>
+
+            <Text style={[styles.heading, { color: colors.text }]}>7. Contact Us</Text>
+            <Text style={[styles.paragraph, { color: colors.text }]}>
+                Questions? Email us at{' '}
+                <Text style={{ color: colors.primary }} onPress={() => Linking.openURL(`mailto:${contactEmail}`)}>
+                    {contactEmail}
+                </Text>
+                .
             </Text>
         </ScrollView>
     );
@@ -81,6 +135,17 @@ const styles = StyleSheet.create({
     paragraph: {
         fontSize: 16,
         lineHeight: 24,
+    },
+    list: {
+        marginBottom: 8,
+    },
+    listItem: {
+        fontSize: 16,
+        lineHeight: 24,
+        marginBottom: 6,
+    },
+    bold: {
+        fontWeight: '600',
     },
 });
 

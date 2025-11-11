@@ -68,6 +68,7 @@ function RootLayoutNav() {
                 
                 <Stack.Screen name="add-edit-diary" options={{ title: 'New Entry', presentation: 'modal' }} />
                 <Stack.Screen name="privacy-policy" options={{ title: 'Privacy Policy', presentation: 'modal' }} />
+                <Stack.Screen name="user-guide" options={{ title: 'User Guide', presentation: 'modal' }} />
                 <Stack.Screen name="diary-detail" options={{ title: 'Diary Detail', presentation: 'modal' }} />
             </Stack>
         </>

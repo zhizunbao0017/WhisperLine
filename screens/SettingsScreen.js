@@ -241,8 +241,11 @@ const SettingsScreen = () => {
                 </TouchableOpacity>
             </View>
 
-            {/* Privacy Policy */}
+            {/* Guides & Legal */}
             <View style={styles.sectionContainer}>
+                <TouchableOpacity onPress={() => router.push('/user-guide')} style={styles.linkButton}>
+                    <Text style={[styles.linkText, { color: colors.primary }]}>User Guide</Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/privacy-policy')} style={styles.linkButton}>
                     <Text style={[styles.linkText, { color: colors.primary }]}>Privacy Policy</Text>
                 </TouchableOpacity>
