@@ -2,6 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useEffect, useState } from 'react';
 import { InteractionManager } from 'react-native';
+import { ensureAnalysis } from '../services/moodAnalysis';
 
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
@@ -162,26 +163,40 @@ export const DiaryProvider = ({ children }) => {
                   return true;
                 });
                 
+                const analyzedCleaned = cleanedDiaries.map(ensureAnalysis);
+
                 // Save cleaned data
                 if (cleanedDiaries.length !== parsed.length) {
                   const removedCount = parsed.length - cleanedDiaries.length;
                   console.log(`Data cleanup complete: removed ${removedCount} diary entries with Base64 images.`);
                   
                   // Update state and storage
-                  setDiaries(cleanedDiaries);
-                  await AsyncStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(cleanedDiaries));
+                  setDiaries(analyzedCleaned);
+                  await AsyncStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(analyzedCleaned));
                   
                   // Mark cleanup as complete
                   await AsyncStorage.setItem(DATA_CLEANED_KEY, 'true');
                 } else {
                   // No data to clean, set directly
-                  setDiaries(parsed);
+                  setDiaries(analyzedCleaned);
                   // Mark cleanup as complete (even if no data needed cleaning)
                   await AsyncStorage.setItem(DATA_CLEANED_KEY, 'true');
                 }
               } else {
-                // Already cleaned, use directly
-                setDiaries(parsed);
+                // Already cleaned, ensure analysis metadata exists for every diary
+                const analyzed = parsed.map(ensureAnalysis);
+                const analysisUpdated = analyzed.some((entry, index) => {
+                  const existing = parsed[index];
+                  const existingVersion = existing?.analysis?.version ?? null;
+                  const newVersion = analyzed[index]?.analysis?.version ?? null;
+                  return existingVersion !== newVersion;
+                });
+
+                setDiaries(analyzed);
+
+                if (analysisUpdated) {
+                  await AsyncStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(analyzed));
+                }
               }
             } catch (parseError) {
               console.error('Failed to parse diaries JSON:', parseError);
@@ -212,12 +227,12 @@ export const DiaryProvider = ({ children }) => {
   };
 
   const addDiary = async (newDiary) => {
-    const newEntry = { 
+    const newEntry = ensureAnalysis({ 
       id: Date.now().toString(),
       ...newDiary, 
       // Respect provided createdAt (e.g., from selected calendar date); fallback to now
       createdAt: newDiary?.createdAt ?? new Date().toISOString(),
-    };
+    });
     const updatedDiaries = [newEntry, ...diaries];
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
@@ -225,8 +240,9 @@ export const DiaryProvider = ({ children }) => {
 
   // --- New function ---
   const updateDiary = async (diaryToUpdate) => {
+    const analyzedDiary = ensureAnalysis(diaryToUpdate);
     const updatedDiaries = diaries.map(diary => 
-      diary.id === diaryToUpdate.id ? diaryToUpdate : diary
+      diary.id === analyzedDiary.id ? analyzedDiary : diary
     );
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);

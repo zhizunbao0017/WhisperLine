@@ -15,7 +15,7 @@ const UnlockScreen = ({ onUnlock }) => {
         // 3. This is the key step: bind button's onPress event to the passed onUnlock function
         onPress={onUnlock}
       >
-        <Text style={styles.buttonText}>Unlock My Diary</Text>
+        <Text style={styles.buttonText}>Unlock WhisperLine</Text>
       </TouchableOpacity>
     </View>
   );

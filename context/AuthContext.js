@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }) => {
     // (authenticate function itself is correct, keep unchanged)
     try {
       const results = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Unlock My AI Diary',
+        promptMessage: 'Unlock WhisperLine',
       });
       if (results.success) {
         setIsUnlocked(true);

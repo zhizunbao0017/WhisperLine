@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "whisperline",
+    "name": "WhisperLine",
     "slug": "whisperline",
     "version": "1.1.0",
     "orientation": "portrait",
@@ -12,11 +12,11 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to get the current weather for your diary entry.",
-        "NSFaceIDUsageDescription": "My AI Diary uses Face ID to securely lock and protect your entries.",
+        "NSFaceIDUsageDescription": "WhisperLine uses Face ID to securely lock and protect your entries.",
         "NSPhotoLibraryUsageDescription": "To let you choose a custom companion avatar from your photos.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.xietian.myaidiary",
+      "bundleIdentifier": "com.xietian.whisperline",
       "buildNumber": "4"
     },
     "android": {
@@ -28,7 +28,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.xietian.myaidiary"
+      "package": "com.xietian.whisperline"
     },
     "web": {
       "output": "static",
@@ -57,7 +57,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "3614840b-2261-4dde-86a2-c90591e4cf17"
+        "projectId": "9685fd18-75f1-4c62-807b-e38eed6370ae"
       }
     }
   }
