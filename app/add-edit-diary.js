@@ -7,12 +7,14 @@ import {
     Button,
     Image,
     KeyboardAvoidingView,
+    Modal,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
     useWindowDimensions,
 } from 'react-native';
@@ -78,6 +80,14 @@ const remapHtmlImageSourcesToServer = async (html) => {
 
     return updatedHtml;
 };
+
+const EMOJI_OPTIONS = [
+    '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚','🙂','🤗','🤩','🤔','🤨',
+    '😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕',
+    '🙃','🤑','😲','☹️','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','🥵','🥶','😳','🤪',
+    '😵','😡','😠','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥸','😈','👻','💀','🤖','🎃','😺','😸','😹','😻','😼',
+    '😽','🙀','😿','😾','🐶','🐱','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🦊','🐦','🦄','🐝','🌸','🌻','🌈','⭐','⚡',
+];
 
 // Companion avatar component
 const CompanionAvatarView = ({ size = 80 }) => {
@@ -173,6 +183,7 @@ const AddEditDiaryScreen = () => {
     const [selectedMood, setSelectedMood] = useState(existingDiary?.mood || null);
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
+    const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
  
     useEffect(() => {
         setIsEditMode(!!existingDiary);
@@ -316,6 +327,15 @@ const AddEditDiaryScreen = () => {
                             target.style.display = 'block';
                             target.style.margin = '12px 0';
                             target.style.borderRadius = '8px';
+                            const scrollToBottom = () => {
+                                const editorEl = document.querySelector('.pell-content');
+                                if (editorEl) {
+                                    editorEl.scrollTop = editorEl.scrollHeight;
+                                }
+                                window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
+                            };
+                            setTimeout(scrollToBottom, 50);
+                            setTimeout(scrollToBottom, 200);
                         })();
                     `);
                 }
@@ -327,7 +347,21 @@ const AddEditDiaryScreen = () => {
     };
 
     const handleInsertEmoji = () => {
-        editorRef.current?.insertText('😊');
+        setEmojiPickerVisible(true);
+    };
+
+    const handleSelectEmoji = (emoji) => {
+        setEmojiPickerVisible(false);
+        requestAnimationFrame(() => {
+            if (editorRef.current?.focusContentEditor) {
+                editorRef.current.focusContentEditor();
+            }
+            editorRef.current?.insertText(emoji);
+        });
+    };
+
+    const handleCloseEmojiPicker = () => {
+        setEmojiPickerVisible(false);
     };
 
     // --- Save logic ---
@@ -536,7 +570,7 @@ const AddEditDiaryScreen = () => {
                             ),
                         }}
                         onPressAddImage={handleInsertImage}
-                        onInsertEmoji={handleInsertEmoji}
+                        insertEmoji={handleInsertEmoji}
                         iconTint={colors.text}
                         selectedIconTint={colors.primary}
                         style={styles.toolbar}
@@ -554,6 +588,49 @@ const AddEditDiaryScreen = () => {
                     </TouchableOpacity>
                 </View>
 
+                <Modal
+                    animationType="slide"
+                    transparent
+                    visible={isEmojiPickerVisible}
+                    onRequestClose={handleCloseEmojiPicker}
+                >
+                    <TouchableWithoutFeedback onPress={handleCloseEmojiPicker}>
+                        <View style={styles.emojiOverlay}>
+                            <TouchableWithoutFeedback onPress={() => {}}>
+                                <View style={[styles.emojiPicker, { backgroundColor: colors.card }]}>
+                                    <View style={styles.emojiHeader}>
+                                        <Text style={[styles.emojiTitle, { color: colors.text }]}>
+                                            Choose an emoji
+                                        </Text>
+                                        <TouchableOpacity
+                                            onPress={handleCloseEmojiPicker}
+                                            style={styles.emojiCloseButton}
+                                        >
+                                            <Text style={[styles.emojiCloseText, { color: colors.primary }]}>
+                                                Close
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <ScrollView
+                                        contentContainerStyle={styles.emojiGrid}
+                                        showsVerticalScrollIndicator={false}
+                                    >
+                                        {EMOJI_OPTIONS.map((emoji) => (
+                                            <TouchableOpacity
+                                                key={emoji}
+                                                style={styles.emojiButton}
+                                                onPress={() => handleSelectEmoji(emoji)}
+                                                activeOpacity={0.8}
+                                            >
+                                                <Text style={styles.emojiText}>{emoji}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            </TouchableWithoutFeedback>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </Modal>
             </KeyboardAvoidingView>
         </View>
     );
@@ -629,7 +706,56 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
         fontWeight: '600',
-    }
+    },
+    emojiOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        justifyContent: 'flex-end',
+    },
+    emojiPicker: {
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingHorizontal: 20,
+        paddingTop: 18,
+        paddingBottom: 32,
+        maxHeight: '65%',
+    },
+    emojiHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 12,
+    },
+    emojiTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+    },
+    emojiCloseButton: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    emojiCloseText: {
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    emojiGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        paddingBottom: 12,
+    },
+    emojiButton: {
+        width: '18%',
+        aspectRatio: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(120,120,120,0.12)',
+    },
+    emojiText: {
+        fontSize: 28,
+    },
 });
 
 export default AddEditDiaryScreen;
