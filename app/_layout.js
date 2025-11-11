@@ -1,4 +1,5 @@
 // app/_layout.js
+import { Buffer } from 'buffer';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -9,6 +10,10 @@ import { DiaryContext, DiaryProvider } from '../context/DiaryContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { ThemeContext, ThemeProvider } from '../context/ThemeContext';
 import UnlockScreen from '../screens/UnlockScreen';
+
+if (typeof global.Buffer === 'undefined') {
+    global.Buffer = Buffer;
+}
 
 function RootLayoutNav() {
     const router = useRouter();

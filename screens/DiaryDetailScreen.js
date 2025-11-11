@@ -25,8 +25,8 @@ const DiaryDetailScreen = () => {
         );
     }
 
-    // Get diary content (prefer HTML format, fallback to plain text if not available)
-    const diaryContent = diary.contentHTML || diary.content || '';
+    // Get diary content: prioritize content, fallback to contentHTML for backward compatibility
+    const diaryContent = diary.content || diary.contentHTML || '';
 
     // Custom style configuration
     const renderHTMLConfig = useMemo(() => ({
@@ -136,7 +136,7 @@ const DiaryDetailScreen = () => {
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
             {/* --- Diary content --- */}
-            {diary.content || diary.contentHTML ? (
+            {(diary.content || diary.contentHTML) ? (
                 // Use RenderHTML to render (supports images and rich text formatting)
                 <View style={styles.htmlContainer}>
                     <RenderHTML

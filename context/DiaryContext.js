@@ -140,7 +140,7 @@ export const DiaryProvider = ({ children }) => {
                 console.log('Starting data cleanup: removing diaries with Base64 images...');
                 
                 const cleanedDiaries = parsed.filter((diary) => {
-                  // Check diary.content field
+                  // Check diary.content field: prioritize content, fallback to contentHTML for backward compatibility
                   const content = diary.content || diary.contentHTML || '';
                   
                   // If content length is less than 1000 characters, keep (likely plain text)

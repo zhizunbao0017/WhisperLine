@@ -68,7 +68,7 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                     style={[styles.cardContent, { color: colors.text }]}
                     numberOfLines={2}
                 >
-                    {extractTextFromHTML(item.content || item.contentHTML || '')}
+                    {extractTextFromHTML(item.content || item.contentHTML || '')} {/* Prioritize content, fallback to contentHTML for backward compatibility */}
                 </Text>
 
                 {/* Card Footer */}

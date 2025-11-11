@@ -43,16 +43,12 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
                                     { opacity: isSelected ? 1 : 0.35 } // Reduce opacity when not selected for contrast
                                 ]}
                             >
-                                {/* Background highlight circle when selected - maintains high brightness */}
-                                {isSelected && (
-                                    <View style={[styles.selectedBackground, { backgroundColor: colors.primary + '45' }]} />
-                                )}
                                 <View 
                                     style={[
                                         styles.imageContainer,
                                         { 
-                                            // Use brighter theme color background when selected, maintains high brightness
-                                            backgroundColor: isSelected ? colors.primary + '40' : colors.card,
+                                            // Keep card background, no blue background glow
+                                            backgroundColor: colors.card,
                                         },
                                         // --- 4. Add prominent border and highlight effect for selected icon, maintains ---
                                         isSelected && {
@@ -119,15 +115,6 @@ const styles = StyleSheet.create({
     },
     moodWrapperSelected: {
         transform: [{ scale: 1.1 }], // Slightly larger when selected, maintains
-    },
-    selectedBackground: {
-        position: 'absolute',
-        width: 72,
-        height: 72,
-        borderRadius: 36,
-        top: -6,
-        left: -7,
-        zIndex: -1, // Behind icon
     },
     imageContainer: {
         width: 56, // Slightly smaller to fit six in one row

@@ -19,21 +19,64 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- 核心依赖 ---
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+import { Ionicons } from '@expo/vector-icons';
 
 // --- 组件和 Context ---
 import MoodSelector from '../components/MoodSelector';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { getCurrentWeather } from '../services/weatherService';
+import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 
 
 // Helper function to extract plain text from HTML
 const extractTextFromHTML = (html) => {
     if (!html) return '';
     return html.replace(/<[^>]*>?/gm, '');
+};
+
+const decodeHtmlAttribute = (value) => {
+    if (!value) return value;
+    return value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+};
+
+const remapHtmlImageSourcesToServer = async (html) => {
+    if (!html) return html;
+
+    const imgTagRegex = /<img[^>]*>/gi;
+    const tags = html.match(imgTagRegex);
+
+    if (!tags || tags.length === 0) {
+        return html;
+    }
+
+    const replacements = await Promise.all(
+        tags.map(async (tag) => {
+            const dataMatch = tag.match(/data-file-uri="([^"]*)"/i);
+            const srcMatch = tag.match(/src="([^"]*)"/i);
+            const fileUri = decodeHtmlAttribute(dataMatch?.[1]) || decodeHtmlAttribute(srcMatch?.[1]);
+
+            if (!fileUri || !fileUri.startsWith('file://')) {
+                return [tag, tag];
+            }
+
+            const publicUrl = await getPublicUrlForFileUri(fileUri);
+            const updatedTag = tag.replace(/src="([^"]*)"/i, `src="${publicUrl}"`);
+            return [tag, updatedTag];
+        })
+    );
+
+    let updatedHtml = html;
+    replacements.forEach(([original, replacement]) => {
+        updatedHtml = updatedHtml.replace(original, replacement);
+    });
+
+    return updatedHtml;
 };
 
 // Companion avatar component
@@ -86,151 +129,206 @@ const AddEditDiaryScreen = () => {
     // --- State ---
     const [isEditMode, setIsEditMode] = useState(!!existingDiary);
     const [title, setTitle] = useState(existingDiary?.title || '');
-    
+ 
     // Process initial content: convert local file URI to WebView-accessible format
     const processContentForEditor = (html) => {
         if (!html) return '';
-        // Convert file:// URI to WebView-accessible format
-        // WebView requires special handling to access local files
-        return html.replace(/src="file:\/\/([^"]+)"/g, (match, path) => {
-            // Keep original URI but ensure correct format
-            return `src="file://${path}"`;
+
+        return html.replace(/<img([^>]*?)>/gi, (match) => {
+            const srcMatch = match.match(/src="([^"]*)"/i);
+            const dataMatch = match.match(/data-file-uri="([^"]*)"/i);
+
+            if (!srcMatch) {
+                return match;
+            }
+
+            const originalSrc = srcMatch[1];
+            const normalizedSrc = originalSrc.startsWith('file://')
+                ? originalSrc
+                : `file://${originalSrc.replace(/^file:\/\//, '')}`;
+
+            let updated = match.replace(srcMatch[0], `src="${normalizedSrc}"`);
+
+            if (!dataMatch) {
+                const escaped = normalizedSrc.replace(/"/g, '&quot;');
+                updated = updated.replace('<img', `<img data-file-uri="${escaped}"`);
+            }
+
+            return updated;
         });
     };
     
-    const [contentHtml, setContentHtml] = useState(
-        existingDiary ? processContentForEditor(existingDiary.content || existingDiary.contentHTML || '') : ''
-    );
+    // Load content: prioritize content, fallback to contentHTML for backward compatibility
+    const initialContent = existingDiary 
+        ? (existingDiary.content || existingDiary.contentHTML || '')
+        : '';
+
+    const processedInitialContent = useMemo(() => (
+        initialContent ? processContentForEditor(initialContent) : ''
+    ), [initialContent]);
+
+    const [contentHtml, setContentHtml] = useState(processedInitialContent);
+    const initialContentRef = useRef(processedInitialContent);
+    const hasRemappedInitialHtml = useRef(false);
     const [selectedMood, setSelectedMood] = useState(existingDiary?.mood || null);
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
-    
-    // Fix image paths after editor loads to ensure local files can be displayed
+ 
     useEffect(() => {
-        if (editorRef.current && contentHtml && isEditMode) {
-            // Delay execution to ensure editor is fully loaded
-            const timer = setTimeout(() => {
-                try {
-                    // Inject JavaScript to fix image paths
-                    const script = `
-                        (function() {
-                            function fixImages() {
-                                const images = document.querySelectorAll('img');
-                                images.forEach(function(img) {
-                                    const src = img.getAttribute('src');
-                                    if (src && (src.startsWith('file://') || src.startsWith('/'))) {
-                                        // Reset src to ensure image loads
-                                        const newSrc = src;
-                                        if (img.src !== newSrc) {
-                                            img.src = newSrc;
-                                        }
-                                        // Set styles
-                                        img.style.maxWidth = '100%';
-                                        img.style.height = 'auto';
-                                        img.style.margin = '10px 0';
-                                        img.style.display = 'block';
-                                        img.style.borderRadius = '8px';
-                                        // Add error handling
-                                        img.onerror = function() {
-                                            console.log('Image load error:', newSrc);
-                                        };
-                                    }
-                                });
-                            }
-                            // Execute immediately
-                            fixImages();
-                            // Listen for DOM changes
-                            if (typeof MutationObserver !== 'undefined') {
-                                const observer = new MutationObserver(fixImages);
-                                observer.observe(document.body, { 
-                                    childList: true, 
-                                    subtree: true,
-                                    attributes: true,
-                                    attributeFilter: ['src']
-                                });
-                            }
-                        })();
-                    `;
-                    if (editorRef.current && typeof editorRef.current.injectJavaScript === 'function') {
-                        editorRef.current.injectJavaScript(script);
-                    }
-                } catch (error) {
-                    console.error('Error fixing image paths:', error);
-                }
-            }, 1500); // Delay 1.5 seconds to ensure editor is fully loaded
-            
-            return () => clearTimeout(timer);
-        }
-    }, [contentHtml, isEditMode]);
+        setIsEditMode(!!existingDiary);
+        setTitle(existingDiary?.title || '');
+        setSelectedMood(existingDiary?.mood || null);
+        setWeather(existingDiary?.weather || null);
+    }, [existingDiary]);
 
-    // --- Image insertion logic (optimized: performance-first, supports large images) ---
+    useEffect(() => {
+        setContentHtml(processedInitialContent);
+        initialContentRef.current = processedInitialContent;
+        hasRemappedInitialHtml.current = false;
+    }, [processedInitialContent]);
+
+    useEffect(() => {
+        let isMounted = true;
+        (async () => {
+            await ensureStaticServer();
+            if (!isMounted) return;
+
+            if (!hasRemappedInitialHtml.current && initialContentRef.current) {
+                const remapped = await remapHtmlImageSourcesToServer(initialContentRef.current);
+                if (!isMounted) return;
+                hasRemappedInitialHtml.current = true;
+                setContentHtml((prev) => {
+                    if (!prev) return remapped;
+                    if (prev === initialContentRef.current) {
+                        return remapped;
+                    }
+                    return prev;
+                });
+            }
+        })();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [processedInitialContent]);
+ 
+    // --- Image insertion logic (persistent file URI + ID passing) ---
     const handleInsertImage = async () => {
         try {
-            // 1. Request permission
-            const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (permissionResult.granted === false) {
-                Alert.alert("Permission Required", "You need to allow access to your photos to add images.");
+            await ensureStaticServer();
+
+            // 1. Request permission to access photos
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert('Permission Required', 'Photo access is needed to insert images.');
                 return;
             }
 
-            // 2. Open image library, don't get Base64 (optimize performance)
+            // 2. Open the picker (no Base64 for performance)
             const pickerResult = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: 'images',
-                quality: 0.8, // Balance quality and file size
-                allowsEditing: false, // Disable editing for speed
-                base64: false, // Don't get Base64, use file system directly
-                selectionLimit: 1,
-                exif: false, // Don't read EXIF data for speed
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+                quality: 1,
+                base64: false,
+                allowsMultipleSelection: true,
+                selectionLimit: 0,
+                exif: false,
             });
 
-            // 3. Check if user canceled
-            if (pickerResult.canceled || !pickerResult.assets || pickerResult.assets.length === 0) {
-                return; // User canceled, exit silently
-            }
+            const assets = pickerResult.assets || [];
 
-            // 4. Safely get image data
-            const asset = pickerResult.assets[0];
-            if (!asset || !asset.uri) {
+            if (pickerResult.canceled || !assets.length) {
                 return;
             }
 
-            const sourceUri = asset.uri;
-
-            // 5. Save image to permanent directory (using file system, not Base64)
-            // 5.1. Ensure images directory exists
-            const imagesDirectory = new Directory(Paths.document, 'images');
-            if (!imagesDirectory.exists) {
-                imagesDirectory.create({ intermediates: true });
+            const imagesDir = new Directory(Paths.document, 'images');
+            if (!imagesDir.exists) {
+                await imagesDir.create({ intermediates: true });
             }
 
-            // 5.2. Generate unique filename
-            const timestamp = Date.now();
-            const random = Math.random().toString(36).substring(2, 9);
-            const fileExtension = sourceUri.split('.').pop()?.split('?')[0] || 'jpg';
-            const fileName = `image_${timestamp}_${random}.${fileExtension}`;
-            
-            // 5.3. Copy image to permanent directory
-            const destinationFile = new File(imagesDirectory, fileName);
-            const sourceFile = new File(sourceUri);
-            sourceFile.copy(destinationFile);
-            
-            // 5.4. Get permanent file URI (for HTML reference)
-            const permanentUri = destinationFile.uri;
-            
-            // 6. Insert image into editor using file URI (instead of Base64 data URI)
-            if (editorRef.current) {
-                // Use file:// protocol or direct file path
-                // React Native WebView and react-native-render-html can both handle local file URIs
-                const imgHtml = `<img src="${permanentUri}" style="max-width: 100%; height: auto; margin: 10px 0; display: block; border-radius: 8px;" />`;
-                editorRef.current.insertHTML(imgHtml);
-            }
+            for (const asset of assets) {
+                const sourceUri = asset?.uri;
+                if (!sourceUri) {
+                    continue;
+                }
 
+                let workingUri = sourceUri;
+                let extension = (asset?.fileName || sourceUri).split('.').pop()?.split('?')[0] || 'jpg';
+
+                if (extension.toLowerCase() === 'heic' || extension.toLowerCase() === 'heif') {
+                    try {
+                        console.log('handleInsertImage: converting HEIC/HEIF to JPEG');
+                        const manipulated = await ImageManipulator.manipulateAsync(
+                            sourceUri,
+                            [],
+                            { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+                        );
+                        workingUri = manipulated.uri;
+                        extension = 'jpg';
+                    } catch (conversionError) {
+                        console.warn('handleInsertImage: HEIC conversion failed, attempting copy with original file', conversionError);
+                        extension = 'jpg';
+                    }
+                }
+
+                const sourceFile = new File(workingUri);
+                if (!sourceFile.exists) {
+                    continue;
+                }
+
+                const timeStamp = Date.now();
+                const random = Math.random().toString(36).slice(2, 8);
+
+                const fileName = `image_${timeStamp}_${random}.${extension}`;
+                const destinationFile = new File(imagesDir, fileName);
+                await sourceFile.copy(destinationFile);
+
+                let finalUri = destinationFile.uri;
+                if (Platform.OS === 'android') {
+                    try {
+                        finalUri = await FileSystem.makeContentUriAsync(destinationFile.uri);
+                    } catch (err) {
+                        finalUri = destinationFile.uri.startsWith('file://')
+                            ? destinationFile.uri
+                            : `file://${destinationFile.uri}`;
+                    }
+                } else {
+                    const clean = destinationFile.uri.replace(/^file:\/\//, '');
+                    finalUri = `file://${clean}`;
+                }
+
+                console.log('handleInsertImage: finalUri ->', finalUri, 'type:', typeof finalUri);
+
+                if (editorRef.current) {
+                    const publicUri = await getPublicUrlForFileUri(destinationFile.uri);
+                    const style = 'max-width:100%; height:auto; display:block; margin:12px 0; border-radius:8px;';
+                    editorRef.current.insertImage(publicUri, style);
+
+                    const fileAttrValue = JSON.stringify(finalUri);
+                    editorRef.current.commandDOM(`
+                        (function() {
+                            const images = document.querySelectorAll('img');
+                            const target = images[images.length - 1];
+                            if (!target) { return; }
+                            target.setAttribute('data-file-uri', ${fileAttrValue});
+                            target.style.maxWidth = '100%';
+                            target.style.height = 'auto';
+                            target.style.display = 'block';
+                            target.style.margin = '12px 0';
+                            target.style.borderRadius = '8px';
+                        })();
+                    `);
+                }
+            }
         } catch (error) {
-            console.error("Error picking image:", error);
-            Alert.alert("Error", `Failed to pick image: ${error.message || 'Unknown error'}`);
+            console.error('handleInsertImage error:', error);
+            Alert.alert('Error', error?.message || 'Failed to insert image. Please try again.');
         }
     };
 
+    const handleInsertEmoji = () => {
+        editorRef.current?.insertText('😊');
+    };
 
     // --- Save logic ---
     const handleSave = async () => {
@@ -242,9 +340,37 @@ const AddEditDiaryScreen = () => {
                 return;
             }
 
+            // Save content directly - already using file URIs (no Base64 conversion needed)
+            // This is the production-ready, scalable approach
+            let contentToSave = contentHtml;
+
+            // Clean up any temporary attributes or fix any URI issues before saving
+            // Ensure all file URIs are properly formatted
+            contentToSave = contentToSave.replace(/<img([^>]*?)>/gi, (match) => {
+                const dataMatch = match.match(/data-file-uri="([^"]*)"/i);
+                if (!dataMatch) {
+                    return match;
+                }
+
+                const fileUri = dataMatch[1].replace(/&quot;/g, '"');
+                const sanitized = fileUri.replace(/"/g, '&quot;');
+
+                let updated = match.replace(/data-file-uri="[^"]*"/i, '');
+
+                if (updated.match(/src="[^"]*"/i)) {
+                    updated = updated.replace(/src="[^"]*"/i, `src="${sanitized}"`);
+                } else {
+                    updated = updated.replace('<img', `<img src="${sanitized}"`);
+                }
+
+                return updated;
+            });
+            
+            console.log('Saving content with file URIs (production-ready format)');
+
             const diaryData = {
                 title,
-                content: contentHtml,
+                content: contentToSave, // Use processed content with file URIs
                 mood: selectedMood,
                 weather,
             };
@@ -337,22 +463,37 @@ const AddEditDiaryScreen = () => {
                                 }
                             `,
                         }}
-                        // Inject JavaScript to fix local file image display
+                        // Inject JavaScript to fix local file image display in WebView
                         injectedJavaScript={`
                             (function() {
                                 // Fix images after page loads
                                 function fixImages() {
                                     const images = document.querySelectorAll('img');
-                                    images.forEach(function(img) {
+                                    console.log('WebView: Found', images.length, 'images to fix');
+                                    images.forEach(function(img, index) {
                                         const src = img.getAttribute('src');
-                                        if (src && (src.startsWith('file://') || src.startsWith('/'))) {
+                                        const dataFileUri = img.getAttribute('data-file-uri');
+                                        console.log('WebView: Image', index, 'src:', src, 'data-file-uri:', dataFileUri);
+                                        if (src && (src.startsWith('file://') || src.startsWith('/') || src.startsWith('content://'))) {
                                             // Ensure image path is correct
                                             img.src = src;
                                             img.style.maxWidth = '100%';
+                                            img.style.width = '100%';
                                             img.style.height = 'auto';
+                                            img.style.minHeight = '200px';
                                             img.style.margin = '10px 0';
                                             img.style.display = 'block';
                                             img.style.borderRadius = '8px';
+                                            img.style.backgroundColor = '#f5f5f5';
+                                            
+                                            // Add error and load handlers for debugging
+                                            img.onerror = function() {
+                                                console.error('WebView: Image load error:', this.src);
+                                            };
+                                            img.onload = function() {
+                                                console.log('WebView: Image loaded successfully:', this.src);
+                                                console.log('WebView: Image dimensions:', this.naturalWidth, 'x', this.naturalHeight);
+                                            };
                                         }
                                     });
                                 }
@@ -380,15 +521,22 @@ const AddEditDiaryScreen = () => {
                     }
                 ]}>
                     <RichToolbar
-                        getEditor={() => editorRef.current} // Correct connection method
+                        getEditor={() => editorRef.current}
                         actions={[
                             actions.setBold,
                             actions.setItalic,
                             actions.setUnderline,
                             actions.insertBulletsList,
-                            actions.insertImage, // Keep to show image button icon, but use custom onPressAddImage handler
+                            actions.insertImage,
+                            'insertEmoji',
                         ]}
-                        onPressAddImage={handleInsertImage} // Custom image handler function, overrides default behavior
+                        iconMap={{
+                            insertEmoji: ({ tintColor }) => (
+                                <Ionicons name="happy-outline" size={24} color={tintColor || colors.text} />
+                            ),
+                        }}
+                        onPressAddImage={handleInsertImage}
+                        onInsertEmoji={handleInsertEmoji}
                         iconTint={colors.text}
                         selectedIconTint={colors.primary}
                         style={styles.toolbar}
