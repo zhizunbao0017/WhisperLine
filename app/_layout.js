@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useContext } from 'react';
-import { ActivityIndicator, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, LogBox, TouchableOpacity, View } from 'react-native';
 import { AuthContext, AuthProvider } from '../context/AuthContext';
 import { DiaryContext, DiaryProvider } from '../context/DiaryContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
@@ -14,6 +14,8 @@ import UnlockScreen from '../screens/UnlockScreen';
 if (typeof global.Buffer === 'undefined') {
     global.Buffer = Buffer;
 }
+
+LogBox.ignoreAllLogs(true);
 
 function RootLayoutNav() {
     const router = useRouter();
@@ -66,7 +68,7 @@ function RootLayoutNav() {
                     }}
                 />
                 
-                <Stack.Screen name="add-edit-diary" options={{ title: 'New Entry', presentation: 'modal' }} />
+                <Stack.Screen name="add-edit-diary" options={{ title: 'New Entry' }} />
                 <Stack.Screen name="privacy-policy" options={{ title: 'Privacy Policy', presentation: 'modal' }} />
                 <Stack.Screen name="user-guide" options={{ title: 'User Guide', presentation: 'modal' }} />
                 <Stack.Screen name="diary-detail" options={{ title: 'Diary Detail', presentation: 'modal' }} />

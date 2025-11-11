@@ -2,6 +2,7 @@
 import { useRouter } from 'expo-router';
 import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, Animated, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
@@ -74,24 +75,28 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                 {/* Card Footer */}
                 <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
                     <View style={styles.footerLeft}>
-                        {item.weather && (
-                            <>
-                                <Image
-                                    source={{
-                                        uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png`,
-                                    }}
-                                    style={styles.weatherIcon}
-                                />
-                                <Text
-                                    style={[
-                                        styles.footerText,
-                                        { color: colors.text, marginLeft: 5 },
-                                    ]}
-                                >
-                                    {item.weather.city}
-                                </Text>
-                            </>
-                        )}
+                        {item.weather ? (
+                            <View style={[styles.weatherBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                                {item.weather.icon ? (
+                                    <Image
+                                        source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
+                                        style={styles.weatherIcon}
+                                    />
+                                ) : (
+                                    <Ionicons name="cloud-outline" size={20} color={colors.primary} style={{ marginRight: 6 }} />
+                                )}
+                                <View>
+                                    <Text style={[styles.weatherText, { color: colors.text }]}>
+                                        {item.weather.city || '—'}
+                                    </Text>
+                                    <Text style={[styles.weatherSubText, { color: colors.text }]}>
+                                        {typeof item.weather.temperature === 'number'
+                                            ? `${item.weather.temperature}°C`
+                                            : (item.weather.description || '').toString()}
+                                    </Text>
+                                </View>
+                            </View>
+                        ) : null}
                     </View>
                     <Text style={[styles.footerText, { color: colors.text }]}>
                         {new Date(item.createdAt).toLocaleDateString()}
@@ -203,11 +208,23 @@ const styles = StyleSheet.create({
     moodImage: { width: 32, height: 32, marginRight: 12 }, // New style for mood image
     moodEmoji: { fontSize: 24, marginRight: 10 },
     cardTitle: { fontSize: 18, fontWeight: 'bold', flex: 1 },
-    weatherIcon: { width: 25, height: 25 }, // Weather icon slightly smaller
     cardContent: { fontSize: 14, marginBottom: 15, color: '#666' },
     cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 10 },
     footerLeft: { flexDirection: 'row', alignItems: 'center' },
     footerText: { fontSize: 12 },
+    weatherBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12,
+        marginRight: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: '#d5d5d5',
+    },
+    weatherIcon: { width: 28, height: 28, marginRight: 6 },
+    weatherText: { fontSize: 12, fontWeight: '600' },
+    weatherSubText: { fontSize: 11, opacity: 0.7 },
 });
 // --- End modification ---
 

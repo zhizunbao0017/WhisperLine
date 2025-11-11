@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import LottieView from 'lottie-react-native';
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -89,6 +90,16 @@ const EMOJI_OPTIONS = [
     '😽','🙀','😿','😾','🐶','🐱','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🦊','🐦','🦄','🐝','🌸','🌻','🌈','⭐','⚡',
 ];
 
+const normalizeWeather = (value) => {
+    if (!value) return null;
+    return {
+        city: value.city ?? null,
+        temperature: value.temperature ?? null,
+        description: value.description ?? null,
+        icon: value.icon ?? null,
+    };
+};
+
 // Companion avatar component
 const CompanionAvatarView = ({ size = 80 }) => {
     const { currentAvatar } = useContext(ThemeContext);
@@ -124,7 +135,13 @@ const CompanionAvatarView = ({ size = 80 }) => {
 
 const AddEditDiaryScreen = () => {
     const router = useRouter();
+    const navigation = useNavigation();
     const params = useLocalSearchParams();
+    const entryDateParam = useMemo(() => {
+        const raw = params?.date;
+        if (!raw) return undefined;
+        return Array.isArray(raw) ? raw[0] : raw;
+    }, [params]);
     const existingDiary = useMemo(() => {
         return params.diary ? JSON.parse(params.diary) : null;
     }, [params.diary]);
@@ -135,6 +152,7 @@ const AddEditDiaryScreen = () => {
     const { width } = useWindowDimensions();
     const insets = useSafeAreaInsets(); // Get safe area insets
     const editorRef = useRef(null); // Create ref for rich text editor
+    const scrollViewRef = useRef(null);
 
     // --- State ---
     const [isEditMode, setIsEditMode] = useState(!!existingDiary);
@@ -184,6 +202,32 @@ const AddEditDiaryScreen = () => {
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
     const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
+
+    const baselineSnapshot = useMemo(() => JSON.stringify({
+        title: (existingDiary?.title || '').trim(),
+        content: processedInitialContent || '',
+        mood: existingDiary?.mood || null,
+        weather: normalizeWeather(existingDiary?.weather),
+    }), [existingDiary, processedInitialContent]);
+
+    const [initialSnapshot, setInitialSnapshot] = useState(baselineSnapshot);
+
+    useEffect(() => {
+        setInitialSnapshot(baselineSnapshot);
+    }, [baselineSnapshot]);
+
+    const currentSnapshot = useMemo(() => JSON.stringify({
+        title: title.trim(),
+        content: contentHtml || '',
+        mood: selectedMood || null,
+        weather: normalizeWeather(weather),
+    }), [title, contentHtml, selectedMood, weather]);
+
+    const hasUnsavedChanges = currentSnapshot !== initialSnapshot;
+    const allowNavigateRef = useRef(false);
+    const plainTextContent = useMemo(() => extractTextFromHTML(contentHtml), [contentHtml]);
+    const canSubmit = Boolean(selectedMood && title.trim() && plainTextContent.trim());
+    const saveEnabled = canSubmit && hasUnsavedChanges;
  
     useEffect(() => {
         setIsEditMode(!!existingDiary);
@@ -318,6 +362,7 @@ const AddEditDiaryScreen = () => {
                     const fileAttrValue = JSON.stringify(finalUri);
                     editorRef.current.commandDOM(`
                         (function() {
+                            const register = window.whisperDiary && window.whisperDiary.bindImage;
                             const images = document.querySelectorAll('img');
                             const target = images[images.length - 1];
                             if (!target) { return; }
@@ -327,6 +372,7 @@ const AddEditDiaryScreen = () => {
                             target.style.display = 'block';
                             target.style.margin = '12px 0';
                             target.style.borderRadius = '8px';
+                            if (register) { register(target); }
                             const scrollToBottom = () => {
                                 const editorEl = document.querySelector('.pell-content');
                                 if (editorEl) {
@@ -336,8 +382,34 @@ const AddEditDiaryScreen = () => {
                             };
                             setTimeout(scrollToBottom, 50);
                             setTimeout(scrollToBottom, 200);
+                            setTimeout(scrollToBottom, 400);
                         })();
                     `);
+                    const ensureEditorFocus = () => {
+                        if (editorRef.current?.focusContentEditor) {
+                            editorRef.current.focusContentEditor();
+                        }
+                    };
+                    ensureEditorFocus();
+                    const t1 = setTimeout(ensureEditorFocus, 180);
+                    const t2 = setTimeout(() => {
+                        ensureEditorFocus();
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                    }, 360);
+                    const t3 = setTimeout(() => {
+                        ensureEditorFocus();
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                    }, 600);
+                    const t4 = setTimeout(() => {
+                        ensureEditorFocus();
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                    }, 900);
+                    setTimeout(() => {
+                        clearTimeout(t1);
+                        clearTimeout(t2);
+                        clearTimeout(t3);
+                        clearTimeout(t4);
+                    }, 1200);
                 }
             }
         } catch (error) {
@@ -364,12 +436,70 @@ const AddEditDiaryScreen = () => {
         setEmojiPickerVisible(false);
     };
 
-    // --- Save logic ---
-    const handleSave = async () => {
-        try {
-            const plainTextContent = extractTextFromHTML(contentHtml);
+    const removeImageByIdentifier = useCallback((payload) => {
+        if (!payload) {
+            return;
+        }
+        const fileUri = typeof payload === 'object' ? payload.fileUri : payload;
+        const srcUri = typeof payload === 'object' ? payload.src : '';
+        const identifierFile = JSON.stringify(fileUri || '');
+        const identifierSrc = JSON.stringify(srcUri || '');
+        editorRef.current?.commandDOM(`
+            (function() {
+                const targetFile = ${identifierFile};
+                const targetSrc = ${identifierSrc};
+                const images = document.querySelectorAll('img');
+                for (let i = 0; i < images.length; i += 1) {
+                    const img = images[i];
+                    const dataUri = img.getAttribute('data-file-uri') || '';
+                    const srcAttr = img.getAttribute('src') || '';
+                    if ((targetFile && dataUri === targetFile) || (targetSrc && srcAttr === targetSrc)) {
+                        img.remove();
+                        break;
+                    }
+                }
+            })();
+        `);
+        setTimeout(() => {
+            if (editorRef.current?.focusContentEditor) {
+                editorRef.current.focusContentEditor();
+            }
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+    }, []);
 
-            if (!title.trim() || !plainTextContent.trim() || !selectedMood) {
+    const handleEditorMessage = useCallback((event) => {
+        try {
+            const raw = event?.nativeEvent?.data;
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (parsed?.type === 'image-tap') {
+                const payload = {
+                    fileUri: parsed.fileUri || '',
+                    src: parsed.src || '',
+                };
+                Alert.alert(
+                    'Remove image?',
+                    'This will delete the image from your entry.',
+                    [
+                        { text: 'Keep', style: 'cancel' },
+                        {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: () => removeImageByIdentifier(payload),
+                        },
+                    ]
+                );
+            }
+        } catch (err) {
+            console.warn('handleEditorMessage parse error', err);
+        }
+    }, [removeImageByIdentifier]);
+
+    // --- Save logic ---
+    const handleSave = useCallback(async () => {
+        try {
+            if (!canSubmit) {
                 Alert.alert('Incomplete Entry', 'Please select a mood and fill in the title and content.');
                 return;
             }
@@ -410,19 +540,33 @@ const AddEditDiaryScreen = () => {
             };
 
             if (isEditMode) {
-                updateDiary({ ...diaryData, id: existingDiary.id, createdAt: existingDiary.createdAt });
+                await updateDiary({ ...diaryData, id: existingDiary.id, createdAt: existingDiary.createdAt });
             } else {
-                const dateParam = params?.date;
-                const createdAtOverride = dateParam ? new Date(dateParam).toISOString() : undefined;
-                addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
+                const createdAtOverride = entryDateParam ? new Date(entryDateParam).toISOString() : undefined;
+                await addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
             }
             
+            setInitialSnapshot(currentSnapshot);
+            allowNavigateRef.current = true;
             router.back(); // Return directly after saving
         } catch (error) {
             console.error('Error saving diary:', error);
             Alert.alert('Error', `Failed to save diary: ${error.message || 'Unknown error'}`);
         }
-    };
+    }, [
+        addDiary,
+        contentHtml,
+        currentSnapshot,
+        canSubmit,
+        entryDateParam,
+        existingDiary,
+        isEditMode,
+        router,
+        selectedMood,
+        title,
+        updateDiary,
+        weather,
+    ]);
 
     // --- Weather logic ---
     const handleGetWeather = async () => {
@@ -431,6 +575,58 @@ const AddEditDiaryScreen = () => {
         if (weatherData) setWeather(weatherData);
         setIsFetchingWeather(false);
     };
+
+    useLayoutEffect(() => {
+        navigation.setOptions({
+            headerBackTitleVisible: false,
+            headerTitle: isEditMode ? 'Edit Entry' : 'New Entry',
+            headerRight: () => (
+                <TouchableOpacity
+                    onPress={handleSave}
+                    disabled={!saveEnabled}
+                    style={styles.headerSaveButton}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                    <Text style={[styles.headerSaveText, { color: colors.primary, opacity: saveEnabled ? 1 : 0.4 }]}>
+                        {isEditMode ? 'Save' : 'Done'}
+                    </Text>
+                </TouchableOpacity>
+            ),
+        });
+    }, [navigation, isEditMode, handleSave, colors.primary, saveEnabled]);
+
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+            if (allowNavigateRef.current) {
+                allowNavigateRef.current = false;
+                return;
+            }
+
+            if (!hasUnsavedChanges) {
+                return;
+            }
+
+            e.preventDefault();
+
+            Alert.alert(
+                'Discard changes?',
+                'You have unsaved edits. Are you sure you want to leave this entry?',
+                [
+                    { text: 'Keep Writing', style: 'cancel' },
+                    {
+                        text: 'Discard',
+                        style: 'destructive',
+                        onPress: () => {
+                            allowNavigateRef.current = true;
+                            navigation.dispatch(e.data.action);
+                        },
+                    },
+                ]
+            );
+        });
+
+        return unsubscribe;
+    }, [navigation, hasUnsavedChanges]);
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -441,6 +637,7 @@ const AddEditDiaryScreen = () => {
             >
                 {/* --- 1. Scrollable content area --- */}
                 <ScrollView 
+                    ref={scrollViewRef}
                     style={styles.scrollContainer} 
                     contentContainerStyle={styles.scrollContent} 
                     keyboardShouldPersistTaps="handled"
@@ -473,6 +670,7 @@ const AddEditDiaryScreen = () => {
                         ref={editorRef}
                         initialContentHTML={contentHtml}
                         onChange={setContentHtml}
+                        onMessage={handleEditorMessage}
                         style={[styles.editor, { borderColor: colors.border, backgroundColor: colors.card }]}
                         editorStyle={{
                             backgroundColor: colors.card,
@@ -497,19 +695,143 @@ const AddEditDiaryScreen = () => {
                                 }
                             `,
                         }}
-                        // Inject JavaScript to fix local file image display in WebView
+                        // Inject JavaScript to fix local file image display in WebView and enhance editing ergonomics
                         injectedJavaScript={`
                             (function() {
-                                // Fix images after page loads
-                                function fixImages() {
-                                    const images = document.querySelectorAll('img');
+                                var ns = window.whisperDiary = window.whisperDiary || {};
+                                var zeroWidth = /\\u200B/g;
+
+                                var isEmptyText = function(node) {
+                                    if (!node) { return false; }
+                                    if (node.nodeType !== Node.TEXT_NODE) { return false; }
+                                    return node.textContent.replace(zeroWidth, '').trim().length === 0;
+                                };
+
+                                ns.bindImage = function(img) {
+                                    if (!img || img.dataset.whisperTapBound) { return; }
+                                    img.dataset.whisperTapBound = 'true';
+                                    img.style.cursor = 'pointer';
+                                    img.addEventListener('click', function(event) {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+                                            window.ReactNativeWebView.postMessage(JSON.stringify({
+                                                type: 'image-tap',
+                                                fileUri: img.getAttribute('data-file-uri') || '',
+                                                src: img.getAttribute('src') || ''
+                                            }));
+                                        }
+                                    });
+                                };
+
+                                var findAdjacentImage = function(direction) {
+                                    var selection = window.getSelection();
+                                    if (!selection || selection.rangeCount === 0) { return null; }
+                                    var range = selection.getRangeAt(0);
+                                    if (!range.collapsed) { return null; }
+
+                                    var step = function(container, offset, dir) {
+                                        if (!container) { return null; }
+
+                                        if (container.nodeType === Node.TEXT_NODE) {
+                                            var text = container.textContent || '';
+                                            var before = text.slice(0, offset).replace(zeroWidth, '');
+                                            var after = text.slice(offset).replace(zeroWidth, '');
+                                            if ((dir === -1 && before.length > 0) || (dir === 1 && after.length > 0)) {
+                                                return null;
+                                            }
+                                            var sibling = dir === -1 ? container.previousSibling : container.nextSibling;
+                                            while (sibling && isEmptyText(sibling)) {
+                                                sibling = dir === -1 ? sibling.previousSibling : sibling.nextSibling;
+                                            }
+                                            if (sibling) {
+                                                if (sibling.nodeType === Node.ELEMENT_NODE && sibling.childNodes.length > 0 && sibling.tagName !== 'IMG') {
+                                                    return step(sibling, dir === -1 ? sibling.childNodes.length : 0, dir);
+                                                }
+                                                return sibling;
+                                            }
+                                            var parent = container.parentNode;
+                                            if (!parent) { return null; }
+                                            var index = Array.prototype.indexOf.call(parent.childNodes, container);
+                                            return step(parent, dir === -1 ? index : index + 1, dir);
+                                        }
+
+                                        if (container.nodeType === Node.ELEMENT_NODE) {
+                                            var childIndex = dir === -1 ? offset - 1 : offset;
+                                            if (childIndex >= 0 && childIndex < container.childNodes.length) {
+                                                var child = container.childNodes[childIndex];
+                                                if (child.nodeType === Node.ELEMENT_NODE && child.childNodes.length > 0 && child.tagName !== 'IMG') {
+                                                    return step(child, dir === -1 ? child.childNodes.length : 0, dir);
+                                                }
+                                                if (!isEmptyText(child)) {
+                                                    return child;
+                                                }
+                                            }
+                                            var siblingEl = dir === -1 ? container.previousSibling : container.nextSibling;
+                                            while (siblingEl && isEmptyText(siblingEl)) {
+                                                siblingEl = dir === -1 ? siblingEl.previousSibling : siblingEl.nextSibling;
+                                            }
+                                            if (siblingEl) {
+                                                if (siblingEl.nodeType === Node.ELEMENT_NODE && siblingEl.childNodes.length > 0 && siblingEl.tagName !== 'IMG') {
+                                                    return step(siblingEl, dir === -1 ? siblingEl.childNodes.length : 0, dir);
+                                                }
+                                                return siblingEl;
+                                            }
+                                            if (container.parentNode) {
+                                                var parentIndex = Array.prototype.indexOf.call(container.parentNode.childNodes, container);
+                                                return step(container.parentNode, dir === -1 ? parentIndex : parentIndex + 1, dir);
+                                            }
+                                        }
+                                        return null;
+                                    };
+
+                                    var candidate = step(range.startContainer, range.startOffset, direction);
+                                    if (candidate && candidate.nodeType === Node.ELEMENT_NODE && candidate.tagName === 'BR') {
+                                        candidate = direction === -1 ? candidate.previousSibling : candidate.nextSibling;
+                                    }
+                                    if (candidate && candidate.nodeType === Node.ELEMENT_NODE && candidate.tagName === 'IMG') {
+                                        return candidate;
+                                    }
+                                    return null;
+                                };
+
+                                ns.removeAdjacentImage = function(direction) {
+                                    var img = findAdjacentImage(direction);
+                                    if (!img) { return false; }
+                                    var parent = img.parentNode;
+                                    img.remove();
+                                    if (parent && parent.childNodes.length === 0) {
+                                        parent.appendChild(document.createTextNode('\\u200B'));
+                                    }
+                                    return true;
+                                };
+
+                                var ensureKeyBindings = function() {
+                                    var editorEl = document.querySelector('.pell-content');
+                                    if (!editorEl || editorEl.dataset.whisperKeyBound) { return; }
+                                    editorEl.dataset.whisperKeyBound = 'true';
+                                    editorEl.addEventListener('keydown', function(event) {
+                                        if (event.key === 'Backspace') {
+                                            if (ns.removeAdjacentImage(-1)) {
+                                                event.preventDefault();
+                                            }
+                                        } else if (event.key === 'Delete') {
+                                            if (ns.removeAdjacentImage(1)) {
+                                                event.preventDefault();
+                                            }
+                                        }
+                                    });
+                                };
+
+                                var fixImages = function() {
+                                    ensureKeyBindings();
+                                    var images = document.querySelectorAll('img');
                                     console.log('WebView: Found', images.length, 'images to fix');
                                     images.forEach(function(img, index) {
-                                        const src = img.getAttribute('src');
-                                        const dataFileUri = img.getAttribute('data-file-uri');
+                                        var src = img.getAttribute('src');
+                                        var dataFileUri = img.getAttribute('data-file-uri');
                                         console.log('WebView: Image', index, 'src:', src, 'data-file-uri:', dataFileUri);
                                         if (src && (src.startsWith('file://') || src.startsWith('/') || src.startsWith('content://'))) {
-                                            // Ensure image path is correct
                                             img.src = src;
                                             img.style.maxWidth = '100%';
                                             img.style.width = '100%';
@@ -519,8 +841,7 @@ const AddEditDiaryScreen = () => {
                                             img.style.display = 'block';
                                             img.style.borderRadius = '8px';
                                             img.style.backgroundColor = '#f5f5f5';
-                                            
-                                            // Add error and load handlers for debugging
+                                            ns.bindImage(img);
                                             img.onerror = function() {
                                                 console.error('WebView: Image load error:', this.src);
                                             };
@@ -530,11 +851,12 @@ const AddEditDiaryScreen = () => {
                                             };
                                         }
                                     });
-                                }
-                                // Execute immediately
+                                };
+
                                 fixImages();
-                                // Listen for content changes
-                                const observer = new MutationObserver(fixImages);
+                                var observer = new MutationObserver(function() {
+                                    fixImages();
+                                });
                                 observer.observe(document.body, { childList: true, subtree: true });
                             })();
                         `}
@@ -576,10 +898,10 @@ const AddEditDiaryScreen = () => {
                         style={styles.toolbar}
                     />
                     <TouchableOpacity 
-                        style={[styles.saveButton, { backgroundColor: colors.primary }]}
+                        style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saveEnabled ? 1 : 0.4 }]}
                         onPress={handleSave}
                         activeOpacity={0.8}
-                        disabled={false}
+                        disabled={!saveEnabled}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <Text style={styles.saveButtonText}>
@@ -704,6 +1026,14 @@ const styles = StyleSheet.create({
     },
     saveButtonText: {
         color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    headerSaveButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+    },
+    headerSaveText: {
         fontSize: 16,
         fontWeight: '600',
     },
