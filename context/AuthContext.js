@@ -30,10 +30,10 @@ export const AuthProvider = ({ children }) => {
         // If there's a value in storage, use it to update state
         if (storedPreference !== null) {
           try {
-            const isEnabled = JSON.parse(storedPreference);
-            setIsLockEnabled(isEnabled);
+          const isEnabled = JSON.parse(storedPreference);
+          setIsLockEnabled(isEnabled);
             // Update isUnlocked initial state again based on loaded preference
-            setIsUnlocked(!isEnabled);
+          setIsUnlocked(!isEnabled); 
           } catch (parseError) {
             console.error('Failed to parse lock preference:', parseError);
             // Use default value on parse failure

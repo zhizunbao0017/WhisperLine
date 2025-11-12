@@ -10,6 +10,7 @@ import { DiaryContext, DiaryProvider } from '../context/DiaryContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { ThemeContext, ThemeProvider } from '../context/ThemeContext';
 import UnlockScreen from '../screens/UnlockScreen';
+import { CompanionProvider } from '../context/CompanionContext';
 
 if (typeof global.Buffer === 'undefined') {
     global.Buffer = Buffer;
@@ -72,6 +73,8 @@ function RootLayoutNav() {
                 <Stack.Screen name="privacy-policy" options={{ title: 'Privacy Policy', presentation: 'modal' }} />
                 <Stack.Screen name="user-guide" options={{ title: 'User Guide', presentation: 'modal' }} />
                 <Stack.Screen name="diary-detail" options={{ title: 'Diary Detail', presentation: 'modal' }} />
+                <Stack.Screen name="companions" options={{ title: 'Companions' }} />
+                <Stack.Screen name="companion-timeline" options={{ title: 'Companion Timeline' }} />
             </Stack>
         </>
     );
@@ -81,11 +84,13 @@ export default function RootLayout() {
     return (
         <AuthProvider>
             <DiaryProvider>
-                <SubscriptionProvider>
-                    <ThemeProvider>
-                        <RootLayoutNav />
-                    </ThemeProvider>
-                </SubscriptionProvider>
+                <CompanionProvider>
+                    <SubscriptionProvider>
+                        <ThemeProvider>
+                            <RootLayoutNav />
+                        </ThemeProvider>
+                    </SubscriptionProvider>
+                </CompanionProvider>
             </DiaryProvider>
         </AuthProvider>
     );

@@ -78,10 +78,10 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                         {item.weather ? (
                             <View style={[styles.weatherBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
                                 {item.weather.icon ? (
-                                    <Image
+                                <Image
                                         source={{ uri: `https://openweathermap.org/img/wn/${item.weather.icon}@2x.png` }}
-                                        style={styles.weatherIcon}
-                                    />
+                                    style={styles.weatherIcon}
+                                />
                                 ) : (
                                     <Ionicons name="cloud-outline" size={20} color={colors.primary} style={{ marginRight: 6 }} />
                                 )}
@@ -93,7 +93,7 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                                         {typeof item.weather.temperature === 'number'
                                             ? `${item.weather.temperature}°C`
                                             : (item.weather.description || '').toString()}
-                                    </Text>
+                                </Text>
                                 </View>
                             </View>
                         ) : null}

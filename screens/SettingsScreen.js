@@ -241,6 +241,22 @@ const SettingsScreen = () => {
                 </TouchableOpacity>
             </View>
 
+            {/* Companion Management */}
+            <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Relationships</Text>
+                <TouchableOpacity
+                    onPress={() => router.push('/companions')}
+                    style={[styles.manageButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                    activeOpacity={0.85}
+                >
+                    <Ionicons name="people-outline" size={22} color={colors.primary} style={{ marginRight: 10 }} />
+                    <Text style={[styles.manageButtonText, { color: colors.text }]}>
+                        Manage Companions
+                    </Text>
+                    <Ionicons name="chevron-forward" size={20} color={colors.border} />
+                </TouchableOpacity>
+            </View>
+
             {/* Guides & Legal */}
             <View style={styles.sectionContainer}>
                 <TouchableOpacity onPress={() => router.push('/user-guide')} style={styles.linkButton}>
@@ -312,6 +328,16 @@ const styles = StyleSheet.create({
     proText: { fontSize: 18, fontWeight: 'bold' },
     linkButton: { paddingVertical: 10, alignItems: 'center' },
     linkText: { fontSize: 16, textDecorationLine: 'underline' },
+    manageButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 16,
+        paddingHorizontal: 18,
+        borderRadius: 14,
+        borderWidth: StyleSheet.hairlineWidth,
+    },
+    manageButtonText: { flex: 1, fontSize: 16, fontWeight: '500' },
     editIconButtonFixed: {
         // No longer needed in new design (was used for overlay edit pencil)
         display: 'none',

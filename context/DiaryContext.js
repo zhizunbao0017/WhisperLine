@@ -1,8 +1,9 @@
 // context/DiaryContext.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useEffect, useState } from 'react';
 import { InteractionManager } from 'react-native';
 import { ensureAnalysis } from '../services/moodAnalysis';
+import { createDiaryEntry, normalizeDiaryEntry } from '../models/DiaryEntry';
 
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
@@ -39,14 +40,14 @@ export const DiaryProvider = ({ children }) => {
         const today = getTodayDateString();
         if (usageJson !== null) {
           try {
-            const stored = JSON.parse(usageJson);
-            if (stored.date === today) {
-              setAIUsageCount(stored);
-            } else {
-              // New day, reset count
-              const reset = { date: today, count: 0 };
-              setAIUsageCount(reset);
-              await AsyncStorage.setItem(AI_USAGE_KEY, JSON.stringify(reset));
+          const stored = JSON.parse(usageJson);
+          if (stored.date === today) {
+            setAIUsageCount(stored);
+          } else {
+            // New day, reset count
+            const reset = { date: today, count: 0 };
+            setAIUsageCount(reset);
+            await AsyncStorage.setItem(AI_USAGE_KEY, JSON.stringify(reset));
             }
           } catch (parseError) {
             console.error('Failed to parse AI usage count:', parseError);
@@ -74,7 +75,7 @@ export const DiaryProvider = ({ children }) => {
         const freeTrialJson = await AsyncStorage.getItem(FREE_TRIAL_USED_KEY);
         if (freeTrialJson !== null) {
           try {
-            setFreeTrialUsed(JSON.parse(freeTrialJson));
+          setFreeTrialUsed(JSON.parse(freeTrialJson));
           } catch (parseError) {
             console.error('Failed to parse free trial status:', parseError);
             setFreeTrialUsed(false);
@@ -133,6 +134,9 @@ export const DiaryProvider = ({ children }) => {
           InteractionManager.runAfterInteractions(async () => {
             try {
               const parsed = JSON.parse(jsonValue);
+              const normalizedEntries = Array.isArray(parsed)
+                ? parsed.map((entry) => normalizeDiaryEntry(entry))
+                : [];
               
               // --- Data cleanup logic: remove old diaries containing Base64 images ---
               const hasBeenCleaned = await AsyncStorage.getItem(DATA_CLEANED_KEY);
@@ -140,7 +144,7 @@ export const DiaryProvider = ({ children }) => {
               if (!hasBeenCleaned) {
                 console.log('Starting data cleanup: removing diaries with Base64 images...');
                 
-                const cleanedDiaries = parsed.filter((diary) => {
+                const cleanedDiaries = normalizedEntries.filter((diary) => {
                   // Check diary.content field: prioritize content, fallback to contentHTML for backward compatibility
                   const content = diary.content || diary.contentHTML || '';
                   
@@ -166,8 +170,8 @@ export const DiaryProvider = ({ children }) => {
                 const analyzedCleaned = cleanedDiaries.map(ensureAnalysis);
 
                 // Save cleaned data
-                if (cleanedDiaries.length !== parsed.length) {
-                  const removedCount = parsed.length - cleanedDiaries.length;
+                if (cleanedDiaries.length !== normalizedEntries.length) {
+                  const removedCount = normalizedEntries.length - cleanedDiaries.length;
                   console.log(`Data cleanup complete: removed ${removedCount} diary entries with Base64 images.`);
                   
                   // Update state and storage
@@ -184,9 +188,9 @@ export const DiaryProvider = ({ children }) => {
                 }
               } else {
                 // Already cleaned, ensure analysis metadata exists for every diary
-                const analyzed = parsed.map(ensureAnalysis);
+                const analyzed = normalizedEntries.map(ensureAnalysis);
                 const analysisUpdated = analyzed.some((entry, index) => {
-                  const existing = parsed[index];
+                  const existing = normalizedEntries[index];
                   const existingVersion = existing?.analysis?.version ?? null;
                   const newVersion = analyzed[index]?.analysis?.version ?? null;
                   return existingVersion !== newVersion;
@@ -226,13 +230,43 @@ export const DiaryProvider = ({ children }) => {
     }
   };
 
+  const removeCompanionFromEntries = useCallback(
+    async (companionId) => {
+      if (!companionId) {
+        return { changed: false, diaries };
+      }
+      const stringId = String(companionId);
+      let changed = false;
+      const updatedDiaries = diaries.map((entry) => {
+        const normalized = normalizeDiaryEntry(entry);
+        const filtered = normalized.companionIDs.filter((id) => String(id) !== stringId);
+        if (filtered.length !== normalized.companionIDs.length) {
+          changed = true;
+          return {
+            ...normalized,
+            companionIDs: filtered,
+          };
+        }
+        return normalized;
+      });
+
+      if (changed) {
+        setDiaries(updatedDiaries);
+        await saveDiariesToStorage(updatedDiaries);
+      }
+
+      return { changed, diaries: updatedDiaries };
+    },
+    [diaries, saveDiariesToStorage]
+  );
+
   const addDiary = async (newDiary) => {
-    const newEntry = ensureAnalysis({ 
-      id: Date.now().toString(),
-      ...newDiary, 
-      // Respect provided createdAt (e.g., from selected calendar date); fallback to now
+    const baseEntry = createDiaryEntry({
+      ...newDiary,
       createdAt: newDiary?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
+    const newEntry = ensureAnalysis(baseEntry);
     const updatedDiaries = [newEntry, ...diaries];
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
@@ -240,7 +274,11 @@ export const DiaryProvider = ({ children }) => {
 
   // --- New function ---
   const updateDiary = async (diaryToUpdate) => {
-    const analyzedDiary = ensureAnalysis(diaryToUpdate);
+    const normalizedUpdate = normalizeDiaryEntry({
+      ...diaryToUpdate,
+      updatedAt: new Date().toISOString(),
+    });
+    const analyzedDiary = ensureAnalysis(normalizedUpdate);
     const updatedDiaries = diaries.map(diary => 
       diary.id === analyzedDiary.id ? analyzedDiary : diary
     );
@@ -269,6 +307,7 @@ export const DiaryProvider = ({ children }) => {
         setSelectedDate,
         freeTrialUsed,
         markFreeTrialAsUsed,
+        removeCompanionFromEntries,
       }}
     >
       {children}

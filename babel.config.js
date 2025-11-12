@@ -15,8 +15,8 @@ module.exports = function(api) {
         'transform-replace-expressions',
         {
           replace: {
-            'React.createClass': "require('create-react-class')"
-          }
+            'React.createClass': "require('create-react-class')",
+          },
         }
       ]
     ]

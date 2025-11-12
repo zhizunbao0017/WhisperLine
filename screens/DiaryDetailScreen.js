@@ -184,9 +184,9 @@ const DiaryDetailScreen = () => {
                 </View>
             ) : (
                 // If no content, show message
-                <Text style={[styles.content, { color: colors.text }]}>
+            <Text style={[styles.content, { color: colors.text }]}>
                     No content available.
-                </Text>
+            </Text>
             )}
         </ScrollView>
     );

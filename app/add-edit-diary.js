@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, usePreventRemove } from '@react-navigation/native';
 import LottieView from 'lottie-react-native';
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -35,6 +35,7 @@ import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { getCurrentWeather } from '../services/weatherService';
 import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
+import { CompanionContext } from '../context/CompanionContext';
 
 
 // Helper function to extract plain text from HTML
@@ -89,6 +90,27 @@ const EMOJI_OPTIONS = [
     '😵','😡','😠','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥸','😈','👻','💀','🤖','🎃','😺','😸','😹','😻','😼',
     '😽','🙀','😿','😾','🐶','🐱','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🦊','🐦','🦄','🐝','🌸','🌻','🌈','⭐','⚡',
 ];
+
+const COMPANION_COLOR_PALETTE = [
+    '#6C5CE7',
+    '#E17055',
+    '#00CEC9',
+    '#0984E3',
+    '#FF7675',
+    '#00B894',
+    '#FAB1A0',
+    '#74B9FF',
+    '#D63031',
+    '#636EFA',
+];
+
+const getCompanionColor = (name = '') => {
+    if (!name) {
+        return COMPANION_COLOR_PALETTE[0];
+    }
+    const code = Array.from(name).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return COMPANION_COLOR_PALETTE[code % COMPANION_COLOR_PALETTE.length];
+};
 
 const normalizeWeather = (value) => {
     if (!value) return null;
@@ -145,9 +167,21 @@ const AddEditDiaryScreen = () => {
     const existingDiary = useMemo(() => {
         return params.diary ? JSON.parse(params.diary) : null;
     }, [params.diary]);
+    const existingCompanionIds = useMemo(() => {
+        if (!existingDiary) {
+            return [];
+        }
+        const companions =
+            existingDiary.companionIDs ||
+            existingDiary.companionIds ||
+            existingDiary.companions ||
+            [];
+        return Array.isArray(companions) ? companions.map((id) => String(id)) : [];
+    }, [existingDiary]);
 
     // --- Hooks and Context ---
     const { addDiary, updateDiary } = useContext(DiaryContext);
+    const companionContext = useContext(CompanionContext);
     const { colors } = useContext(ThemeContext);
     const { width } = useWindowDimensions();
     const insets = useSafeAreaInsets(); // Get safe area insets
@@ -168,7 +202,7 @@ const AddEditDiaryScreen = () => {
 
             if (!srcMatch) {
                 return match;
-            }
+    }
 
             const originalSrc = srcMatch[1];
             const normalizedSrc = originalSrc.startsWith('file://')
@@ -202,39 +236,48 @@ const AddEditDiaryScreen = () => {
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
     const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
+    const [isCompanionPickerVisible, setCompanionPickerVisible] = useState(false);
+    const [emojiTarget, setEmojiTarget] = useState('content');
+    const titleInputRef = useRef(null);
+    const [titleSelection, setTitleSelection] = useState({ start: 0, end: 0 });
+    const [selectedCompanionIds, setSelectedCompanionIds] = useState(existingCompanionIds);
+    const [tempSelectedCompanionIds, setTempSelectedCompanionIds] = useState(existingCompanionIds);
 
     const baselineSnapshot = useMemo(() => JSON.stringify({
         title: (existingDiary?.title || '').trim(),
         content: processedInitialContent || '',
         mood: existingDiary?.mood || null,
         weather: normalizeWeather(existingDiary?.weather),
-    }), [existingDiary, processedInitialContent]);
+        companionIDs: existingCompanionIds,
+    }), [existingDiary, processedInitialContent, existingCompanionIds]);
 
     const [initialSnapshot, setInitialSnapshot] = useState(baselineSnapshot);
 
     useEffect(() => {
         setInitialSnapshot(baselineSnapshot);
     }, [baselineSnapshot]);
-
+    
     const currentSnapshot = useMemo(() => JSON.stringify({
         title: title.trim(),
         content: contentHtml || '',
         mood: selectedMood || null,
         weather: normalizeWeather(weather),
-    }), [title, contentHtml, selectedMood, weather]);
+        companionIDs: selectedCompanionIds,
+    }), [title, contentHtml, selectedMood, weather, selectedCompanionIds]);
 
     const hasUnsavedChanges = currentSnapshot !== initialSnapshot;
-    const allowNavigateRef = useRef(false);
+    const [preventRemove, setPreventRemove] = useState(false);
     const plainTextContent = useMemo(() => extractTextFromHTML(contentHtml), [contentHtml]);
     const canSubmit = Boolean(selectedMood && title.trim() && plainTextContent.trim());
     const saveEnabled = canSubmit && hasUnsavedChanges;
- 
+
     useEffect(() => {
         setIsEditMode(!!existingDiary);
         setTitle(existingDiary?.title || '');
         setSelectedMood(existingDiary?.mood || null);
         setWeather(existingDiary?.weather || null);
-    }, [existingDiary]);
+        setSelectedCompanionIds(existingCompanionIds);
+    }, [existingDiary, existingCompanionIds]);
 
     useEffect(() => {
         setContentHtml(processedInitialContent);
@@ -264,9 +307,9 @@ const AddEditDiaryScreen = () => {
 
         return () => {
             isMounted = false;
-        };
+    };
     }, [processedInitialContent]);
- 
+
     // --- Image insertion logic (persistent file URI + ID passing) ---
     const handleInsertImage = async () => {
         try {
@@ -424,6 +467,19 @@ const AddEditDiaryScreen = () => {
 
     const handleSelectEmoji = (emoji) => {
         setEmojiPickerVisible(false);
+        if (emojiTarget === 'title') {
+            setTitle((currentTitle) => {
+                const { start, end } = titleSelection;
+                const nextTitle = `${currentTitle.slice(0, start)}${emoji}${currentTitle.slice(end)}`;
+                const cursor = start + emoji.length;
+                requestAnimationFrame(() => {
+                    titleInputRef.current?.focus();
+                    setTitleSelection({ start: cursor, end: cursor });
+                });
+                return nextTitle;
+            });
+            return;
+        }
         requestAnimationFrame(() => {
             if (editorRef.current?.focusContentEditor) {
                 editorRef.current.focusContentEditor();
@@ -434,6 +490,7 @@ const AddEditDiaryScreen = () => {
 
     const handleCloseEmojiPicker = () => {
         setEmojiPickerVisible(false);
+        setEmojiTarget('content');
     };
 
     const removeImageByIdentifier = useCallback((payload) => {
@@ -532,11 +589,12 @@ const AddEditDiaryScreen = () => {
             
             console.log('Saving content with file URIs (production-ready format)');
 
-            const diaryData = {
-                title,
+            const diaryData = { 
+                title, 
                 content: contentToSave, // Use processed content with file URIs
-                mood: selectedMood,
+                mood: selectedMood, 
                 weather,
+                companionIDs: selectedCompanionIds,
             };
 
             if (isEditMode) {
@@ -547,7 +605,7 @@ const AddEditDiaryScreen = () => {
             }
             
             setInitialSnapshot(currentSnapshot);
-            allowNavigateRef.current = true;
+            setPreventRemove(false);
             router.back(); // Return directly after saving
         } catch (error) {
             console.error('Error saving diary:', error);
@@ -566,6 +624,7 @@ const AddEditDiaryScreen = () => {
         title,
         updateDiary,
         weather,
+        selectedCompanionIds,
     ]);
 
     // --- Weather logic ---
@@ -576,12 +635,59 @@ const AddEditDiaryScreen = () => {
         setIsFetchingWeather(false);
     };
 
+    const companions = companionContext?.companions || [];
+    const companionLookup = useMemo(() => {
+        const map = new Map();
+        companions.forEach((companion) => {
+            map.set(String(companion.id), companion);
+        });
+        return map;
+    }, [companions]);
+
+    const selectedCompanions = useMemo(() => {
+        return selectedCompanionIds
+            .map((id) => companionLookup.get(id))
+            .filter(Boolean);
+    }, [selectedCompanionIds, companionLookup]);
+
+    useEffect(() => {
+        setSelectedCompanionIds((prev) => prev.filter((id) => companionLookup.has(id)));
+    }, [companionLookup]);
+
+    const openCompanionPicker = () => {
+        setTempSelectedCompanionIds(selectedCompanionIds);
+        setCompanionPickerVisible(true);
+    };
+
+    const toggleTempCompanion = (id) => {
+        setTempSelectedCompanionIds((prev) => {
+            if (prev.includes(id)) {
+                return prev.filter((existingId) => existingId !== id);
+            }
+            return [...prev, id];
+        });
+    };
+
+    const handleConfirmCompanions = () => {
+        setSelectedCompanionIds(tempSelectedCompanionIds);
+        setCompanionPickerVisible(false);
+    };
+
+    const handleCancelCompanions = () => {
+        setTempSelectedCompanionIds(selectedCompanionIds);
+        setCompanionPickerVisible(false);
+    };
+
+    const handleRemoveCompanion = (id) => {
+        setSelectedCompanionIds((prev) => prev.filter((existingId) => existingId !== id));
+    };
+
     useLayoutEffect(() => {
         navigation.setOptions({
             headerBackTitleVisible: false,
             headerTitle: isEditMode ? 'Edit Entry' : 'New Entry',
             headerRight: () => (
-                <TouchableOpacity
+                    <TouchableOpacity
                     onPress={handleSave}
                     disabled={!saveEnabled}
                     style={styles.headerSaveButton}
@@ -590,43 +696,38 @@ const AddEditDiaryScreen = () => {
                     <Text style={[styles.headerSaveText, { color: colors.primary, opacity: saveEnabled ? 1 : 0.4 }]}>
                         {isEditMode ? 'Save' : 'Done'}
                     </Text>
-                </TouchableOpacity>
+                    </TouchableOpacity>
             ),
         });
     }, [navigation, isEditMode, handleSave, colors.primary, saveEnabled]);
 
     useEffect(() => {
-        const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-            if (allowNavigateRef.current) {
-                allowNavigateRef.current = false;
-                return;
-            }
+        setPreventRemove(hasUnsavedChanges);
+    }, [hasUnsavedChanges]);
 
-            if (!hasUnsavedChanges) {
-                return;
-            }
+    usePreventRemove(preventRemove, (event) => {
+        if (!hasUnsavedChanges) {
+            return;
+        }
 
-            e.preventDefault();
+        event.preventDefault();
 
-            Alert.alert(
-                'Discard changes?',
-                'You have unsaved edits. Are you sure you want to leave this entry?',
-                [
-                    { text: 'Keep Writing', style: 'cancel' },
-                    {
-                        text: 'Discard',
-                        style: 'destructive',
-                        onPress: () => {
-                            allowNavigateRef.current = true;
-                            navigation.dispatch(e.data.action);
-                        },
+        Alert.alert(
+            'Discard changes?',
+            'You have unsaved edits. Are you sure you want to leave this entry?',
+            [
+                { text: 'Keep Writing', style: 'cancel' },
+                {
+                    text: 'Discard',
+                    style: 'destructive',
+                    onPress: () => {
+                        setPreventRemove(false);
+                        navigation.dispatch(event.data.action);
                     },
-                ]
-            );
-        });
-
-        return unsubscribe;
-    }, [navigation, hasUnsavedChanges]);
+                },
+            ]
+        );
+    });
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -659,17 +760,77 @@ const AddEditDiaryScreen = () => {
                             <Button title="Add Current Weather" onPress={handleGetWeather} />
                         )}
                     </View>
+                    <View style={[styles.companionContainer, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                        <TouchableOpacity
+                            style={styles.companionButton}
+                            onPress={openCompanionPicker}
+                            activeOpacity={0.85}
+                        >
+                            <Ionicons name="people-outline" size={20} color={colors.primary} style={{ marginRight: 10 }} />
+                            <Text style={[styles.companionButtonText, { color: colors.text }]}>
+                                {selectedCompanionIds.length ? 'Edit linked companions' : 'Link companions'}
+                            </Text>
+                            <Ionicons name="chevron-forward" size={18} color={colors.border} />
+                        </TouchableOpacity>
+                        {companions.length === 0 ? (
+                            <TouchableOpacity
+                                style={styles.companionManageHint}
+                                onPress={() => router.push('/companions')}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="sparkles-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                                <Text style={[styles.companionHintText, { color: colors.primary }]}>
+                                    Create companions to link memories
+                                </Text>
+                            </TouchableOpacity>
+                        ) : selectedCompanions.length ? (
+                            <View style={styles.companionChipWrap}>
+                                {selectedCompanions.map((companion) => (
+                                    <View
+                                        key={companion.id}
+                                        style={[
+                                            styles.companionChip,
+                                            { borderColor: colors.border, backgroundColor: colors.background },
+                                        ]}
+                                    >
+                                        <Text style={[styles.companionChipText, { color: colors.text }]} numberOfLines={1}>
+                                            {companion.name}
+                                        </Text>
+                                        <TouchableOpacity
+                                            onPress={() => handleRemoveCompanion(companion.id)}
+                                            style={styles.companionChipRemove}
+                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        >
+                                            <Ionicons name="close-outline" size={16} color={colors.text} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </View>
+                        ) : (
+                            <Text style={[styles.companionEmptyText, { color: colors.text }]}>
+                                No companions linked yet.
+                            </Text>
+                        )}
+                    </View>
                     <TextInput
-                        style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                        ref={titleInputRef}
+                        style={[styles.input, styles.titleInputStandalone, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
                         value={title}
                         onChangeText={setTitle}
                         placeholder="Title"
                         placeholderTextColor="gray"
+                        onFocus={() => {
+                            setEmojiTarget('title');
+                            const cursor = title.length;
+                            setTitleSelection({ start: cursor, end: cursor });
+                        }}
+                        onSelectionChange={(event) => setTitleSelection(event.nativeEvent.selection)}
                     />
                     <RichEditor
-                        ref={editorRef}
+                            ref={editorRef}
                         initialContentHTML={contentHtml}
-                        onChange={setContentHtml}
+                            onChange={setContentHtml}
+                        onFocus={() => setEmojiTarget('content')}
                         onMessage={handleEditorMessage}
                         style={[styles.editor, { borderColor: colors.border, backgroundColor: colors.card }]}
                         editorStyle={{
@@ -831,8 +992,10 @@ const AddEditDiaryScreen = () => {
                                         var src = img.getAttribute('src');
                                         var dataFileUri = img.getAttribute('data-file-uri');
                                         console.log('WebView: Image', index, 'src:', src, 'data-file-uri:', dataFileUri);
-                                        if (src && (src.startsWith('file://') || src.startsWith('/') || src.startsWith('content://'))) {
-                                            img.src = src;
+                                        if (src && (src.startsWith('file://') || src.startsWith('/') || src.startsWith('content://') || src.startsWith('data:'))) {
+                                            if (!src.startsWith('data:')) {
+                                                img.src = src;
+                                            }
                                             img.style.maxWidth = '100%';
                                             img.style.width = '100%';
                                             img.style.height = 'auto';
@@ -860,11 +1023,11 @@ const AddEditDiaryScreen = () => {
                                 observer.observe(document.body, { childList: true, subtree: true });
                             })();
                         `}
-                        placeholder="How was your day?"
+                            placeholder="How was your day?"
                         useContainer={true}
                         initialHeight={400}
                         containerStyle={styles.editorContainerStyle}
-                    />
+                        />
                 </ScrollView>
                 
                 {/* --- 2. Fixed footer action area --- */}
@@ -899,7 +1062,7 @@ const AddEditDiaryScreen = () => {
                     />
                     <TouchableOpacity 
                         style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saveEnabled ? 1 : 0.4 }]}
-                        onPress={handleSave}
+                            onPress={handleSave}
                         activeOpacity={0.8}
                         disabled={!saveEnabled}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -909,6 +1072,123 @@ const AddEditDiaryScreen = () => {
                         </Text>
                     </TouchableOpacity>
                 </View>
+
+                <Modal
+                    animationType="slide"
+                    transparent
+                    visible={isCompanionPickerVisible}
+                    onRequestClose={handleCancelCompanions}
+                >
+                    <TouchableWithoutFeedback onPress={handleCancelCompanions}>
+                        <View style={styles.companionModalOverlay}>
+                            <TouchableWithoutFeedback onPress={() => {}}>
+                                <View style={[styles.companionModalCard, { backgroundColor: colors.card }]}>
+                                    <Text style={[styles.companionModalTitle, { color: colors.text }]}>
+                                        Link companions
+                                    </Text>
+                                    {companions.length === 0 ? (
+                                        <View style={styles.companionModalEmpty}>
+                                            <Text style={[styles.companionModalEmptyText, { color: colors.text }]}>
+                                                You haven&apos;t created any companions yet.
+                                            </Text>
+                                            <TouchableOpacity
+                                                style={[styles.companionModalCreateButton, { backgroundColor: colors.primary }]}
+                                                onPress={() => {
+                                                    handleCancelCompanions();
+                                                    router.push('/companions');
+                                                }}
+                                                activeOpacity={0.85}
+                                            >
+                                                <Text style={styles.companionModalCreateButtonText}>Create companion</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    ) : (
+                                        <ScrollView
+                                            style={styles.companionPickerList}
+                                            contentContainerStyle={{ paddingBottom: 8 }}
+                                        >
+                                        {companions.map((companion) => {
+                                                const isSelected = tempSelectedCompanionIds.includes(companion.id);
+                                                const initials = companion.name
+                                                    ? companion.name
+                                                          .split(' ')
+                                                          .map((part) => part[0])
+                                                          .join('')
+                                                          .slice(0, 2)
+                                                          .toUpperCase()
+                                                    : '?';
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={companion.id}
+                                                        style={[
+                                                            styles.companionPickerRow,
+                                                            {
+                                                                borderColor: colors.border,
+                                                                backgroundColor: isSelected ? colors.background : colors.card,
+                                                            },
+                                                        ]}
+                                                        onPress={() => toggleTempCompanion(companion.id)}
+                                                        activeOpacity={0.85}
+                                                    >
+                                                        {companion.avatarIdentifier ? (
+                                                            <Image
+                                                                source={{ uri: companion.avatarIdentifier }}
+                                                                style={styles.companionPickerAvatar}
+                                                            />
+                                                        ) : (
+                                                            <View
+                                                                style={[
+                                                                    styles.companionPickerPlaceholder,
+                                                                    { backgroundColor: getCompanionColor(companion.name) },
+                                                                ]}
+                                                            >
+                                                                <Text style={styles.companionPickerPlaceholderText}>{initials}</Text>
+                                                            </View>
+                                                        )}
+                                                        <View style={{ flex: 1 }}>
+                                                            <Text style={[styles.companionPickerName, { color: colors.text }]} numberOfLines={1}>
+                                                                {companion.name}
+                                                            </Text>
+                                                            <Text style={[styles.companionPickerMeta, { color: colors.text }]}>
+                                                                Added {new Date(companion.createdAt).toLocaleDateString()}
+                                                            </Text>
+                                                        </View>
+                                                        <Ionicons
+                                                            name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                                                            size={22}
+                                                            color={isSelected ? colors.primary : colors.border}
+                                                        />
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </ScrollView>
+                                    )}
+                                    <View style={styles.companionModalActions}>
+                                        <TouchableOpacity
+                                            style={[styles.secondaryButton, { borderColor: colors.border }]}
+                                            onPress={handleCancelCompanions}
+                                            activeOpacity={0.85}
+                                        >
+                                            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.primaryButton,
+                                                {
+                                                    backgroundColor: colors.primary,
+                                                },
+                                            ]}
+                                            onPress={handleConfirmCompanions}
+                                            activeOpacity={0.85}
+                                        >
+                                            <Text style={styles.primaryButtonText}>Done</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </TouchableWithoutFeedback>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </Modal>
 
                 <Modal
                     animationType="slide"
@@ -986,6 +1266,64 @@ const styles = StyleSheet.create({
         elevation: 12 
     },
     weatherContainer: { alignItems: 'center', padding: 15, marginBottom: 20, borderRadius: 8 },
+    titleInputStandalone: {
+        marginBottom: 20,
+    },
+    companionContainer: {
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 20,
+    },
+    companionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    companionButtonText: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    companionManageHint: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 12,
+    },
+    companionHintText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    companionChipWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginTop: 12,
+    },
+    companionChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderRadius: 16,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        marginRight: 8,
+        marginBottom: 8,
+    },
+    companionChipText: {
+        fontSize: 14,
+        fontWeight: '500',
+        marginRight: 6,
+        maxWidth: 160,
+    },
+    companionChipRemove: {
+        paddingHorizontal: 2,
+        paddingVertical: 2,
+    },
+    companionEmptyText: {
+        marginTop: 12,
+        fontSize: 13,
+        opacity: 0.6,
+    },
     input: { borderWidth: 1, borderRadius: 8, padding: 15, fontSize: 16, marginBottom: 20 },
     editor: { 
         width: '100%',
@@ -1026,6 +1364,108 @@ const styles = StyleSheet.create({
     },
     saveButtonText: {
         color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    companionModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        justifyContent: 'center',
+        padding: 24,
+    },
+    companionModalCard: {
+        borderRadius: 20,
+        padding: 20,
+        maxHeight: '80%',
+    },
+    companionModalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        marginBottom: 16,
+    },
+    companionModalEmpty: {
+        alignItems: 'center',
+        paddingVertical: 12,
+    },
+    companionModalEmptyText: {
+        fontSize: 15,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    companionModalCreateButton: {
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 12,
+    },
+    companionModalCreateButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    companionPickerList: {
+        maxHeight: 320,
+        marginBottom: 16,
+    },
+    companionPickerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderRadius: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 12,
+    },
+    companionPickerAvatar: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        marginRight: 12,
+    },
+    companionPickerPlaceholder: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    companionPickerPlaceholderText: {
+        color: '#fff',
+        fontWeight: '600',
+    },
+    companionPickerName: {
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    companionPickerMeta: {
+        marginTop: 2,
+        fontSize: 12,
+        opacity: 0.7,
+    },
+    companionModalActions: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    secondaryButton: {
+        flex: 1,
+        borderWidth: 1,
+        borderRadius: 12,
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    secondaryButtonText: {
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    primaryButton: {
+        flex: 1,
+        borderRadius: 12,
+        paddingVertical: 12,
+        alignItems: 'center',
+        marginLeft: 12,
+    },
+    primaryButtonText: {
+        color: '#fff',
         fontSize: 16,
         fontWeight: '600',
     },
