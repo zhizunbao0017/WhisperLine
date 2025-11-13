@@ -1,10 +1,11 @@
 import React, { useContext, useEffect, useMemo, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { Chapter } from '../models/Chapter';
 import { DiaryContext } from '../context/DiaryContext';
+import { CompanionContext } from '../context/CompanionContext';
 import { getEmotionGradientForChapter } from '../services/ChapterService';
 
 type ChapterCardProps = {
@@ -54,6 +55,8 @@ const formatTimeSince = (isoString?: string) => {
 const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = false }) => {
   const diaryContext = useContext(DiaryContext);
   const diaries = diaryContext?.diaries;
+  const companionContext = useContext(CompanionContext);
+  const companions = companionContext?.companions;
 
   const gradientColors = useMemo(
     () => getEmotionGradientForChapter(chapter, diaries ?? []) ?? FALLBACK_GRADIENT,
@@ -66,6 +69,18 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
     const updatedAgo = formatTimeSince(chapter.lastUpdated);
     return `${countLabel} • Updated ${updatedAgo}`;
   }, [chapter.entryIds, chapter.lastUpdated]);
+
+  const companionAvatarSource = useMemo(() => {
+    if (chapter.type !== 'companion' || !chapter.sourceId || !companions?.length) {
+      return null;
+    }
+    const companion = companions.find((item) => item?.id === chapter.sourceId);
+    const uri = companion?.avatarIdentifier;
+    if (uri) {
+      return { uri };
+    }
+    return null;
+  }, [chapter.sourceId, chapter.type, companions]);
 
   const glowAnim = useRef(new Animated.Value(0)).current;
 
@@ -124,19 +139,19 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
           end={{ x: 1, y: 1 }}
         >
           <View style={styles.overlay} />
+          {isNew ? <View style={styles.newDot} /> : null}
           <View style={styles.topRow}>
             <View style={styles.iconPill}>
-              <Ionicons
-                name={ICON_MAP[chapter.type] ?? 'book-outline'}
-                color="#fff"
-                size={18}
-              />
+              {companionAvatarSource ? (
+                <Image source={companionAvatarSource} style={styles.iconAvatar} />
+              ) : (
+                <Ionicons
+                  name={ICON_MAP[chapter.type] ?? 'book-outline'}
+                  color="#fff"
+                  size={18}
+                />
+              )}
             </View>
-            {isNew ? (
-              <View style={styles.newBadge}>
-                <Text style={styles.newBadgeText}>New</Text>
-              </View>
-            ) : null}
           </View>
           <View style={styles.titleContainer}>
             <Text style={styles.title} numberOfLines={2}>
@@ -206,7 +221,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     marginBottom: 16,
   },
   iconPill: {
@@ -216,18 +231,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  newBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+  iconAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
   },
-  newBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.3,
+  newDot: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   titleContainer: {
     flexGrow: 1,

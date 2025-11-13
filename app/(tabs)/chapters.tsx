@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useContext } from 're
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   RefreshControl,
   SafeAreaView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import ChapterCard from '../../components/ChapterCard';
 import chapterService from '../../services/ChapterService';
 import { Chapter } from '../../models/Chapter';
@@ -18,6 +20,8 @@ import FloatingActionButton from '../../components/FloatingActionButton';
 import QuickCaptureContextValue from '../../context/QuickCaptureContext';
 
 const NUM_COLUMNS = 2;
+type SortMode = 'recent' | 'entries' | 'name';
+type FilterMode = 'all' | 'companion' | 'theme';
 
 const chunkArray = <T,>(items: T[], chunkSize: number) => {
   const chunks: T[][] = [];
@@ -34,8 +38,9 @@ const ChaptersScreen: React.FC = () => {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [sortMode, setSortMode] = useState<'recent' | 'entries'>('recent');
-  const [filterMode, setFilterMode] = useState<'all' | 'companion' | 'theme'>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [isControlSheetVisible, setControlSheetVisible] = useState(false);
 
   const loadChapters = useCallback(async () => {
     try {
@@ -82,6 +87,16 @@ const ChaptersScreen: React.FC = () => {
       working = working.filter((chapter) => chapter.type === filterMode);
     }
     working.sort((a, b) => {
+      if (sortMode === 'name') {
+        const aTitle = a.title?.toLowerCase?.() ?? '';
+        const bTitle = b.title?.toLowerCase?.() ?? '';
+        if (aTitle !== bTitle) {
+          return aTitle.localeCompare(bTitle);
+        }
+        const aUpdatedName = new Date(a.lastUpdated ?? 0).getTime() || 0;
+        const bUpdatedName = new Date(b.lastUpdated ?? 0).getTime() || 0;
+        return bUpdatedName - aUpdatedName;
+      }
       if (sortMode === 'entries') {
         const aCount = a.entryIds?.length ?? 0;
         const bCount = b.entryIds?.length ?? 0;
@@ -109,12 +124,22 @@ const ChaptersScreen: React.FC = () => {
     [sortedFilteredChapters]
   );
 
-  const toggleSortMode = useCallback(() => {
-    setSortMode((prev) => (prev === 'recent' ? 'entries' : 'recent'));
+  const handleFilterChange = useCallback((value: FilterMode) => {
+    setFilterMode(value);
+    setControlSheetVisible(false);
   }, []);
 
-  const handleFilterChange = useCallback((value: 'all' | 'companion' | 'theme') => {
-    setFilterMode(value);
+  const handleSortChange = useCallback((value: SortMode) => {
+    setSortMode(value);
+    setControlSheetVisible(false);
+  }, []);
+
+  const openControlSheet = useCallback(() => {
+    setControlSheetVisible(true);
+  }, []);
+
+  const closeControlSheet = useCallback(() => {
+    setControlSheetVisible(false);
   }, []);
 
   const isChapterNew = useCallback((chapter: Chapter) => {
@@ -125,6 +150,28 @@ const ChaptersScreen: React.FC = () => {
     const twentyFourHours = 24 * 60 * 60 * 1000;
     return Date.now() - updatedAt <= twentyFourHours;
   }, []);
+
+  const filterSummaryLabel = useMemo(() => {
+    switch (filterMode) {
+      case 'companion':
+        return 'Companion chapters';
+      case 'theme':
+        return 'Theme chapters';
+      default:
+        return 'All chapters';
+    }
+  }, [filterMode]);
+
+  const sortSummaryLabel = useMemo(() => {
+    switch (sortMode) {
+      case 'entries':
+        return 'Most entries';
+      case 'name':
+        return 'Name A-Z';
+      default:
+        return 'Latest update';
+    }
+  }, [sortMode]);
 
   if (isLoading) {
     return (
@@ -170,17 +217,20 @@ const ChaptersScreen: React.FC = () => {
               </Text>
               <View style={styles.controlsRow}>
                 <TouchableOpacity
-                  onPress={toggleSortMode}
+                  onPress={openControlSheet}
                   activeOpacity={0.85}
-                  style={[styles.controlButton, { borderColor: colors.border }]}
+                  style={[
+                    styles.controlIconButton,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: 'rgba(255,255,255,0.08)',
+                    },
+                  ]}
                 >
-                  <Text style={[styles.controlButtonText, { color: colors.text }]}>
-                    Sort: {sortMode === 'recent' ? 'Latest' : 'Most entries'}
-                  </Text>
+                  <Ionicons name="options-outline" size={20} color={colors.text} />
                 </TouchableOpacity>
                 <View style={styles.filterGroup}>
                   {[
-                    { label: 'All', value: 'all' },
                     { label: 'Companions', value: 'companion' },
                     { label: 'Themes', value: 'theme' },
                   ].map((option) => {
@@ -214,6 +264,9 @@ const ChaptersScreen: React.FC = () => {
                   })}
                 </View>
               </View>
+              <Text style={[styles.controlSummary, { color: colors.text }]}>
+                Sorted by {sortSummaryLabel} • Showing {filterSummaryLabel}
+              </Text>
             </View>
           }
           ListEmptyComponent={
@@ -239,6 +292,87 @@ const ChaptersScreen: React.FC = () => {
           onLongPress={() => router.push('/add-edit-diary')}
         />
       </View>
+      <Modal
+        transparent
+        visible={isControlSheetVisible}
+        animationType="slide"
+        onRequestClose={closeControlSheet}
+      >
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={closeControlSheet} />
+          <View
+            style={[
+              styles.sheetContainer,
+              { backgroundColor: colors.card ?? '#151515', borderColor: colors.border },
+            ]}
+          >
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.sheetTitle, { color: colors.text }]}>View Controls</Text>
+            <View style={styles.sheetSection}>
+              <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Filter by Type</Text>
+              {[
+                { label: 'All', value: 'all' as FilterMode },
+                { label: 'Companions', value: 'companion' as FilterMode },
+                { label: 'Themes', value: 'theme' as FilterMode },
+              ].map((option) => {
+                const isActive = filterMode === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.sheetOption,
+                      { borderColor: isActive ? colors.primary : colors.border },
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={() => handleFilterChange(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.sheetOptionLabel,
+                        { color: colors.text, fontWeight: isActive ? '700' : '500' },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {isActive ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={styles.sheetSection}>
+              <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Sort by</Text>
+              {[
+                { label: 'Latest Update', value: 'recent' as SortMode },
+                { label: 'Most Entries', value: 'entries' as SortMode },
+                { label: 'Name A-Z', value: 'name' as SortMode },
+              ].map((option) => {
+                const isActive = sortMode === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.sheetOption,
+                      { borderColor: isActive ? colors.primary : colors.border },
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={() => handleSortChange(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.sheetOptionLabel,
+                        { color: colors.text, fontWeight: isActive ? '700' : '500' },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {isActive ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -254,7 +388,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 120,
+    paddingBottom: 160,
   },
   listEmpty: {
     flexGrow: 1,
@@ -281,17 +415,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
   },
-  controlButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
+  controlIconButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  controlButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterGroup: {
     flexDirection: 'row',
@@ -307,6 +437,12 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  controlSummary: {
+    fontSize: 13,
+    opacity: 0.65,
+    marginTop: 8,
+    fontWeight: '500',
   },
   row: {
     flexDirection: 'row',
@@ -331,6 +467,57 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: 'center',
     paddingHorizontal: 16,
+  },
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  sheetBackdrop: {
+    flex: 1,
+  },
+  sheetContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 20,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 12,
+    opacity: 0.7,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  sheetSection: {
+    gap: 8,
+  },
+  sheetSectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  sheetOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  sheetOptionLabel: {
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });
 
