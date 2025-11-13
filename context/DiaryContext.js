@@ -1,15 +1,18 @@
 // context/DiaryContext.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useEffect, useState } from 'react';
+import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import { InteractionManager } from 'react-native';
 import { ensureAnalysis } from '../services/moodAnalysis';
 import { createDiaryEntry, normalizeDiaryEntry } from '../models/DiaryEntry';
+import themeAnalysisService from '../services/ThemeAnalysisService';
+import achievementService from '../services/AchievementService';
 
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
 const AI_USAGE_KEY = '@MyAIDiary:aiUsageCount';
 const FREE_TRIAL_USED_KEY = '@MyAIDiary:freeTrialUsed';
 const DATA_CLEANED_KEY = '@MyAIDiary:hasDataBeenCleaned';
+const INCREMENTAL_THEME_BATCH = 20;
 
 // Helper to get today's date in YYYY-MM-DD format
 function getTodayDateString() {
@@ -30,6 +33,13 @@ export const DiaryProvider = ({ children }) => {
 
   // ---- Free Trial Used State ----
   const [freeTrialUsed, setFreeTrialUsed] = useState(false);
+
+  const [themeReanalysisState, setThemeReanalysisState] = useState({
+    lastRun: null,
+    lastProcessed: 0,
+    isRunning: false,
+  });
+  const themeReanalysisInFlightRef = useRef(false);
 
   // Load aiUsageCount from AsyncStorage on mount
   useEffect(() => {
@@ -222,13 +232,13 @@ export const DiaryProvider = ({ children }) => {
   }, []);
 
   // Encapsulate a function to save updated diary array to AsyncStorage
-  const saveDiariesToStorage = async (updatedDiaries) => {
+  const saveDiariesToStorage = useCallback(async (updatedDiaries) => {
     try {
       await AsyncStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(updatedDiaries));
     } catch (e) {
       console.error('Failed to save diaries.', e);
     }
-  };
+  }, []);
 
   const removeCompanionFromEntries = useCallback(
     async (companionId) => {
@@ -260,6 +270,32 @@ export const DiaryProvider = ({ children }) => {
     [diaries, saveDiariesToStorage]
   );
 
+  const applyThemeEntryUpdates = useCallback(
+    async (updatedEntries = []) => {
+      if (!updatedEntries || updatedEntries.length === 0) {
+        return 0;
+      }
+      const updatesMap = new Map(
+        updatedEntries.map((entry) => [String(entry.id), normalizeDiaryEntry(entry)])
+      );
+      const nextDiaries = diaries.map((entry) => updatesMap.get(String(entry.id)) ?? entry);
+      let changed = false;
+      for (let i = 0; i < diaries.length; i += 1) {
+        if (nextDiaries[i] !== diaries[i]) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) {
+        return 0;
+      }
+      setDiaries(nextDiaries);
+      await saveDiariesToStorage(nextDiaries);
+      return updatedEntries.length;
+    },
+    [diaries, saveDiariesToStorage]
+  );
+
   const addDiary = async (newDiary) => {
     const baseEntry = createDiaryEntry({
       ...newDiary,
@@ -270,7 +306,107 @@ export const DiaryProvider = ({ children }) => {
     const updatedDiaries = [newEntry, ...diaries];
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
+
+    try {
+      await achievementService.evaluate({
+        diaries: updatedDiaries,
+        entry: newEntry,
+        companions: [],
+      });
+    } catch (error) {
+      console.warn('DiaryContext: achievement evaluation failed (addDiary)', error);
+    }
+
+    return newEntry;
   };
+
+  const createQuickEntry = useCallback(
+    async ({
+      title,
+      mood = null,
+      content = '',
+      weather = null,
+      captureType = null,
+      captureMeta = null,
+      createdAt,
+    }) => {
+      const entry = createDiaryEntry({
+        title: title ?? '',
+        content,
+        mood,
+        weather,
+        captureType,
+        captureMeta,
+        createdAt: createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        themeID: null,
+      });
+      const analyzed = ensureAnalysis(entry);
+      const updatedDiaries = [analyzed, ...diaries];
+      setDiaries(updatedDiaries);
+      await saveDiariesToStorage(updatedDiaries);
+      try {
+        await achievementService.evaluate({
+          diaries: updatedDiaries,
+          entry: analyzed,
+          companions: [],
+        });
+      } catch (error) {
+        console.warn('DiaryContext: achievement evaluation failed (quick entry)', error);
+      }
+      return analyzed;
+    },
+    [diaries, saveDiariesToStorage]
+  );
+
+  useEffect(() => {
+    if (isLoading || diaries.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const runIncremental = async () => {
+      try {
+        const shouldRun = await themeAnalysisService.shouldRunIncremental();
+        if (!shouldRun || cancelled) {
+          return;
+        }
+        if (themeReanalysisInFlightRef.current) {
+          return;
+        }
+        themeReanalysisInFlightRef.current = true;
+        setThemeReanalysisState((prev) => ({ ...prev, isRunning: true }));
+        const result = await themeAnalysisService.processIncrementalBatch(
+          diaries,
+          INCREMENTAL_THEME_BATCH
+        );
+        if (cancelled) {
+          return;
+        }
+        const updates = result?.updatedEntries ?? [];
+        const processed = await applyThemeEntryUpdates(updates);
+        setThemeReanalysisState({
+          lastRun: Date.now(),
+          lastProcessed: processed,
+          isRunning: false,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('DiaryContext: incremental theme analysis failed', error);
+          setThemeReanalysisState((prev) => ({ ...prev, isRunning: false }));
+        }
+      } finally {
+        themeReanalysisInFlightRef.current = false;
+      }
+    };
+
+    runIncremental();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [diaries, isLoading, applyThemeEntryUpdates]);
 
   // --- New function ---
   const updateDiary = async (diaryToUpdate) => {
@@ -284,7 +420,62 @@ export const DiaryProvider = ({ children }) => {
     );
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
+    try {
+      await achievementService.evaluate({
+        diaries: updatedDiaries,
+        entry: analyzedDiary,
+        companions: [],
+      });
+    } catch (error) {
+      console.warn('DiaryContext: achievement evaluation failed (updateDiary)', error);
+    }
+    return analyzedDiary;
   };
+
+  const runThemeReanalysisBatch = useCallback(
+    async ({ batchSize = 60, full = false } = {}) => {
+      if (themeReanalysisInFlightRef.current) {
+        return { processedCount: 0, skipped: true };
+      }
+      themeReanalysisInFlightRef.current = true;
+      setThemeReanalysisState((prev) => ({ ...prev, isRunning: true }));
+      try {
+        if (full) {
+          const result = await themeAnalysisService.runFullReanalysis(diaries);
+          const entries = Array.isArray(result?.entries) ? result.entries : [];
+          if (entries.length) {
+            setDiaries(entries);
+            await saveDiariesToStorage(entries);
+          }
+          await themeAnalysisService.markReanalysisComplete();
+          const processedCount = entries.length;
+          setThemeReanalysisState({
+            lastRun: Date.now(),
+            lastProcessed: processedCount,
+            isRunning: false,
+          });
+          return { processedCount, type: 'full' };
+        }
+
+        const result = await themeAnalysisService.processIncrementalBatch(diaries, batchSize);
+        const updates = result?.updatedEntries ?? [];
+        const processedCount = await applyThemeEntryUpdates(updates);
+        setThemeReanalysisState({
+          lastRun: Date.now(),
+          lastProcessed: processedCount,
+          isRunning: false,
+        });
+        return { processedCount, type: 'incremental' };
+      } catch (error) {
+        console.warn('DiaryContext: theme reanalysis failed', error);
+        setThemeReanalysisState((prev) => ({ ...prev, isRunning: false }));
+        throw error;
+      } finally {
+        themeReanalysisInFlightRef.current = false;
+      }
+    },
+    [diaries, applyThemeEntryUpdates, saveDiariesToStorage]
+  );
 
   // --- New function ---
   const deleteDiary = async (idToDelete) => {
@@ -308,6 +499,9 @@ export const DiaryProvider = ({ children }) => {
         freeTrialUsed,
         markFreeTrialAsUsed,
         removeCompanionFromEntries,
+        themeReanalysisState,
+        runThemeReanalysisBatch,
+        createQuickEntry,
       }}
     >
       {children}

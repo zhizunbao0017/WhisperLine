@@ -4,6 +4,7 @@ import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, Animated, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
+import { Swipeable } from 'react-native-gesture-handler';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 
@@ -41,6 +42,13 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
         }).start();
     }, [opacity, translateY, index]);
 
+    const plainPreview = extractTextFromHTML(item.content || item.contentHTML || '');
+    const displayContent =
+        plainPreview ||
+        (item.captureType ? 'Tap to add more to this captured moment.' : 'No additional notes yet.');
+    const displayTitle =
+        (item.title || '').trim() || (item.captureType ? 'Quick capture' : 'Untitled entry');
+
     return (
         <Animated.View
             style={[
@@ -54,13 +62,28 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
             ]}
         >
             <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
+                {item.captureType ? (
+                    <View
+                        style={[
+                            styles.captureBadge,
+                            {
+                                backgroundColor: colors.primary ? colors.primary + '18' : 'rgba(74,108,247,0.15)',
+                                borderColor: colors.primary ?? '#4a6cf7',
+                            },
+                        ]}
+                    >
+                        <Text style={[styles.captureBadgeText, { color: colors.primary ?? '#4a6cf7' }]}>
+                            …
+                        </Text>
+                    </View>
+                ) : null}
                 {/* Card Header */}
                 <View style={styles.cardHeader}>
                     {moodData && moodData.image && (
                         <Image source={moodData.image} style={styles.moodImage} />
                     )}
                     <Text style={[styles.cardTitle, { color: colors.text }]}>
-                        {item.title}
+                        {displayTitle}
                     </Text>
                 </View>
 
@@ -69,7 +92,7 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
                     style={[styles.cardContent, { color: colors.text }]}
                     numberOfLines={2}
                 >
-                    {extractTextFromHTML(item.content || item.contentHTML || '')} {/* Prioritize content, fallback to contentHTML for backward compatibility */}
+                    {displayContent}
                 </Text>
 
                 {/* Card Footer */}
@@ -107,6 +130,37 @@ const AnimatedDiaryItem = ({ item, index, onPress, colors }) => {
     );
 };
 
+const DraftSwipeableWrapper = ({ children, onDelete }) => {
+    const swipeableRef = useRef(null);
+
+    const renderRightActions = () => (
+        <TouchableOpacity
+            style={styles.deleteAction}
+            onPress={() => {
+                if (swipeableRef.current) {
+                    swipeableRef.current.close();
+                }
+                onDelete();
+            }}
+            activeOpacity={0.8}
+        >
+            <Ionicons name="trash-outline" size={24} color="#fff" />
+        </TouchableOpacity>
+    );
+
+    return (
+        <Swipeable
+            ref={swipeableRef}
+            friction={2}
+            rightThreshold={40}
+            overshootRight={false}
+            renderRightActions={renderRightActions}
+        >
+            {children}
+        </Swipeable>
+    );
+};
+
 const TimelineScreen = () => {
     const router = useRouter();
     const diaryContext = useContext(DiaryContext);
@@ -117,7 +171,7 @@ const TimelineScreen = () => {
         return <ActivityIndicator size="large" style={{ flex: 1 }} />;
     }
 
-    const { diaries, isLoading } = diaryContext;
+    const { diaries, isLoading, deleteDiary } = diaryContext;
     const { colors } = themeContext;
 
     const markedDates = useMemo(() => {
@@ -169,16 +223,28 @@ const TimelineScreen = () => {
         <View style={{ flex: 1, backgroundColor: colors.background }}>
             <FlatList
                 data={filteredDiaries}
-                renderItem={({ item, index }) => (
-                    <AnimatedDiaryItem
-                        item={item}
-                        index={index}
-                        onPress={() =>
-                            router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })
-                        }
-                        colors={colors}
-                    />
-                )}
+                renderItem={({ item, index }) => {
+                    const card = (
+                        <AnimatedDiaryItem
+                            item={item}
+                            index={index}
+                            onPress={() =>
+                                router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })
+                            }
+                            colors={colors}
+                        />
+                    );
+
+                    if (item.captureType) {
+                        return (
+                            <DraftSwipeableWrapper onDelete={() => deleteDiary && deleteDiary(item.id)}>
+                                {card}
+                            </DraftSwipeableWrapper>
+                        );
+                    }
+
+                    return card;
+                }}
                 keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
                 ListHeaderComponent={renderCalendarHeader}
                 ListEmptyComponent={renderEmptyComponent}
@@ -225,6 +291,29 @@ const styles = StyleSheet.create({
     weatherIcon: { width: 28, height: 28, marginRight: 6 },
     weatherText: { fontSize: 12, fontWeight: '600' },
     weatherSubText: { fontSize: 11, opacity: 0.7 },
+    captureBadge: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderWidth: StyleSheet.hairlineWidth,
+    },
+    captureBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 3,
+    },
+    deleteAction: {
+        backgroundColor: '#ff4d4f',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: 70,
+        marginVertical: 8,
+        borderRadius: 12,
+        marginRight: 16,
+    },
 });
 // --- End modification ---
 

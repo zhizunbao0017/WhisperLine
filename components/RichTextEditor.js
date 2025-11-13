@@ -141,6 +141,8 @@ const RichTextEditor = forwardRef(({
         onChange={handleChange}
         placeholder={placeholder}
         initialContentHTML={content || ''}
+        editorInitializedCallback={handleEditorInitialized}
+        onError={handleEditorError}
         editorStyle={{
           backgroundColor: colors.card,
           color: colors.text,

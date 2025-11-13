@@ -17,7 +17,6 @@ import {
     TouchableOpacity,
     TouchableWithoutFeedback,
     View,
-    useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,14 +27,19 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- 组件和 Context ---
 import MoodSelector from '../components/MoodSelector';
+import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
+import { CompanionContext } from '../context/CompanionContext';
 import { getCurrentWeather } from '../services/weatherService';
 import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
-import { CompanionContext } from '../context/CompanionContext';
+import themeAnalysisService from '../services/ThemeAnalysisService';
+
+const DEFAULT_HERO_IMAGE = require('../assets/images/ai_avatar.png');
 
 
 // Helper function to extract plain text from HTML
@@ -123,35 +127,66 @@ const normalizeWeather = (value) => {
 };
 
 // Companion avatar component
-const CompanionAvatarView = ({ size = 80 }) => {
-    const { currentAvatar } = useContext(ThemeContext);
-    if (!currentAvatar) return null;
+const CompanionAvatarView = ({ size = 80, visual }) => {
+    const config = visual || { type: 'image', source: DEFAULT_HERO_IMAGE };
 
-    if (currentAvatar.type === 'system') {
+    if (config.type === 'stacked') {
+        const primary = config.primary ?? { type: 'image', source: DEFAULT_HERO_IMAGE };
+        const secondary = config.secondary ?? primary;
         return (
             <View style={[styles.avatarWrapper, { width: size, height: size }]}>
-                <LottieView 
-                    source={currentAvatar.source} 
-                    autoPlay 
-                    loop 
-                    style={{ width: size, height: size }} 
-                />
-            </View>
-        );
-    }
-    if (currentAvatar.type === 'custom' && currentAvatar.image) {
-        return (
-            <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center' }]}>
-                <View style={[styles.glow, { width: size + 24, height: size + 24, borderRadius: (size + 24) / 2, backgroundColor: currentAvatar.glowColor || '#87CEEB' }]}>
-                    <Image 
-                        source={{ uri: currentAvatar.image }} 
-                        style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: '#fff', backgroundColor: '#fff' }} 
-                        resizeMode="cover" 
+                <View style={[styles.stackedAvatar, { width: size, height: size }]}>
+                    <Image
+                        source={secondary.source}
+                        style={[
+                            styles.stackedSecondary,
+                            {
+                                width: size * 0.7,
+                                height: size * 0.7,
+                                borderRadius: (size * 0.7) / 2,
+                            },
+                        ]}
+                        resizeMode="cover"
+                    />
+                    <Image
+                        source={primary.source}
+                        style={[
+                            styles.stackedPrimary,
+                            {
+                                width: size * 0.8,
+                                height: size * 0.8,
+                                borderRadius: (size * 0.8) / 2,
+                            },
+                        ]}
+                        resizeMode="cover"
                     />
                 </View>
             </View>
         );
     }
+
+    if (config.type === 'lottie' && config.source) {
+        return (
+            <View style={[styles.avatarWrapper, { width: size, height: size }]}>
+                <LottieView source={config.source} autoPlay loop style={{ width: size, height: size }} />
+            </View>
+        );
+    }
+
+    if (config.type === 'image' && config.source) {
+        return (
+            <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center' }]}>
+                <View style={[styles.glow, { width: size + 24, height: size + 24, borderRadius: (size + 24) / 2 }]}>
+                    <Image
+                        source={config.source}
+                        style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: '#fff', backgroundColor: '#fff' }}
+                        resizeMode="cover"
+                    />
+                </View>
+            </View>
+        );
+    }
+
     return null;
 };
 
@@ -167,6 +202,19 @@ const AddEditDiaryScreen = () => {
     const existingDiary = useMemo(() => {
         return params.diary ? JSON.parse(params.diary) : null;
     }, [params.diary]);
+    const intentDraft = useMemo(() => {
+        const raw = params?.intentDraft;
+        if (!raw) {
+            return null;
+        }
+        const stringified = Array.isArray(raw) ? raw[0] : raw;
+        try {
+            return JSON.parse(stringified);
+        } catch (error) {
+            console.warn('AddEditDiary: failed to parse intentDraft', error);
+            return null;
+        }
+    }, [params?.intentDraft]);
     const existingCompanionIds = useMemo(() => {
         if (!existingDiary) {
             return [];
@@ -182,15 +230,18 @@ const AddEditDiaryScreen = () => {
     // --- Hooks and Context ---
     const { addDiary, updateDiary } = useContext(DiaryContext);
     const companionContext = useContext(CompanionContext);
-    const { colors } = useContext(ThemeContext);
-    const { width } = useWindowDimensions();
+    const companionsLoading = companionContext?.isLoading;
+    const { colors, currentAvatar } = useContext(ThemeContext);
     const insets = useSafeAreaInsets(); // Get safe area insets
     const editorRef = useRef(null); // Create ref for rich text editor
     const scrollViewRef = useRef(null);
 
     // --- State ---
     const [isEditMode, setIsEditMode] = useState(!!existingDiary);
-    const [title, setTitle] = useState(existingDiary?.title || '');
+    const [title, setTitle] = useState(
+        existingDiary?.title ||
+            (intentDraft?.text ? intentDraft.text.split('\n')[0].slice(0, 60) : '')
+    );
  
     // Process initial content: convert local file URI to WebView-accessible format
     const processContentForEditor = (html) => {
@@ -221,9 +272,9 @@ const AddEditDiaryScreen = () => {
     };
     
     // Load content: prioritize content, fallback to contentHTML for backward compatibility
-    const initialContent = existingDiary 
+    const initialContent = existingDiary
         ? (existingDiary.content || existingDiary.contentHTML || '')
-        : '';
+        : intentDraft?.contentHtml || '';
 
     const processedInitialContent = useMemo(() => (
         initialContent ? processContentForEditor(initialContent) : ''
@@ -232,7 +283,9 @@ const AddEditDiaryScreen = () => {
     const [contentHtml, setContentHtml] = useState(processedInitialContent);
     const initialContentRef = useRef(processedInitialContent);
     const hasRemappedInitialHtml = useRef(false);
-    const [selectedMood, setSelectedMood] = useState(existingDiary?.mood || null);
+    const [selectedMood, setSelectedMood] = useState(
+        existingDiary?.mood || intentDraft?.mood || null
+    );
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
     const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
@@ -240,8 +293,43 @@ const AddEditDiaryScreen = () => {
     const [emojiTarget, setEmojiTarget] = useState('content');
     const titleInputRef = useRef(null);
     const [titleSelection, setTitleSelection] = useState({ start: 0, end: 0 });
-    const [selectedCompanionIds, setSelectedCompanionIds] = useState(existingCompanionIds);
-    const [tempSelectedCompanionIds, setTempSelectedCompanionIds] = useState(existingCompanionIds);
+    const [allCompanions, setAllCompanions] = useState([]);
+    const [selectedCompanionIDs, setSelectedCompanionIDs] = useState(existingCompanionIds);
+    const [tempSelectedCompanionIDs, setTempSelectedCompanionIDs] = useState(existingCompanionIds);
+    const [selectedThemeId, setSelectedThemeId] = useState(
+        existingDiary?.themeID ?? existingDiary?.themeId ?? null
+    );
+    const [heroVisual, setHeroVisual] = useState({ type: 'image', source: DEFAULT_HERO_IMAGE });
+    const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
+
+    const resolveImageSource = useCallback((identifier) => {
+        if (!identifier) {
+            return DEFAULT_HERO_IMAGE;
+        }
+        if (typeof identifier === 'object' && (identifier.uri || Number.isInteger(identifier))) {
+            return identifier;
+        }
+        if (typeof identifier === 'number') {
+            return identifier;
+        }
+        return { uri: identifier };
+    }, []);
+
+    const applyDefaultHero = useCallback(() => {
+        if (currentAvatar?.type === 'custom' && currentAvatar.image) {
+            setHeroVisual({
+                type: 'image',
+                source: resolveImageSource(currentAvatar.image),
+            });
+        } else if (currentAvatar?.type === 'system' && currentAvatar.source) {
+            setHeroVisual({
+                type: 'lottie',
+                source: currentAvatar.source,
+            });
+        } else {
+            setHeroVisual({ type: 'image', source: DEFAULT_HERO_IMAGE });
+        }
+    }, [currentAvatar, resolveImageSource]);
 
     const baselineSnapshot = useMemo(() => JSON.stringify({
         title: (existingDiary?.title || '').trim(),
@@ -249,6 +337,7 @@ const AddEditDiaryScreen = () => {
         mood: existingDiary?.mood || null,
         weather: normalizeWeather(existingDiary?.weather),
         companionIDs: existingCompanionIds,
+        themeID: existingDiary?.themeID ?? existingDiary?.themeId ?? null,
     }), [existingDiary, processedInitialContent, existingCompanionIds]);
 
     const [initialSnapshot, setInitialSnapshot] = useState(baselineSnapshot);
@@ -262,8 +351,9 @@ const AddEditDiaryScreen = () => {
         content: contentHtml || '',
         mood: selectedMood || null,
         weather: normalizeWeather(weather),
-        companionIDs: selectedCompanionIds,
-    }), [title, contentHtml, selectedMood, weather, selectedCompanionIds]);
+        companionIDs: selectedCompanionIDs,
+        themeID: selectedThemeId ?? null,
+    }), [title, contentHtml, selectedMood, weather, selectedCompanionIDs, selectedThemeId]);
 
     const hasUnsavedChanges = currentSnapshot !== initialSnapshot;
     const [preventRemove, setPreventRemove] = useState(false);
@@ -276,8 +366,59 @@ const AddEditDiaryScreen = () => {
         setTitle(existingDiary?.title || '');
         setSelectedMood(existingDiary?.mood || null);
         setWeather(existingDiary?.weather || null);
-        setSelectedCompanionIds(existingCompanionIds);
+        setSelectedCompanionIDs(existingCompanionIds);
+        setTempSelectedCompanionIDs(existingCompanionIds);
     }, [existingDiary, existingCompanionIds]);
+
+    useEffect(() => {
+        if (existingDiary && existingCompanionIds.length && !hasInitialPrimaryApplied) {
+            setHasInitialPrimaryApplied(true);
+        }
+    }, [existingDiary, existingCompanionIds, hasInitialPrimaryApplied]);
+
+    useEffect(() => {
+        if (existingDiary) {
+            setSelectedThemeId(existingDiary.themeID ?? existingDiary.themeId ?? null);
+        }
+    }, [existingDiary]);
+
+    useEffect(() => {
+        if (companionContext?.companions) {
+            setAllCompanions(companionContext.companions);
+        }
+    }, [companionContext?.companions]);
+
+    useEffect(() => {
+        const selectedCompanionsData = selectedCompanionIDs
+            .map((id) => allCompanions.find((item) => String(item.id) === String(id)))
+            .filter(Boolean);
+
+        if (selectedCompanionsData.length === 1) {
+            const companion = selectedCompanionsData[0];
+            if (companion?.avatarIdentifier) {
+                setHeroVisual({
+                    type: 'image',
+                    source: resolveImageSource(companion.avatarIdentifier),
+                });
+            } else {
+                applyDefaultHero();
+            }
+        } else if (selectedCompanionsData.length > 1) {
+            const primaryCompanion = selectedCompanionsData[0];
+            const secondaryCompanion = selectedCompanionsData[1] || selectedCompanionsData[0];
+
+            const primarySource = resolveImageSource(primaryCompanion?.avatarIdentifier);
+            const secondarySource = resolveImageSource(secondaryCompanion?.avatarIdentifier);
+
+            setHeroVisual({
+                type: 'stacked',
+                primary: { source: primarySource },
+                secondary: { source: secondarySource },
+            });
+        } else {
+            applyDefaultHero();
+        }
+    }, [allCompanions, selectedCompanionIDs, applyDefaultHero, resolveImageSource]);
 
     useEffect(() => {
         setContentHtml(processedInitialContent);
@@ -383,9 +524,19 @@ const AddEditDiaryScreen = () => {
 
                 let finalUri = destinationFile.uri;
                 if (Platform.OS === 'android') {
-                    try {
-                        finalUri = await FileSystem.makeContentUriAsync(destinationFile.uri);
-                    } catch (err) {
+                    // eslint-disable-next-line import/namespace
+                    const canMakeContentUri = typeof FileSystem.makeContentUriAsync === 'function';
+                    if (canMakeContentUri) {
+                        try {
+                            // eslint-disable-next-line import/namespace
+                            finalUri = await FileSystem.makeContentUriAsync(destinationFile.uri);
+                        } catch (androidUriError) {
+                            console.warn('makeContentUriAsync failed, falling back to file URI', androidUriError);
+                            finalUri = destinationFile.uri.startsWith('file://')
+                                ? destinationFile.uri
+                                : `file://${destinationFile.uri}`;
+                        }
+                    } else {
                         finalUri = destinationFile.uri.startsWith('file://')
                             ? destinationFile.uri
                             : `file://${destinationFile.uri}`;
@@ -589,21 +740,33 @@ const AddEditDiaryScreen = () => {
             
             console.log('Saving content with file URIs (production-ready format)');
 
-            const diaryData = { 
-                title, 
+            const diaryData = {
+                title,
                 content: contentToSave, // Use processed content with file URIs
-                mood: selectedMood, 
+                mood: selectedMood,
                 weather,
-                companionIDs: selectedCompanionIds,
+                companionIDs: selectedCompanionIDs,
+                themeID: selectedThemeId ?? null,
             };
 
             if (isEditMode) {
                 await updateDiary({ ...diaryData, id: existingDiary.id, createdAt: existingDiary.createdAt });
+                await themeAnalysisService.assignEntryToTheme(
+                    existingDiary.id,
+                    selectedThemeId ?? null,
+                    { ...diaryData, id: existingDiary.id }
+                );
             } else {
                 const createdAtOverride = entryDateParam ? new Date(entryDateParam).toISOString() : undefined;
-                await addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
+                const createdEntry = await addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
+                if (createdEntry?.id) {
+                    await themeAnalysisService.assignEntryToTheme(
+                        createdEntry.id,
+                        selectedThemeId ?? null,
+                        createdEntry
+                    );
+                }
             }
-            
             setInitialSnapshot(currentSnapshot);
             setPreventRemove(false);
             router.back(); // Return directly after saving
@@ -624,7 +787,8 @@ const AddEditDiaryScreen = () => {
         title,
         updateDiary,
         weather,
-        selectedCompanionIds,
+        selectedCompanionIDs,
+        selectedThemeId,
     ]);
 
     // --- Weather logic ---
@@ -635,32 +799,21 @@ const AddEditDiaryScreen = () => {
         setIsFetchingWeather(false);
     };
 
-    const companions = companionContext?.companions || [];
     const companionLookup = useMemo(() => {
         const map = new Map();
-        companions.forEach((companion) => {
+        allCompanions.forEach((companion) => {
             map.set(String(companion.id), companion);
         });
         return map;
-    }, [companions]);
-
-    const selectedCompanions = useMemo(() => {
-        return selectedCompanionIds
-            .map((id) => companionLookup.get(id))
-            .filter(Boolean);
-    }, [selectedCompanionIds, companionLookup]);
+    }, [allCompanions]);
 
     useEffect(() => {
-        setSelectedCompanionIds((prev) => prev.filter((id) => companionLookup.has(id)));
+        setSelectedCompanionIDs((prev) => prev.filter((id) => companionLookup.has(id)));
+        setTempSelectedCompanionIDs((prev) => prev.filter((id) => companionLookup.has(id)));
     }, [companionLookup]);
 
-    const openCompanionPicker = () => {
-        setTempSelectedCompanionIds(selectedCompanionIds);
-        setCompanionPickerVisible(true);
-    };
-
     const toggleTempCompanion = (id) => {
-        setTempSelectedCompanionIds((prev) => {
+        setTempSelectedCompanionIDs((prev) => {
             if (prev.includes(id)) {
                 return prev.filter((existingId) => existingId !== id);
             }
@@ -669,18 +822,104 @@ const AddEditDiaryScreen = () => {
     };
 
     const handleConfirmCompanions = () => {
-        setSelectedCompanionIds(tempSelectedCompanionIds);
+        const selected = allCompanions.filter((companion) =>
+            tempSelectedCompanionIDs.includes(String(companion.id))
+        );
+        handleCompanionSelectionChange(selected);
         setCompanionPickerVisible(false);
     };
 
     const handleCancelCompanions = () => {
-        setTempSelectedCompanionIds(selectedCompanionIds);
+        setTempSelectedCompanionIDs(selectedCompanionIDs);
         setCompanionPickerVisible(false);
     };
 
-    const handleRemoveCompanion = (id) => {
-        setSelectedCompanionIds((prev) => prev.filter((existingId) => existingId !== id));
-    };
+    const handleCompanionSelectionChange = useCallback(
+        (selectedCompanions = []) => {
+            const ids = selectedCompanions.map((companion) => String(companion.id));
+            setSelectedCompanionIDs(ids);
+
+            if (selectedCompanions.length === 1) {
+                const avatar = selectedCompanions[0]?.avatarIdentifier;
+                if (avatar) {
+                    setHeroVisual({
+                        type: 'image',
+                        source: resolveImageSource(avatar),
+                    });
+                } else {
+                    applyDefaultHero();
+                }
+            } else if (selectedCompanions.length > 1) {
+                const primaryCompanion = selectedCompanions[0];
+                const secondaryCompanion = selectedCompanions[1] || selectedCompanions[0];
+
+                const primarySource = resolveImageSource(primaryCompanion?.avatarIdentifier);
+                const secondarySource = resolveImageSource(secondaryCompanion?.avatarIdentifier);
+
+                setHeroVisual({
+                    type: 'stacked',
+                    primary: { source: primarySource },
+                    secondary: { source: secondarySource },
+                });
+            } else {
+                applyDefaultHero();
+            }
+        },
+        [applyDefaultHero, resolveImageSource]
+    );
+
+    useEffect(() => {
+        if (isEditMode || hasInitialPrimaryApplied) {
+            return;
+        }
+        if (companionsLoading) {
+            return;
+        }
+
+        let isMounted = true;
+        const initializePrimaryCompanion = async () => {
+            try {
+                const storedPrimary = await AsyncStorage.getItem('primaryCompanionID');
+                if (!isMounted) {
+                    return;
+                }
+
+                if (!storedPrimary || storedPrimary === 'null' || storedPrimary === 'undefined') {
+                    applyDefaultHero();
+                    setHasInitialPrimaryApplied(true);
+                    return;
+                }
+
+                const matched = allCompanions.find(
+                    (item) => String(item.id) === String(storedPrimary)
+                );
+
+                if (!matched) {
+                    applyDefaultHero();
+                    await AsyncStorage.removeItem('primaryCompanionID');
+                }
+            } catch (error) {
+                console.warn('Failed to load primary companion for editor', error);
+                applyDefaultHero();
+            } finally {
+                if (isMounted) {
+                    setHasInitialPrimaryApplied(true);
+                }
+            }
+        };
+
+        initializePrimaryCompanion();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [
+        allCompanions,
+        applyDefaultHero,
+        companionsLoading,
+        hasInitialPrimaryApplied,
+        isEditMode,
+    ]);
 
     useLayoutEffect(() => {
         navigation.setOptions({
@@ -710,7 +949,9 @@ const AddEditDiaryScreen = () => {
             return;
         }
 
-        event.preventDefault();
+        if (typeof event?.preventDefault === 'function') {
+            event.preventDefault();
+        }
 
         Alert.alert(
             'Discard changes?',
@@ -722,7 +963,10 @@ const AddEditDiaryScreen = () => {
                     style: 'destructive',
                     onPress: () => {
                         setPreventRemove(false);
-                        navigation.dispatch(event.data.action);
+                        const action = event?.data?.action;
+                        if (action) {
+                            navigation.dispatch(action);
+                        }
                     },
                 },
             ]
@@ -748,7 +992,7 @@ const AddEditDiaryScreen = () => {
                     bounces={true}
                 >
                     <View style={styles.avatarSection}>
-                        <CompanionAvatarView size={150} />
+                        <CompanionAvatarView size={150} visual={heroVisual} />
                     </View>
                     <MoodSelector onSelectMood={setSelectedMood} selectedMood={selectedMood} />
                     <View style={[styles.weatherContainer, { backgroundColor: colors.card }]}>
@@ -760,56 +1004,30 @@ const AddEditDiaryScreen = () => {
                             <Button title="Add Current Weather" onPress={handleGetWeather} />
                         )}
                     </View>
-                    <View style={[styles.companionContainer, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                        <TouchableOpacity
-                            style={styles.companionButton}
-                            onPress={openCompanionPicker}
-                            activeOpacity={0.85}
-                        >
-                            <Ionicons name="people-outline" size={20} color={colors.primary} style={{ marginRight: 10 }} />
-                            <Text style={[styles.companionButtonText, { color: colors.text }]}>
-                                {selectedCompanionIds.length ? 'Edit linked companions' : 'Link companions'}
+                    <View style={styles.carouselWrapper}>
+                        <View style={styles.carouselHeader}>
+                            <Ionicons name="people-outline" size={18} color={colors.text} style={{ marginRight: 8 }} />
+                            <Text style={[styles.carouselTitle, { color: colors.text }]}>
+                                Companions
                             </Text>
-                            <Ionicons name="chevron-forward" size={18} color={colors.border} />
-                        </TouchableOpacity>
-                        {companions.length === 0 ? (
+                        </View>
+                        {allCompanions.length === 0 ? (
                             <TouchableOpacity
-                                style={styles.companionManageHint}
+                                style={styles.emptyCarouselCallout}
                                 onPress={() => router.push('/companions')}
-                                activeOpacity={0.8}
+                                activeOpacity={0.85}
                             >
-                                <Ionicons name="sparkles-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-                                <Text style={[styles.companionHintText, { color: colors.primary }]}>
-                                    Create companions to link memories
+                                <Ionicons name="sparkles-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
+                                <Text style={{ color: colors.primary, fontWeight: '500' }}>
+                                    Add your first companion
                                 </Text>
                             </TouchableOpacity>
-                        ) : selectedCompanions.length ? (
-                            <View style={styles.companionChipWrap}>
-                                {selectedCompanions.map((companion) => (
-                                    <View
-                                        key={companion.id}
-                                        style={[
-                                            styles.companionChip,
-                                            { borderColor: colors.border, backgroundColor: colors.background },
-                                        ]}
-                                    >
-                                        <Text style={[styles.companionChipText, { color: colors.text }]} numberOfLines={1}>
-                                            {companion.name}
-                                        </Text>
-                                        <TouchableOpacity
-                                            onPress={() => handleRemoveCompanion(companion.id)}
-                                            style={styles.companionChipRemove}
-                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                        >
-                                            <Ionicons name="close-outline" size={16} color={colors.text} />
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-                            </View>
                         ) : (
-                            <Text style={[styles.companionEmptyText, { color: colors.text }]}>
-                                No companions linked yet.
-                            </Text>
+                            <CompanionSelectorCarousel
+                                allCompanions={allCompanions}
+                                selectedIDs={selectedCompanionIDs}
+                                onSelectionChange={handleCompanionSelectionChange}
+                            />
                         )}
                     </View>
                     <TextInput
@@ -1086,7 +1304,7 @@ const AddEditDiaryScreen = () => {
                                     <Text style={[styles.companionModalTitle, { color: colors.text }]}>
                                         Link companions
                                     </Text>
-                                    {companions.length === 0 ? (
+                                    {allCompanions.length === 0 ? (
                                         <View style={styles.companionModalEmpty}>
                                             <Text style={[styles.companionModalEmptyText, { color: colors.text }]}>
                                                 You haven&apos;t created any companions yet.
@@ -1107,8 +1325,8 @@ const AddEditDiaryScreen = () => {
                                             style={styles.companionPickerList}
                                             contentContainerStyle={{ paddingBottom: 8 }}
                                         >
-                                        {companions.map((companion) => {
-                                                const isSelected = tempSelectedCompanionIds.includes(companion.id);
+                                        {allCompanions.map((companion) => {
+                                                const isSelected = tempSelectedCompanionIDs.includes(companion.id);
                                                 const initials = companion.name
                                                     ? companion.name
                                                           .split(' ')
@@ -1263,61 +1481,55 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 0 }, 
         shadowOpacity: 0.55, 
         shadowRadius: 18, 
-        elevation: 12 
+        elevation: 12,
+        backgroundColor: '#EEF2FF',
+    },
+    stackedAvatar: {
+        position: 'relative',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    stackedSecondary: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        borderWidth: 2,
+        borderColor: '#fff',
+        backgroundColor: '#fff',
+    },
+    stackedPrimary: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        borderWidth: 2,
+        borderColor: '#fff',
+        backgroundColor: '#fff',
     },
     weatherContainer: { alignItems: 'center', padding: 15, marginBottom: 20, borderRadius: 8 },
     titleInputStandalone: {
         marginBottom: 20,
     },
-    companionContainer: {
-        borderWidth: 1,
-        borderRadius: 12,
-        padding: 14,
+    carouselWrapper: {
         marginBottom: 20,
     },
-    companionButton: {
+    carouselHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        marginBottom: 8,
     },
-    companionButtonText: {
-        flex: 1,
+    carouselTitle: {
         fontSize: 15,
         fontWeight: '600',
     },
-    companionManageHint: {
+    emptyCarouselCallout: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 12,
-    },
-    companionHintText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    companionChipWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginTop: 12,
-    },
-    companionChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderRadius: 16,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        marginRight: 8,
-        marginBottom: 8,
-    },
-    companionChipText: {
-        fontSize: 14,
-        fontWeight: '500',
-        marginRight: 6,
-        maxWidth: 160,
-    },
-    companionChipRemove: {
-        paddingHorizontal: 2,
-        paddingVertical: 2,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: '#D0D3FF',
+        backgroundColor: 'rgba(74,108,247,0.08)',
     },
     companionEmptyText: {
         marginTop: 12,

@@ -1,11 +1,26 @@
 // screens/InsightsScreen.js
-import React, { useContext, useMemo } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import {
+    ActionSheetIOS,
+    Alert,
+    Dimensions,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { PieChart } from 'react-native-chart-kit';
+import { VictoryChart, VictoryScatter, VictoryTooltip, VictoryTheme } from 'victory-native';
+import { useRouter } from 'expo-router';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { MOODS } from '../data/moods';
+import themeAnalysisService from '../services/ThemeAnalysisService';
 
 const toneColorMap = {
     positive: '#4CAF50',
@@ -13,9 +28,64 @@ const toneColorMap = {
     negative: '#F44336',
 };
 
+const MOOD_SCORE_MAP = {
+    Happy: 5,
+    Excited: 4.5,
+    Calm: 3.5,
+    Tired: 2,
+    Sad: 1.5,
+    Angry: 1,
+};
+
+const getMoodScore = (moodName) => MOOD_SCORE_MAP[moodName] ?? 3;
+
+const getEmotionColor = (score) => {
+    if (score >= 4.5) return '#4CAF50'; // bright green
+    if (score >= 3.5) return '#8BC34A'; // soft green
+    if (score >= 2.5) return '#FFC107'; // amber
+    if (score >= 1.5) return '#FF9800'; // orange
+    return '#F44336'; // red
+};
+
+const getEmotionLabel = (score) => {
+    if (score >= 4.5) return 'Uplifting';
+    if (score >= 3.5) return 'Positive';
+    if (score >= 2.5) return 'Balanced';
+    if (score >= 1.5) return 'Tense';
+    return 'Low';
+};
+
 const InsightsScreen = () => {
+    const router = useRouter();
     const { colors } = useContext(ThemeContext);
     const { diaries } = useContext(DiaryContext);
+    const [themes, setThemes] = useState([]);
+    const [isLoadingThemes, setIsLoadingThemes] = useState(true);
+    const [renameTarget, setRenameTarget] = useState(null);
+    const [renameValue, setRenameValue] = useState('');
+    const [isRenameModalVisible, setRenameModalVisible] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadThemes = async () => {
+            try {
+                const loaded = await themeAnalysisService.getThemes();
+                if (!cancelled) {
+                    setThemes(loaded);
+                }
+            } catch (error) {
+                console.warn('InsightsScreen: failed to load themes', error);
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingThemes(false);
+                }
+            }
+        };
+        loadThemes();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const {
         calendarMarks,
@@ -157,6 +227,131 @@ const InsightsScreen = () => {
         };
     }, [diaries, colors.text]);
 
+    const themeBubbleData = useMemo(() => {
+        if (!themes || themes.length === 0 || !diaries || diaries.length === 0) {
+            return [];
+        }
+
+        const diaryMap = new Map();
+        diaries.forEach((entry) => {
+            if (!entry || !entry.id) return;
+            diaryMap.set(String(entry.id), entry);
+        });
+
+        const metrics = themes.map((theme) => {
+            const diaryIds = (theme.diaryEntryIDs || []).filter(Boolean);
+            let linkedEntries = diaryIds
+                .map((id) => diaryMap.get(String(id)))
+                .filter(Boolean);
+
+            if (linkedEntries.length === 0) {
+                linkedEntries = diaries.filter((entry) => String(entry.themeID || '') === String(theme.id));
+            }
+
+            const energy = linkedEntries.length;
+            if (energy === 0) {
+                return null;
+            }
+
+            const scores = linkedEntries.map((entry) => getMoodScore(entry.mood));
+            const average =
+                scores.length > 0
+                    ? scores.reduce((sum, value) => sum + value, 0) / scores.length
+                    : 0;
+
+            return {
+                id: theme.id,
+                name: theme.name || 'Untitled',
+                keywords: theme.keywords || [],
+                energy,
+                averageEmotion: average,
+                color: getEmotionColor(average),
+                emotionLabel: getEmotionLabel(average),
+            };
+        }).filter(Boolean);
+
+        if (!metrics || metrics.length === 0) {
+            return [];
+        }
+
+        return metrics.map((item, index) => {
+            const row = Math.floor(index / 3) + 1;
+            const column = (index % 3) + 1;
+            const size = Math.max(16, Math.min(68, Math.sqrt(item.energy) * 18));
+
+            return {
+                ...item,
+                x: column,
+                y: row,
+                size,
+            };
+        });
+    }, [themes, diaries]);
+
+    const openThemeRenameModal = (themeDatum) => {
+        setRenameTarget(themeDatum);
+        setRenameValue(themeDatum?.name ?? '');
+        setRenameModalVisible(true);
+    };
+
+    const handleRenameTheme = async () => {
+        if (!renameTarget) {
+            return;
+        }
+        const trimmed = renameValue.trim();
+        try {
+            await themeAnalysisService.renameTheme(renameTarget.id, trimmed);
+            const refreshed = await themeAnalysisService.getThemes();
+            setThemes(Array.isArray(refreshed) ? [...refreshed] : []);
+            setRenameModalVisible(false);
+        } catch (error) {
+            console.warn('InsightsScreen: rename theme failed', error);
+            Alert.alert('Rename failed', 'Please try again.');
+        }
+    };
+
+    const handleThemeAction = (themeDatum) => {
+        if (!themeDatum) {
+            return;
+        }
+        const navigateToTheme = () => {
+            router.push({
+                pathname: '/theme-timeline',
+                params: {
+                    id: themeDatum.id,
+                    name: themeDatum.name,
+                },
+            });
+        };
+
+        if (Platform.OS === 'ios') {
+            ActionSheetIOS.showActionSheetWithOptions(
+                {
+                    title: themeDatum.name,
+                    options: ['Cancel', 'View entries', 'Rename theme'],
+                    cancelButtonIndex: 0,
+                    destructiveButtonIndex: -1,
+                },
+                (buttonIndex) => {
+                    if (buttonIndex === 1) {
+                        navigateToTheme();
+                    } else if (buttonIndex === 2) {
+                        openThemeRenameModal(themeDatum);
+                    }
+                }
+            );
+        } else {
+            Alert.alert(themeDatum.name, 'What would you like to do?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'View entries', onPress: navigateToTheme },
+                {
+                    text: 'Rename theme',
+                    onPress: () => openThemeRenameModal(themeDatum),
+                },
+            ]);
+        }
+    };
+
     const chartWidth = Dimensions.get('window').width - 40;
 
     return (
@@ -222,6 +417,128 @@ const InsightsScreen = () => {
                     )}
                 </View>
             </View>
+            <View style={styles.section}>
+                <Text style={[styles.title, { color: colors.text }]}>Thematic Energy Flow</Text>
+                <Text style={[styles.subtitle, { color: colors.text }]}>
+                    See where your attention naturally flows and how it feels.
+                </Text>
+                <View style={[styles.placeholder, { backgroundColor: colors.card }]}>
+                    {isLoadingThemes ? (
+                        <Text style={{ color: colors.text, opacity: 0.7 }}>Analyzing themes…</Text>
+                    ) : themeBubbleData.length > 0 ? (
+                        <VictoryChart
+                            theme={VictoryTheme.material}
+                            domainPadding={30}
+                            padding={{ top: 20, bottom: 60, left: 30, right: 30 }}
+                            height={320}
+                            width={chartWidth}
+                        >
+                            <VictoryScatter
+                                data={themeBubbleData}
+                                size={({ datum }) => datum.size}
+                                style={{
+                                    data: {
+                                        fill: ({ datum }) => datum.color,
+                                        opacity: 0.85,
+                                    },
+                                    labels: {
+                                        fill: colors.text,
+                                        fontSize: 12,
+                                        fontWeight: '600',
+                                    },
+                                }}
+                                labels={({ datum }) => datum.name}
+                                labelComponent={
+                                    <VictoryTooltip
+                                        flyoutStyle={{
+                                            fill: '#fff',
+                                            stroke: colors.border || '#e0e0e0',
+                                        }}
+                                        style={{ fill: colors.text, fontSize: 12 }}
+                                    />
+                                }
+                                events={[
+                                    {
+                                        target: 'data',
+                                        eventHandlers: {
+                                            onPressIn: (_, props) => {
+                                                const themeDatum = props?.datum;
+                                                if (!themeDatum) {
+                                                    return {};
+                                                }
+                                                handleThemeAction(themeDatum);
+                                                return {};
+                                            },
+                                        },
+                                    },
+                                ]}
+                            />
+                        </VictoryChart>
+                    ) : (
+                        <Text style={{ color: colors.text, opacity: 0.7 }}>
+                            Keep journaling to discover your emerging life themes.
+                        </Text>
+                    )}
+                </View>
+                {themeBubbleData.length > 0 ? (
+                    <View style={styles.legendRow}>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.legendSwatch, { backgroundColor: '#4CAF50' }]} />
+                            <Text style={[styles.legendLabel, { color: colors.text }]}>Positive</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.legendSwatch, { backgroundColor: '#FFC107' }]} />
+                            <Text style={[styles.legendLabel, { color: colors.text }]}>Balanced</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.legendSwatch, { backgroundColor: '#F44336' }]} />
+                            <Text style={[styles.legendLabel, { color: colors.text }]}>Tense</Text>
+                        </View>
+                    </View>
+                ) : null}
+            </View>
+            <Modal
+                visible={isRenameModalVisible}
+                animationType="fade"
+                transparent
+                onRequestClose={() => setRenameModalVisible(false)}
+            >
+                <View style={styles.renameOverlay}>
+                    <View style={[styles.renameCard, { backgroundColor: colors.card }]}>
+                        <Text style={[styles.renameTitle, { color: colors.text }]}>
+                            Rename theme
+                        </Text>
+                        <TextInput
+                            value={renameValue}
+                            onChangeText={setRenameValue}
+                            placeholder="Theme name"
+                            placeholderTextColor={colors.border}
+                            style={[
+                                styles.renameInput,
+                                { color: colors.text, borderColor: colors.border },
+                            ]}
+                        />
+                        <View style={styles.renameActions}>
+                            <TouchableOpacity
+                                style={[styles.secondaryButton, { borderColor: colors.border }]}
+                                onPress={() => setRenameModalVisible(false)}
+                                activeOpacity={0.85}
+                            >
+                                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                                    Cancel
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+                                onPress={handleRenameTheme}
+                                activeOpacity={0.85}
+                            >
+                                <Text style={styles.primaryButtonText}>Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
             <View style={styles.section}>
                 <View style={[styles.card, { backgroundColor: colors.card }]}>
                     <Text style={[styles.title, styles.cardTitle, { color: colors.text }]}>Weekly Mood Snapshot</Text>
@@ -359,6 +676,78 @@ const styles = StyleSheet.create({
     adviceMeta: {
         fontSize: 12,
         color: 'gray',
+    },
+    legendRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        marginTop: 12,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    legendSwatch: {
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+    },
+    legendLabel: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    renameOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'center',
+        padding: 24,
+    },
+    renameCard: {
+        borderRadius: 20,
+        padding: 20,
+    },
+    renameTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 12,
+    },
+    renameInput: {
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 16,
+        marginBottom: 16,
+    },
+    renameActions: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    primaryButton: {
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 120,
+    },
+    primaryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    secondaryButton: {
+        flex: 1,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 14,
+        paddingVertical: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    secondaryButtonText: {
+        fontSize: 16,
+        fontWeight: '500',
     },
 });
 

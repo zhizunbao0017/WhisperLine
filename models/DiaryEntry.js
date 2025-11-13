@@ -15,6 +15,10 @@ class DiaryEntry {
     companionIDs = [],
     companionIds = undefined,
     analysis = null,
+    themeID = null,
+    themeId = undefined,
+    captureType = null,
+    captureMeta = null,
   } = {}) {
     const resolvedContentHTML = typeof contentHTML === 'string' && contentHTML.length > 0
       ? contentHTML
@@ -33,6 +37,9 @@ class DiaryEntry {
     );
     this.companionIDs = normalizedCompanions;
     this.analysis = analysis || null;
+    this.themeID = DiaryEntry.normalizeThemeID(themeID ?? themeId ?? null);
+    this.captureType = captureType ?? null;
+    this.captureMeta = captureMeta ? { ...captureMeta } : null;
   }
 
   static generateId() {
@@ -93,6 +100,19 @@ class DiaryEntry {
     });
   }
 
+  static normalizeThemeID(value) {
+    if (!value) {
+      return null;
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'object' && value.id) {
+      return String(value.id);
+    }
+    return null;
+  }
+
   toJSON() {
     return {
       id: this.id,
@@ -105,6 +125,9 @@ class DiaryEntry {
       updatedAt: this.updatedAt,
       companionIDs: [...this.companionIDs],
       analysis: this.analysis,
+      themeID: this.themeID,
+      captureType: this.captureType,
+      captureMeta: this.captureMeta ? { ...this.captureMeta } : null,
     };
   }
 }

@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -19,6 +19,10 @@ import { AuthContext } from '../context/AuthContext';
 import { SubscriptionContext } from '../context/SubscriptionContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { AVATARS } from '../data/avatars';
+import { CompanionContext } from '../context/CompanionContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
+import { DiaryContext } from '../context/DiaryContext';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -116,10 +120,12 @@ const SettingsScreen = () => {
     const router = useRouter();
 
     const themeContext = useContext(ThemeContext);
+    const companionContext = useContext(CompanionContext);
     const subContext = useContext(SubscriptionContext);
     const authContext = useContext(AuthContext);
+    const diaryContext = useContext(DiaryContext);
 
-    if (!themeContext || !subContext || !authContext) {
+    if (!themeContext || !subContext || !authContext || !diaryContext) {
         return <ActivityIndicator size="large" style={{ flex: 1 }} />;
     }
 
@@ -135,6 +141,100 @@ const SettingsScreen = () => {
 
     const { isProMember, upgradeToPro } = subContext;
     const { isLockEnabled, toggleLock } = authContext;
+    const allCompanions = companionContext?.companions || [];
+    const companionsLoading = companionContext?.isLoading;
+    const [primaryCompanionId, setPrimaryCompanionId] = useState(null);
+    const { runThemeReanalysisBatch, themeReanalysisState } = diaryContext;
+    const [isThemeSyncing, setIsThemeSyncing] = useState(false);
+    const [themeSyncMessage, setThemeSyncMessage] = useState('');
+
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const storedPrimary = await AsyncStorage.getItem('primaryCompanionID');
+                if (!mounted) {
+                    return;
+                }
+                if (!storedPrimary || storedPrimary === 'null' || storedPrimary === 'undefined') {
+                    setPrimaryCompanionId(null);
+                } else {
+                    setPrimaryCompanionId(String(storedPrimary));
+                }
+            } catch (error) {
+                console.warn('Failed to load primary companion id', error);
+            }
+        })();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!primaryCompanionId) {
+            return;
+        }
+        const exists = allCompanions.some((companion) => String(companion.id) === String(primaryCompanionId));
+        if (!exists && !companionsLoading) {
+            setPrimaryCompanionId(null);
+            AsyncStorage.removeItem('primaryCompanionID').catch((error) => {
+                console.warn('Failed to clear stale primary companion', error);
+            });
+        }
+    }, [allCompanions, companionsLoading, primaryCompanionId]);
+
+    const primaryCompanion = allCompanions.find((companion) => String(companion.id) === String(primaryCompanionId)) || null;
+
+    const handleSetNoPrimary = async () => {
+        if (primaryCompanionId === null) {
+            return;
+        }
+        setPrimaryCompanionId(null);
+        try {
+            await AsyncStorage.removeItem('primaryCompanionID');
+        } catch (error) {
+            console.warn('Failed to clear primary companion', error);
+        }
+    };
+
+    const handlePrimaryChange = async (companions = []) => {
+        if (!companions.length) {
+            await handleSetNoPrimary();
+            return;
+        }
+        const selected = companions[companions.length - 1];
+        const nextId = String(selected.id);
+        setPrimaryCompanionId(nextId);
+        try {
+            await AsyncStorage.setItem('primaryCompanionID', nextId);
+        } catch (error) {
+            console.warn('Failed to persist primary companion', error);
+        }
+    };
+
+    const themeSyncing = isThemeSyncing || themeReanalysisState?.isRunning;
+    const handleThemeReanalysis = async () => {
+        if (!runThemeReanalysisBatch) {
+            return;
+        }
+        try {
+            setThemeSyncMessage('');
+            setIsThemeSyncing(true);
+            const result = await runThemeReanalysisBatch({ batchSize: 60 });
+            if (result?.skipped) {
+                setThemeSyncMessage('Theme analysis is already running.');
+            } else if (result?.processedCount) {
+                setThemeSyncMessage(`Reorganized ${result.processedCount} entries.`);
+            } else {
+                setThemeSyncMessage('Themes are already up to date.');
+            }
+        } catch (error) {
+            console.warn('SettingsScreen: theme reanalysis failed', error);
+            Alert.alert('Unable to refresh themes', 'Please try again later.');
+        } finally {
+            setIsThemeSyncing(false);
+        }
+    };
 
     const handleUpgradePress = () => {
         Alert.alert(
@@ -257,6 +357,78 @@ const SettingsScreen = () => {
                 </TouchableOpacity>
             </View>
 
+            <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Primary Companion</Text>
+                <Text style={[styles.primaryStatus, { color: colors.text }]}>
+                    {primaryCompanion ? `Current: ${primaryCompanion.name}` : 'Current: None'}
+                </Text>
+                <TouchableOpacity
+                    style={[
+                        styles.noneOption,
+                        {
+                            borderColor: colors.border,
+                            backgroundColor: primaryCompanionId === null ? colors.primary + '15' : colors.card,
+                        },
+                    ]}
+                    onPress={handleSetNoPrimary}
+                    activeOpacity={0.85}
+                    disabled={primaryCompanionId === null}
+                >
+                    <Ionicons
+                        name={primaryCompanionId === null ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={20}
+                        color={primaryCompanionId === null ? colors.primary : colors.border}
+                        style={{ marginRight: 10 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.noneOptionText, { color: colors.text }]}>No default companion</Text>
+                        <Text style={[styles.noneOptionHint, { color: colors.text }]}>
+                            WhisperLine will use your theme avatar instead.
+                        </Text>
+                    </View>
+                </TouchableOpacity>
+                <CompanionSelectorCarousel
+                    allCompanions={allCompanions}
+                    selectedIDs={primaryCompanionId ? [primaryCompanionId] : []}
+                    onSelectionChange={handlePrimaryChange}
+                />
+            </View>
+
+            <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Theme Insights</Text>
+                <Text style={[styles.themeHelpText, { color: colors.text }]}>
+                    WhisperLine clusters your entries automatically. Refresh if a theme feels off.
+                </Text>
+                <TouchableOpacity
+                    style={[
+                        styles.primaryButton,
+                        {
+                            backgroundColor: colors.primary,
+                            opacity: themeSyncing ? 0.6 : 1,
+                            marginTop: 12,
+                        },
+                    ]}
+                    onPress={handleThemeReanalysis}
+                    activeOpacity={0.85}
+                    disabled={themeSyncing}
+                >
+                    {themeSyncing ? (
+                        <ActivityIndicator color="#fff" />
+                    ) : (
+                        <Text style={styles.primaryButtonText}>Reorganize My Themes</Text>
+                    )}
+                </TouchableOpacity>
+                <Text style={[styles.themeStatusText, { color: colors.text }]}>
+                    Last refresh:{' '}
+                    {themeReanalysisState?.lastRun
+                        ? new Date(themeReanalysisState.lastRun).toLocaleString()
+                        : 'Not yet'}
+                </Text>
+                {themeSyncMessage ? (
+                    <Text style={[styles.themeStatusHint, { color: colors.text }]}>{themeSyncMessage}</Text>
+                ) : null}
+            </View>
+
             {/* Guides & Legal */}
             <View style={styles.sectionContainer}>
                 <TouchableOpacity onPress={() => router.push('/user-guide')} style={styles.linkButton}>
@@ -338,6 +510,21 @@ const styles = StyleSheet.create({
         borderWidth: StyleSheet.hairlineWidth,
     },
     manageButtonText: { flex: 1, fontSize: 16, fontWeight: '500' },
+    primaryStatus: { fontSize: 13, opacity: 0.7, marginBottom: 10, paddingLeft: 2 },
+    noneOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 14,
+        marginBottom: 16,
+    },
+    noneOptionText: { fontSize: 16, fontWeight: '600' },
+    noneOptionHint: { fontSize: 12, opacity: 0.7, marginTop: 4 },
+    themeHelpText: { fontSize: 14, opacity: 0.7 },
+    themeStatusText: { fontSize: 13, marginTop: 10 },
+    themeStatusHint: { fontSize: 12, opacity: 0.7, marginTop: 4 },
     editIconButtonFixed: {
         // No longer needed in new design (was used for overlay edit pencil)
         display: 'none',
