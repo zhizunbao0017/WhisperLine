@@ -15,6 +15,7 @@ import chapterService from '../../services/ChapterService';
 import { Chapter } from '../../models/Chapter';
 import { ThemeContext } from '../../context/ThemeContext';
 import FloatingActionButton from '../../components/FloatingActionButton';
+import QuickCaptureContextValue from '../../context/QuickCaptureContext';
 
 const NUM_COLUMNS = 2;
 
@@ -29,6 +30,7 @@ const chunkArray = <T,>(items: T[], chunkSize: number) => {
 const ChaptersScreen: React.FC = () => {
   const router = useRouter();
   const { colors } = useContext(ThemeContext);
+  const { openQuickCapture } = useContext(QuickCaptureContextValue);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -232,7 +234,10 @@ const ChaptersScreen: React.FC = () => {
           }
           showsVerticalScrollIndicator={false}
         />
-        <FloatingActionButton onPress={() => router.push('/add-edit-diary')} />
+        <FloatingActionButton
+          onPress={openQuickCapture}
+          onLongPress={() => router.push('/add-edit-diary')}
+        />
       </View>
     </SafeAreaView>
   );

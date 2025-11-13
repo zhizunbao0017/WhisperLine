@@ -9,6 +9,7 @@ import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import DiarySummaryCard from '../components/DiarySummaryCard';
 import FloatingActionButton from '../components/FloatingActionButton';
+import QuickCaptureContextValue from '../context/QuickCaptureContext';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -47,6 +48,7 @@ const TimelineScreen = () => {
     const router = useRouter();
     const diaryContext = useContext(DiaryContext);
     const themeContext = useContext(ThemeContext);
+    const { openQuickCapture } = useContext(QuickCaptureContextValue);
     const { selectedDate, setSelectedDate } = diaryContext || {};
 
     if (!diaryContext || !themeContext) {
@@ -131,7 +133,10 @@ const TimelineScreen = () => {
                 ListEmptyComponent={renderEmptyComponent}
                 contentContainerStyle={{ paddingBottom: 100 }}
             />
-            <FloatingActionButton onPress={() => router.push('/add-edit-diary')} />
+            <FloatingActionButton
+                onPress={openQuickCapture}
+                onLongPress={() => router.push('/add-edit-diary')}
+            />
         </View>
     );
 };

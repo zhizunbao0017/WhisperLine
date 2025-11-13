@@ -27,6 +27,7 @@ import MoodQuickPickerModal from '../components/MoodQuickPickerModal';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
+import QuickCaptureContextValue from '../context/QuickCaptureContext';
 
 const FALLBACK_THEME_COLORS = {
     background: '#ffffff',
@@ -283,6 +284,11 @@ function RootLayoutNav() {
         }, 140);
     }, []);
 
+    const openQuickCapture = useCallback(() => {
+        resetIntent(false);
+        setActionSheetVisible(true);
+    }, [resetIntent]);
+
     const handleRemoveMood = useCallback(() => {
         setIntentMood(null);
     }, []);
@@ -354,7 +360,7 @@ function RootLayoutNav() {
     }
 
     return (
-        <>
+        <QuickCaptureContextValue.Provider value={{ openQuickCapture }}>
             <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
             {toastMessage ? (
                 <Animated.View
@@ -434,7 +440,7 @@ function RootLayoutNav() {
                 onSelectMood={handleMoodSelected}
                 colors={colors}
             />
-        </>
+        </QuickCaptureContextValue.Provider>
     );
 }
 

@@ -5,15 +5,18 @@ import { useTheme } from '@react-navigation/native';
 
 type FloatingActionButtonProps = {
   onPress: () => void;
+  onLongPress?: () => void;
   style?: ViewStyle;
 };
 
-const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ onPress, style }) => {
+const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ onPress, onLongPress, style }) => {
   const { colors } = useTheme();
 
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={250}
       style={({ pressed }) => [
         styles.button,
         {
