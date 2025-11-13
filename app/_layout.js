@@ -4,7 +4,6 @@ import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 /* eslint-enable import/no-duplicates */
 import { Buffer } from 'buffer';
-import { Ionicons } from '@expo/vector-icons';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useContext, useEffect, useRef, useState, useCallback } from 'react';
@@ -14,7 +13,6 @@ import {
     Animated,
     LogBox,
     Text,
-    TouchableOpacity,
     View,
 } from 'react-native';
 import { AuthContext, AuthProvider } from '../context/AuthContext';
@@ -401,17 +399,6 @@ function RootLayoutNav() {
                     options={{
                         headerTitle: 'WhisperLine',
                         headerLeft: () => null, 
-                        headerRight: () => (
-                            <TouchableOpacity 
-                                onPress={() => {
-                                    resetIntent(false);
-                                    setActionSheetVisible(true);
-                                }} 
-                                style={{ marginRight: 15 }}
-                            >
-                                <Ionicons name="add-circle" size={28} color={colors.primary} />
-                            </TouchableOpacity>
-                        ),
                     }}
                 />
                 

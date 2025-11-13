@@ -144,9 +144,6 @@ const SettingsScreen = () => {
     const allCompanions = companionContext?.companions || [];
     const companionsLoading = companionContext?.isLoading;
     const [primaryCompanionId, setPrimaryCompanionId] = useState(null);
-    const { runThemeReanalysisBatch, themeReanalysisState } = diaryContext;
-    const [isThemeSyncing, setIsThemeSyncing] = useState(false);
-    const [themeSyncMessage, setThemeSyncMessage] = useState('');
 
     useEffect(() => {
         let mounted = true;
@@ -209,30 +206,6 @@ const SettingsScreen = () => {
             await AsyncStorage.setItem('primaryCompanionID', nextId);
         } catch (error) {
             console.warn('Failed to persist primary companion', error);
-        }
-    };
-
-    const themeSyncing = isThemeSyncing || themeReanalysisState?.isRunning;
-    const handleThemeReanalysis = async () => {
-        if (!runThemeReanalysisBatch) {
-            return;
-        }
-        try {
-            setThemeSyncMessage('');
-            setIsThemeSyncing(true);
-            const result = await runThemeReanalysisBatch({ batchSize: 60 });
-            if (result?.skipped) {
-                setThemeSyncMessage('Theme analysis is already running.');
-            } else if (result?.processedCount) {
-                setThemeSyncMessage(`Reorganized ${result.processedCount} entries.`);
-            } else {
-                setThemeSyncMessage('Themes are already up to date.');
-            }
-        } catch (error) {
-            console.warn('SettingsScreen: theme reanalysis failed', error);
-            Alert.alert('Unable to refresh themes', 'Please try again later.');
-        } finally {
-            setIsThemeSyncing(false);
         }
     };
 
@@ -395,38 +368,18 @@ const SettingsScreen = () => {
             </View>
 
             <View style={styles.sectionContainer}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Theme Insights</Text>
-                <Text style={[styles.themeHelpText, { color: colors.text }]}>
-                    WhisperLine clusters your entries automatically. Refresh if a theme feels off.
-                </Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Advanced</Text>
                 <TouchableOpacity
-                    style={[
-                        styles.primaryButton,
-                        {
-                            backgroundColor: colors.primary,
-                            opacity: themeSyncing ? 0.6 : 1,
-                            marginTop: 12,
-                        },
-                    ]}
-                    onPress={handleThemeReanalysis}
+                    onPress={() => router.push('/advanced-settings')}
+                    style={[styles.manageButton, { borderColor: colors.border, backgroundColor: colors.card }]}
                     activeOpacity={0.85}
-                    disabled={themeSyncing}
                 >
-                    {themeSyncing ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.primaryButtonText}>Reorganize My Themes</Text>
-                    )}
+                    <Ionicons name="options-outline" size={22} color={colors.primary} style={{ marginRight: 10 }} />
+                    <Text style={[styles.manageButtonText, { color: colors.text }]}>
+                        Advanced Settings
+                    </Text>
+                    <Ionicons name="chevron-forward" size={20} color={colors.border} />
                 </TouchableOpacity>
-                <Text style={[styles.themeStatusText, { color: colors.text }]}>
-                    Last refresh:{' '}
-                    {themeReanalysisState?.lastRun
-                        ? new Date(themeReanalysisState.lastRun).toLocaleString()
-                        : 'Not yet'}
-                </Text>
-                {themeSyncMessage ? (
-                    <Text style={[styles.themeStatusHint, { color: colors.text }]}>{themeSyncMessage}</Text>
-                ) : null}
             </View>
 
             {/* Guides & Legal */}

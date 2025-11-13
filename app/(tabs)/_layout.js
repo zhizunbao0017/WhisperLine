@@ -26,10 +26,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="insights"
+        name="chapters"
         options={{
-          title: 'Insights',
-          tabBarIcon: ({ color }) => <Ionicons name="bar-chart-outline" size={26} color={color} />,
+          title: 'Chapters',
+          tabBarIcon: ({ color }) => <Ionicons name="book-outline" size={26} color={color} />,
         }}
       />
       <Tabs.Screen

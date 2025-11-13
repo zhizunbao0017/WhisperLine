@@ -6,6 +6,7 @@ import { ensureAnalysis } from '../services/moodAnalysis';
 import { createDiaryEntry, normalizeDiaryEntry } from '../models/DiaryEntry';
 import themeAnalysisService from '../services/ThemeAnalysisService';
 import achievementService from '../services/AchievementService';
+import chapterService from '../services/ChapterService';
 
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
@@ -308,6 +309,12 @@ export const DiaryProvider = ({ children }) => {
     await saveDiariesToStorage(updatedDiaries);
 
     try {
+      await chapterService.processEntry(newEntry);
+    } catch (error) {
+      console.warn('DiaryContext: chapter classification failed (addDiary)', error);
+    }
+
+    try {
       await achievementService.evaluate({
         diaries: updatedDiaries,
         entry: newEntry,
@@ -345,6 +352,11 @@ export const DiaryProvider = ({ children }) => {
       const updatedDiaries = [analyzed, ...diaries];
       setDiaries(updatedDiaries);
       await saveDiariesToStorage(updatedDiaries);
+      try {
+        await chapterService.processEntry(analyzed);
+      } catch (error) {
+        console.warn('DiaryContext: chapter classification failed (quick entry)', error);
+      }
       try {
         await achievementService.evaluate({
           diaries: updatedDiaries,
@@ -420,6 +432,11 @@ export const DiaryProvider = ({ children }) => {
     );
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
+    try {
+      await chapterService.processEntry(analyzedDiary);
+    } catch (error) {
+      console.warn('DiaryContext: chapter classification failed (updateDiary)', error);
+    }
     try {
       await achievementService.evaluate({
         diaries: updatedDiaries,
