@@ -23,6 +23,7 @@ import { CompanionContext } from '../context/CompanionContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
 import { DiaryContext } from '../context/DiaryContext';
+import { getThemeDefinition } from '@/constants/themes';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -131,13 +132,13 @@ const SettingsScreen = () => {
 
     const {
         theme,
-        toggleTheme,
         colors,
         selectedAvatarId,
         setSelectedAvatarId,
         pickCustomAvatar,
         customAvatarUri,
     } = themeContext;
+    const themeDefinition = getThemeDefinition(theme);
 
     const { isProMember, upgradeToPro } = subContext;
     const { isLockEnabled, toggleLock } = authContext;
@@ -290,16 +291,32 @@ const SettingsScreen = () => {
                 />
             </View>
 
-            {/* Dark Mode */}
-            <View style={[styles.row, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.rowText, { color: colors.text }]}>Dark Mode</Text>
-                <Switch
-                    value={theme === 'dark'}
-                    onValueChange={toggleTheme}
-                    thumbColor={theme === 'dark' ? colors.primary : (Platform.OS === 'android' ? '#f4f3f4' : undefined)}
-                    trackColor={{ false: colors.border, true: colors.primary + '87' }}
-                />
-            </View>
+            {/* Appearance */}
+            <TouchableOpacity
+                style={[
+                    styles.row,
+                    styles.rowButton,
+                    { borderBottomColor: colors.border },
+                ]}
+                onPress={() => router.push('/theme-settings')}
+                activeOpacity={0.85}
+            >
+                <View style={styles.rowButtonContent}>
+                    <Ionicons
+                        name="color-palette-outline"
+                        size={22}
+                        color={colors.primary}
+                        style={{ marginRight: 12 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.rowText, { color: colors.text }]}>Appearance</Text>
+                        <Text style={[styles.rowSubText, { color: colors.secondaryText }]}>
+                            Current theme: {themeDefinition.displayName}
+                        </Text>
+                    </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.border} />
+            </TouchableOpacity>
 
             {/* Pro Upgrade Section */}
             <View style={styles.sectionContainer}>
@@ -402,6 +419,9 @@ const styles = StyleSheet.create({
     avatarListContainer: { paddingVertical: 10, paddingLeft: 2, alignItems: 'flex-start' },
     row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'space-between' },
     rowText: { fontSize: 17, flexShrink: 1 },
+    rowSubText: { fontSize: 13, marginTop: 4 },
+    rowButton: { alignItems: 'center' },
+    rowButtonContent: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
     avatarTouchable: {
         borderWidth: 3,
         borderRadius: 44,

@@ -25,6 +25,7 @@ import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,6 +39,7 @@ import { CompanionContext } from '../context/CompanionContext';
 import { getCurrentWeather } from '../services/weatherService';
 import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 import themeAnalysisService from '../services/ThemeAnalysisService';
+import { useThemeStyles } from '@/hooks/useThemeStyles';
 
 const DEFAULT_HERO_IMAGE = require('../assets/images/ai_avatar.png');
 
@@ -231,7 +233,54 @@ const AddEditDiaryScreen = () => {
     const { addDiary, updateDiary } = useContext(DiaryContext);
     const companionContext = useContext(CompanionContext);
     const companionsLoading = companionContext?.isLoading;
-    const { colors, currentAvatar } = useContext(ThemeContext);
+    const themeContext = useContext(ThemeContext);
+    const themeStyles = useThemeStyles();
+    const currentAvatar = themeContext?.currentAvatar;
+    const isChildTheme = themeContext?.theme === 'child';
+    const headingFontFamily = themeStyles.headingFontFamily ?? 'System';
+    const bodyFontFamily = themeStyles.bodyFontFamily ?? 'System';
+    const buttonFontFamily = themeStyles.buttonFontFamily ?? headingFontFamily;
+    const sectionTitleStyle = useMemo(() => ({
+        fontFamily: headingFontFamily,
+        fontSize: isChildTheme ? 20 : 18,
+        color: isChildTheme ? '#7090AC' : themeStyles.text,
+        marginBottom: 8,
+        fontWeight: isChildTheme ? '400' : '600',
+    }), [headingFontFamily, isChildTheme, themeStyles.text]);
+    const moodLabelTitleStyle = useMemo(() => ({
+        fontFamily: headingFontFamily,
+        fontSize: isChildTheme ? 20 : 18,
+        color: isChildTheme ? '#7090AC' : themeStyles.text,
+        fontWeight: isChildTheme ? '400' : '600',
+    }), [headingFontFamily, isChildTheme, themeStyles.text]);
+    const toolbarContainerStyle = useMemo(
+        () => [
+            styles.toolbar,
+            isChildTheme
+                ? {
+                    backgroundColor: '#FFF6E0',
+                    borderRadius: 30,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: '#F3D5C1',
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                }
+                : {
+                    backgroundColor: themeStyles.surface,
+                    borderRadius: themeStyles.cardRadius,
+                },
+        ],
+        [isChildTheme, themeStyles.surface, themeStyles.cardRadius]
+    );
+    const heroContainerStyle = useMemo(
+        () => [
+            styles.heroContainer,
+            isChildTheme && {
+                backgroundColor: 'rgba(255, 243, 226, 0.8)',
+            },
+        ],
+        [isChildTheme]
+    );
     const insets = useSafeAreaInsets(); // Get safe area insets
     const editorRef = useRef(null); // Create ref for rich text editor
     const scrollViewRef = useRef(null);
@@ -922,23 +971,86 @@ const AddEditDiaryScreen = () => {
     ]);
 
     useLayoutEffect(() => {
+        const headerTitle = isChildTheme ? '' : (isEditMode ? 'Edit Entry' : 'New Entry');
+
+        const childHeaderLeft = () => (
+            <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={styles.childHeaderBack}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+                <Ionicons name="chevron-back" size={20} color="#7090AC" />
+            </TouchableOpacity>
+        );
+
         navigation.setOptions({
             headerBackTitleVisible: false,
-            headerTitle: isEditMode ? 'Edit Entry' : 'New Entry',
+            headerTitle,
+            headerTransparent: isChildTheme,
+            headerTintColor: isChildTheme ? '#7090AC' : undefined,
+            headerStyle: isChildTheme
+                ? {
+                    backgroundColor: 'transparent',
+                    borderBottomWidth: 0,
+                    elevation: 0,
+                    shadowOpacity: 0,
+                }
+                : undefined,
+            headerTitleStyle: isChildTheme
+                ? {
+                    fontFamily: headingFontFamily,
+                    fontSize: 24,
+                    color: '#7090AC',
+                }
+                : undefined,
+            headerLeft: isChildTheme ? childHeaderLeft : undefined,
             headerRight: () => (
-                    <TouchableOpacity
+                <TouchableOpacity
                     onPress={handleSave}
                     disabled={!saveEnabled}
-                    style={styles.headerSaveButton}
+                    style={[
+                        styles.headerSaveButton,
+                        isChildTheme && {
+                            backgroundColor: '#FFF6E4',
+                            borderRadius: 30,
+                            paddingHorizontal: 22,
+                            paddingVertical: 6,
+                            borderWidth: 1,
+                            borderColor: '#E8CDAF',
+                            opacity: saveEnabled ? 1 : 0.55,
+                        },
+                    ]}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                    <Text style={[styles.headerSaveText, { color: colors.primary, opacity: saveEnabled ? 1 : 0.4 }]}>
+                    <Text
+                        style={[
+                            styles.headerSaveText,
+                            isChildTheme
+                                ? {
+                                    fontFamily: headingFontFamily,
+                                    fontSize: 18,
+                                    color: '#7090AC',
+                                }
+                                : {
+                                    color: themeStyles.primary,
+                                    opacity: saveEnabled ? 1 : 0.4,
+                                },
+                        ]}
+                    >
                         {isEditMode ? 'Save' : 'Done'}
                     </Text>
-                    </TouchableOpacity>
+                </TouchableOpacity>
             ),
         });
-    }, [navigation, isEditMode, handleSave, colors.primary, saveEnabled]);
+    }, [
+        navigation,
+        isEditMode,
+        handleSave,
+        themeStyles.primary,
+        saveEnabled,
+        isChildTheme,
+        headingFontFamily,
+    ]);
 
     useEffect(() => {
         setPreventRemove(hasUnsavedChanges);
@@ -974,51 +1086,59 @@ const AddEditDiaryScreen = () => {
     });
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: themeStyles.background }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
                 keyboardVerticalOffset={90}
             >
-                {/* --- 1. Scrollable content area --- */}
-                <ScrollView 
+                    <View style={heroContainerStyle}>
+                        <CompanionAvatarView size={150} visual={heroVisual} />
+                    </View>
+
+            {/* --- 2. Scrollable content area --- */}
+            <ScrollView 
                     ref={scrollViewRef}
-                    style={styles.scrollContainer} 
-                    contentContainerStyle={styles.scrollContent} 
+                style={styles.scrollContainer} 
+                contentContainerStyle={styles.scrollContent} 
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
                     scrollEnabled={true}
                     bounces={true}
                 >
-                    <View style={styles.avatarSection}>
-                        <CompanionAvatarView size={150} visual={heroVisual} />
-                    </View>
-                    <MoodSelector onSelectMood={setSelectedMood} selectedMood={selectedMood} />
-                    <View style={[styles.weatherContainer, { backgroundColor: colors.card }]}>
-                        {isFetchingWeather ? <ActivityIndicator /> : weather ? (
-                            <Text style={{ color: colors.text }}>
-                                {`Weather: ${weather.city}, ${weather.temperature}°C, ${weather.description}`}
-                            </Text>
-                        ) : (
-                            <Button title="Add Current Weather" onPress={handleGetWeather} />
-                        )}
-                    </View>
+                    <MoodSelector
+                        onSelectMood={setSelectedMood}
+                        selectedMood={selectedMood}
+                        titleStyle={moodLabelTitleStyle}
+                        hideMoodLabels={isChildTheme}
+                        hideTitle={isChildTheme}
+                        moodLabelStyle={{ fontFamily: bodyFontFamily }}
+                        containerStyle={isChildTheme ? { marginBottom: 28 } : null}
+                    />
                     <View style={styles.carouselWrapper}>
                         <View style={styles.carouselHeader}>
-                            <Ionicons name="people-outline" size={18} color={colors.text} style={{ marginRight: 8 }} />
-                            <Text style={[styles.carouselTitle, { color: colors.text }]}>
-                                Companions
-                            </Text>
+                            <Ionicons name="people-outline" size={18} color={themeStyles.text} style={{ marginRight: 8 }} />
+                            {!isChildTheme && (
+                                <Text style={[styles.carouselTitle, sectionTitleStyle]}>
+                                    Companions
+                                </Text>
+                            )}
                         </View>
                         {allCompanions.length === 0 ? (
                             <TouchableOpacity
-                                style={styles.emptyCarouselCallout}
+                                style={[
+                                    styles.emptyCarouselCallout,
+                                    {
+                                        borderColor: themeStyles.primary,
+                                        backgroundColor: themeStyles.tagBackground,
+                                    },
+                                ]}
                                 onPress={() => router.push('/companions')}
                                 activeOpacity={0.85}
                             >
-                                <Ionicons name="sparkles-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
-                                <Text style={{ color: colors.primary, fontWeight: '500' }}>
+                                <Ionicons name="sparkles-outline" size={18} color={themeStyles.primary} style={{ marginRight: 6 }} />
+                                <Text style={{ color: themeStyles.primary, fontWeight: '500', fontFamily: headingFontFamily }}>
                                     Add your first companion
                                 </Text>
                             </TouchableOpacity>
@@ -1032,11 +1152,21 @@ const AddEditDiaryScreen = () => {
                     </View>
                     <TextInput
                         ref={titleInputRef}
-                        style={[styles.input, styles.titleInputStandalone, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                        style={[
+                            styles.input,
+                            styles.titleInputStandalone,
+                            {
+                                backgroundColor: themeStyles.card,
+                                color: themeStyles.text,
+                                borderColor: themeStyles.border,
+                                borderRadius: themeStyles.inputRadius,
+                                fontFamily: headingFontFamily,
+                            },
+                        ]}
                         value={title}
                         onChangeText={setTitle}
                         placeholder="Title"
-                        placeholderTextColor="gray"
+                        placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         onFocus={() => {
                             setEmojiTarget('title');
                             const cursor = title.length;
@@ -1050,13 +1180,20 @@ const AddEditDiaryScreen = () => {
                             onChange={setContentHtml}
                         onFocus={() => setEmojiTarget('content')}
                         onMessage={handleEditorMessage}
-                        style={[styles.editor, { borderColor: colors.border, backgroundColor: colors.card }]}
+                        style={[
+                            styles.editor,
+                            {
+                                borderColor: themeStyles.border,
+                                backgroundColor: themeStyles.card,
+                                borderRadius: themeStyles.cardRadius,
+                            },
+                        ]}
                         editorStyle={{
-                            backgroundColor: colors.card,
-                            color: colors.text,
-                            placeholderColor: 'gray',
+                            backgroundColor: themeStyles.card,
+                            color: themeStyles.text,
+                            placeholderColor: isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder,
                             contentCSSText: `
-                                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                                font-family: '${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                                 font-size: 16px;
                                 line-height: 1.6;
                                 padding: 15px;
@@ -1242,6 +1379,7 @@ const AddEditDiaryScreen = () => {
                             })();
                         `}
                             placeholder="How was your day?"
+                            placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         useContainer={true}
                         initialHeight={400}
                         containerStyle={styles.editorContainerStyle}
@@ -1252,8 +1390,8 @@ const AddEditDiaryScreen = () => {
                 <View style={[
                     styles.footer, 
                     { 
-                        backgroundColor: colors.card, 
-                        borderTopColor: colors.border,
+                        backgroundColor: themeStyles.surface, 
+                        borderTopColor: themeStyles.border,
                         paddingBottom: Math.max(insets.bottom, 16), // Use safe area insets or at least 16px
                     }
                 ]}>
@@ -1266,28 +1404,100 @@ const AddEditDiaryScreen = () => {
                             actions.insertBulletsList,
                             actions.insertImage,
                             'insertEmoji',
+                            'addWeather',
                         ]}
                         iconMap={{
                             insertEmoji: ({ tintColor }) => (
-                                <Ionicons name="happy-outline" size={24} color={tintColor || colors.text} />
+                                <Ionicons name="happy-outline" size={24} color={tintColor || themeStyles.text} />
+                            ),
+                            addWeather: ({ tintColor }) => (
+                                <Ionicons name="cloud-outline" size={24} color={tintColor || themeStyles.text} />
                             ),
                         }}
                         onPressAddImage={handleInsertImage}
                         insertEmoji={handleInsertEmoji}
-                        iconTint={colors.text}
-                        selectedIconTint={colors.primary}
-                        style={styles.toolbar}
+                        iconTint={themeStyles.text}
+                        selectedIconTint={themeStyles.primary}
+                        iconGap={isChildTheme ? 24 : undefined}
+                        itemStyle={
+                            isChildTheme
+                                ? {
+                                    flex: 1,
+                                    minWidth: 44,
+                                    flex: 1,
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    marginHorizontal: 6,
+                                }
+                                : undefined
+                        }
+                        flatContainerStyle={
+                            isChildTheme
+                                ? {
+                                    flexGrow: 1,
+                                    flex: 1,
+                                }
+                                : undefined
+                        }
+                        style={toolbarContainerStyle}
+                        addWeather={handleGetWeather}
                     />
                     <TouchableOpacity 
-                        style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saveEnabled ? 1 : 0.4 }]}
-                            onPress={handleSave}
+                        style={styles.saveButton}
+                        onPress={handleSave}
                         activeOpacity={0.8}
                         disabled={!saveEnabled}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                        <Text style={styles.saveButtonText}>
-                            {isEditMode ? "Save Changes" : "Save Diary"}
-                        </Text>
+                        {isChildTheme ? (
+                            <LinearGradient
+                                colors={['#FFAECC', '#FFD391']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={[
+                                    styles.saveButtonGradient,
+                                    {
+                                        opacity: saveEnabled ? 1 : 0.4,
+                                    },
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.saveButtonText,
+                                        {
+                                            fontFamily: headingFontFamily,
+                                            fontSize: 26,
+                                            color: '#4F6586',
+                                        },
+                                    ]}
+                                >
+                                    {isEditMode ? "Save Changes" : "Save Diary"}
+                                </Text>
+                            </LinearGradient>
+                        ) : (
+                            <View
+                                style={[
+                                    styles.saveButtonContent,
+                                    {
+                                        backgroundColor: themeStyles.primary,
+                                        borderRadius: themeStyles.buttonRadius,
+                                        opacity: saveEnabled ? 1 : 0.4,
+                                    },
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.saveButtonText,
+                                        {
+                                            color: themeStyles.primaryText,
+                                            fontFamily: buttonFontFamily,
+                                        },
+                                    ]}
+                                >
+                                    {isEditMode ? "Save Changes" : "Save Diary"}
+                                </Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                 </View>
 
@@ -1300,24 +1510,24 @@ const AddEditDiaryScreen = () => {
                     <TouchableWithoutFeedback onPress={handleCancelCompanions}>
                         <View style={styles.companionModalOverlay}>
                             <TouchableWithoutFeedback onPress={() => {}}>
-                                <View style={[styles.companionModalCard, { backgroundColor: colors.card }]}>
-                                    <Text style={[styles.companionModalTitle, { color: colors.text }]}>
+                                <View style={[styles.companionModalCard, { backgroundColor: themeStyles.card, borderColor: themeStyles.border }]}>
+                                    <Text style={[styles.companionModalTitle, { color: themeStyles.text, fontFamily: headingFontFamily }]}>
                                         Link companions
                                     </Text>
                                     {allCompanions.length === 0 ? (
                                         <View style={styles.companionModalEmpty}>
-                                            <Text style={[styles.companionModalEmptyText, { color: colors.text }]}>
+                                            <Text style={[styles.companionModalEmptyText, { color: themeStyles.text, fontFamily: bodyFontFamily }]}>
                                                 You haven&apos;t created any companions yet.
                                             </Text>
                                             <TouchableOpacity
-                                                style={[styles.companionModalCreateButton, { backgroundColor: colors.primary }]}
+                                                style={[styles.companionModalCreateButton, { backgroundColor: themeStyles.primary }]}
                                                 onPress={() => {
                                                     handleCancelCompanions();
                                                     router.push('/companions');
                                                 }}
                                                 activeOpacity={0.85}
                                             >
-                                                <Text style={styles.companionModalCreateButtonText}>Create companion</Text>
+                                                <Text style={[styles.companionModalCreateButtonText, { color: themeStyles.primaryText, fontFamily: buttonFontFamily }]}>Create companion</Text>
                                             </TouchableOpacity>
                                         </View>
                                     ) : (
@@ -1341,8 +1551,8 @@ const AddEditDiaryScreen = () => {
                                                         style={[
                                                             styles.companionPickerRow,
                                                             {
-                                                                borderColor: colors.border,
-                                                                backgroundColor: isSelected ? colors.background : colors.card,
+                                                                borderColor: themeStyles.border,
+                                                                backgroundColor: isSelected ? themeStyles.surface : themeStyles.card,
                                                             },
                                                         ]}
                                                         onPress={() => toggleTempCompanion(companion.id)}
@@ -1364,17 +1574,17 @@ const AddEditDiaryScreen = () => {
                                                             </View>
                                                         )}
                                                         <View style={{ flex: 1 }}>
-                                                            <Text style={[styles.companionPickerName, { color: colors.text }]} numberOfLines={1}>
+                                                            <Text style={[styles.companionPickerName, { color: themeStyles.text, fontFamily: headingFontFamily }]} numberOfLines={1}>
                                                                 {companion.name}
                                                             </Text>
-                                                            <Text style={[styles.companionPickerMeta, { color: colors.text }]}>
+                                                            <Text style={[styles.companionPickerMeta, { color: themeStyles.secondaryText, fontFamily: bodyFontFamily }]}>
                                                                 Added {new Date(companion.createdAt).toLocaleDateString()}
                                                             </Text>
                                                         </View>
                                                         <Ionicons
                                                             name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
                                                             size={22}
-                                                            color={isSelected ? colors.primary : colors.border}
+                                                            color={isSelected ? themeStyles.primary : themeStyles.border}
                                                         />
                                                     </TouchableOpacity>
                                                 );
@@ -1383,23 +1593,23 @@ const AddEditDiaryScreen = () => {
                                     )}
                                     <View style={styles.companionModalActions}>
                                         <TouchableOpacity
-                                            style={[styles.secondaryButton, { borderColor: colors.border }]}
+                                            style={[styles.secondaryButton, { borderColor: themeStyles.border }]}
                                             onPress={handleCancelCompanions}
                                             activeOpacity={0.85}
                                         >
-                                            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
+                                            <Text style={[styles.secondaryButtonText, { color: themeStyles.text, fontFamily: buttonFontFamily }]}>Cancel</Text>
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             style={[
                                                 styles.primaryButton,
                                                 {
-                                                    backgroundColor: colors.primary,
+                                                    backgroundColor: themeStyles.primary,
                                                 },
                                             ]}
                                             onPress={handleConfirmCompanions}
                                             activeOpacity={0.85}
                                         >
-                                            <Text style={styles.primaryButtonText}>Done</Text>
+                                            <Text style={[styles.primaryButtonText, { color: themeStyles.primaryText, fontFamily: buttonFontFamily }]}>Done</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -1417,16 +1627,16 @@ const AddEditDiaryScreen = () => {
                     <TouchableWithoutFeedback onPress={handleCloseEmojiPicker}>
                         <View style={styles.emojiOverlay}>
                             <TouchableWithoutFeedback onPress={() => {}}>
-                                <View style={[styles.emojiPicker, { backgroundColor: colors.card }]}>
+                                <View style={[styles.emojiPicker, { backgroundColor: themeStyles.card }]}>
                                     <View style={styles.emojiHeader}>
-                                        <Text style={[styles.emojiTitle, { color: colors.text }]}>
+                                        <Text style={[styles.emojiTitle, { color: themeStyles.text, fontFamily: headingFontFamily }]}>
                                             Choose an emoji
                                         </Text>
                                         <TouchableOpacity
                                             onPress={handleCloseEmojiPicker}
                                             style={styles.emojiCloseButton}
                                         >
-                                            <Text style={[styles.emojiCloseText, { color: colors.primary }]}>
+                                            <Text style={[styles.emojiCloseText, { color: themeStyles.primary, fontFamily: buttonFontFamily }]}>
                                                 Close
                                             </Text>
                                         </TouchableOpacity>
@@ -1459,11 +1669,14 @@ const AddEditDiaryScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: 40 },
-    avatarSection: { 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        marginBottom: 18 
+    scrollContent: { padding: 20, paddingBottom: 40, paddingTop: 0 },
+    heroContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 24,
+        borderBottomLeftRadius: 32,
+        borderBottomRightRadius: 32,
+        marginBottom: 18,
     },
     avatarWrapper: { 
         alignItems: 'center', 
@@ -1505,7 +1718,7 @@ const styles = StyleSheet.create({
         borderColor: '#fff',
         backgroundColor: '#fff',
     },
-    weatherContainer: { alignItems: 'center', padding: 15, marginBottom: 20, borderRadius: 8 },
+    weatherContainer: { alignItems: 'center', padding: 15, marginBottom: 20, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
     titleInputStandalone: {
         marginBottom: 20,
     },
@@ -1558,26 +1771,43 @@ const styles = StyleSheet.create({
     },
     toolbar: {
         marginBottom: 12,
+        alignItems: 'center',
+        justifyContent: 'space-evenly',
+        flexDirection: 'row',
     },
     saveButton: {
-        paddingVertical: 14,
-        paddingHorizontal: 20,
-        borderRadius: 12,
+        width: '90%',
+        alignSelf: 'center',
         alignItems: 'center',
         justifyContent: 'center',
-        width: '100%',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.08,
         shadowRadius: 4,
         elevation: 5,
         zIndex: 1001, // Ensure button is on top
-        minHeight: 48, // Ensure sufficient touch area
+        height: 52,
+    },
+    saveButtonContent: {
+        width: '100%',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    saveButtonGradient: {
+        width: '100%',
+        paddingHorizontal: 20,
+        borderRadius: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 52,
     },
     saveButtonText: {
-        color: 'white',
         fontSize: 16,
         fontWeight: '600',
+        textAlign: 'center',
     },
     companionModalOverlay: {
         flex: 1,
@@ -1589,6 +1819,7 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         padding: 20,
         maxHeight: '80%',
+        borderWidth: StyleSheet.hairlineWidth,
     },
     companionModalTitle: {
         fontSize: 20,
@@ -1648,6 +1879,7 @@ const styles = StyleSheet.create({
     companionPickerName: {
         fontSize: 16,
         fontWeight: '600',
+        color: '#7090AC',
     },
     companionPickerMeta: {
         marginTop: 2,
@@ -1688,6 +1920,16 @@ const styles = StyleSheet.create({
     headerSaveText: {
         fontSize: 16,
         fontWeight: '600',
+    },
+    childHeaderBack: {
+        backgroundColor: '#FFF1DC',
+        borderRadius: 28,
+        paddingHorizontal: 14,
+        paddingVertical: 4,
+        borderWidth: 1,
+        borderColor: '#E5C9A9',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     emojiOverlay: {
         flex: 1,

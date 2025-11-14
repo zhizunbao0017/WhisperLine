@@ -29,6 +29,7 @@ export default function TabLayout() {
         name="chapters"
         options={{
           title: 'Chapters',
+          headerShown: false,
           tabBarIcon: ({ color }) => <Ionicons name="book-outline" size={26} color={color} />,
         }}
       />
@@ -36,6 +37,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
+          headerShown: false,
           tabBarIcon: ({ color }) => <Ionicons name="settings-outline" size={26} color={color} />,
         }}
       />

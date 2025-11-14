@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useContext, useMemo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ThemeContext } from '../context/ThemeContext';
 
 const FALLBACK_COLORS = [
   '#6C5CE7',
@@ -21,6 +22,8 @@ const getFallbackColor = (name = '') => {
 };
 
 const CompanionAvatarItem = ({ companion, isSelected, onPress }) => {
+  const themeContext = useContext(ThemeContext);
+  const isChildTheme = themeContext?.theme === 'child';
   const initials = useMemo(() => {
     if (!companion?.name) return '?';
     return companion.name
@@ -62,7 +65,11 @@ const CompanionAvatarItem = ({ companion, isSelected, onPress }) => {
           </View>
         )}
       </View>
-      <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+      <Text
+        style={[styles.name, isChildTheme && { color: '#7090AC' }]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {companion?.name || 'Unnamed'}
       </Text>
     </Pressable>

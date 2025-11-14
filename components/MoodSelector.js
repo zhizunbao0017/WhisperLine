@@ -5,7 +5,15 @@ import { ThemeContext } from '../context/ThemeContext';
 // --- 1. Import our new mood data source ---
 import { MOODS } from '../data/moods';
 
-const MoodSelector = ({ onSelectMood, selectedMood }) => {
+const MoodSelector = ({
+    onSelectMood,
+    selectedMood,
+    titleStyle = {},
+    hideMoodLabels = false,
+    hideTitle = false,
+    moodLabelStyle = {},
+    containerStyle = {},
+}) => {
     const { colors } = useContext(ThemeContext);
 
     // If theme colors haven't loaded yet, don't render anything
@@ -14,8 +22,10 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
     }
 
     return (
-        <View style={styles.container}>
-            <Text style={[styles.label, { color: colors.text }]}>How are you feeling?</Text>
+        <View style={[styles.container, containerStyle]}>
+            {!hideTitle && (
+                <Text style={[styles.label, { color: colors.text }, titleStyle]}>How are you feeling?</Text>
+            )}
             <View style={styles.moodsContainer}>
                 {MOODS.map((mood) => {
                     // --- 2. Check if current mood is selected ---
@@ -71,13 +81,19 @@ const MoodSelector = ({ onSelectMood, selectedMood }) => {
                                         ]} 
                                     />
                                 </View>
-                                <Text style={[styles.moodLabel, { 
-                                    color: isSelected ? colors.primary : colors.text,
-                                    fontWeight: isSelected ? '700' : '400', // Bolder when selected, maintains
-                                    fontSize: isSelected ? 13 : 12, // Slightly larger when selected, maintains
-                                }]}>
-                                    {mood.name}
-                                </Text>
+                                {!hideMoodLabels && (
+                                    <Text style={[
+                                        styles.moodLabel,
+                                        { 
+                                            color: isSelected ? colors.primary : colors.text,
+                                            fontWeight: isSelected ? '700' : '400', // Bolder when selected, maintains
+                                            fontSize: isSelected ? 13 : 12, // Slightly larger when selected, maintains
+                                        },
+                                        moodLabelStyle,
+                                    ]}>
+                                        {mood.name}
+                                    </Text>
+                                )}
                             </View>
                         </TouchableOpacity>
                     );

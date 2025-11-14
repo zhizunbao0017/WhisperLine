@@ -28,13 +28,21 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
+import { useFonts } from 'expo-font';
 
 const FALLBACK_THEME_COLORS = {
     background: '#ffffff',
+    surface: '#ffffff',
     text: '#111111',
+    secondaryText: '#6b7280',
+    muted: '#94a3b8',
     primary: '#4a6cf7',
+    primaryText: '#ffffff',
     card: '#ffffff',
-    border: '#e3e3e8',
+    border: '#e3e8f0',
+    accent: '#ffd166',
+    tagBackground: '#eef2ff',
+    tagText: '#2945b5',
 };
 
 if (typeof global.Buffer === 'undefined') {
@@ -57,8 +65,9 @@ function RootLayoutNav() {
     const [intentMood, setIntentMood] = useState(null);
     const [intentPhotoUri, setIntentPhotoUri] = useState(null);
     const contextsReady = Boolean(authContext && diaryContext && themeContext);
-    const theme = contextsReady ? themeContext.theme : 'light';
+    const theme = contextsReady ? themeContext.theme : 'default';
     const colors = contextsReady ? themeContext.colors : FALLBACK_THEME_COLORS;
+    const hasSelectedTheme = contextsReady ? themeContext.hasSelectedTheme : false;
     const isUnlocked = contextsReady ? authContext.isUnlocked : false;
     const authenticate = contextsReady ? authContext.authenticate : () => {};
     const isLockEnabled = contextsReady ? authContext.isLockEnabled : false;
@@ -303,6 +312,12 @@ function RootLayoutNav() {
     useEffect(() => {
         let cancelled = false;
 
+        if (!hasSelectedTheme) {
+            setNeedsOnboarding(false);
+            setIsCheckingOnboarding(false);
+            return undefined;
+        }
+
         const checkOnboarding = async () => {
             try {
                 const completed = await AsyncStorage.getItem('hasCompletedOnboarding');
@@ -323,10 +338,25 @@ function RootLayoutNav() {
         return () => {
             cancelled = true;
         };
-    }, [pathname]);
+    }, [pathname, hasSelectedTheme]);
 
     useEffect(() => {
-        if (isCheckingOnboarding) {
+        if (!contextsReady) {
+            return;
+        }
+        if (!hasSelectedTheme) {
+            if (pathname !== '/theme-onboarding') {
+                router.replace('/theme-onboarding');
+            }
+            return;
+        }
+        if (pathname === '/theme-onboarding') {
+            router.replace('/(tabs)');
+        }
+    }, [contextsReady, hasSelectedTheme, pathname, router]);
+
+    useEffect(() => {
+        if (isCheckingOnboarding || !hasSelectedTheme) {
             return;
         }
 
@@ -337,7 +367,7 @@ function RootLayoutNav() {
         } else if (pathname === '/onboarding') {
             router.replace('/(tabs)');
         }
-    }, [isCheckingOnboarding, needsOnboarding, pathname, router]);
+    }, [isCheckingOnboarding, needsOnboarding, pathname, router, hasSelectedTheme]);
 
     if (!contextsReady) {
         return (
@@ -408,12 +438,14 @@ function RootLayoutNav() {
                     }}
                 />
                 
-                <Stack.Screen name="add-edit-diary" options={{ title: 'New Entry' }} />
+                <Stack.Screen name="add-edit-diary" />
                 <Stack.Screen name="privacy-policy" options={{ title: 'Privacy Policy', presentation: 'modal' }} />
                 <Stack.Screen name="user-guide" options={{ title: 'User Guide', presentation: 'modal' }} />
                 <Stack.Screen name="diary-detail" options={{ title: 'Diary Detail', presentation: 'modal' }} />
                 <Stack.Screen name="companions" options={{ title: 'Companions' }} />
                 <Stack.Screen name="companion-timeline" options={{ title: 'Companion Timeline' }} />
+                <Stack.Screen name="theme-settings" options={{ title: 'Appearance' }} />
+                <Stack.Screen name="theme-onboarding" options={{ headerShown: false, presentation: 'modal' }} />
                 <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'modal' }} />
             </Stack>
             <FloatingIntentCatcher
@@ -445,6 +477,24 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+    const [fontsLoaded, fontError] = useFonts({
+        'HanziPen TC': require('../assets/fonts/HanziPenTC-Regular.ttf'),
+    });
+
+    useEffect(() => {
+        if (fontError) {
+            console.error('Failed to load HanziPen TC font:', fontError);
+        }
+    }, [fontError]);
+
+    if (!fontsLoaded && !fontError) {
+        return (
+            <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" />
+            </GestureHandlerRootView>
+        );
+    }
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <AuthProvider>
