@@ -350,6 +350,27 @@ const AddEditDiaryScreen = () => {
     );
     const [heroVisual, setHeroVisual] = useState({ type: 'image', source: DEFAULT_HERO_IMAGE });
     const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
+    const processedInitialPlainText = useMemo(
+        () => extractTextFromHTML(processedInitialContent || ''),
+        [processedInitialContent]
+    );
+    const plainTextContent = useMemo(() => extractTextFromHTML(contentHtml), [contentHtml]);
+    const deriveTitleFromText = useCallback((text = '') => {
+        if (!text) {
+            return '';
+        }
+        const firstLine = text
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .find((line) => line.length > 0);
+        return firstLine ? firstLine.slice(0, 60) : '';
+    }, []);
+    const effectiveTitle = useMemo(() => {
+        if (isChildTheme) {
+            return deriveTitleFromText(plainTextContent);
+        }
+        return title.trim();
+    }, [isChildTheme, deriveTitleFromText, plainTextContent, title]);
 
     const resolveImageSource = useCallback((identifier) => {
         if (!identifier) {
@@ -381,13 +402,22 @@ const AddEditDiaryScreen = () => {
     }, [currentAvatar, resolveImageSource]);
 
     const baselineSnapshot = useMemo(() => JSON.stringify({
-        title: (existingDiary?.title || '').trim(),
+        title: isChildTheme
+            ? deriveTitleFromText(processedInitialPlainText)
+            : (existingDiary?.title || '').trim(),
         content: processedInitialContent || '',
         mood: existingDiary?.mood || null,
         weather: normalizeWeather(existingDiary?.weather),
         companionIDs: existingCompanionIds,
         themeID: existingDiary?.themeID ?? existingDiary?.themeId ?? null,
-    }), [existingDiary, processedInitialContent, existingCompanionIds]);
+    }), [
+        deriveTitleFromText,
+        existingDiary,
+        existingCompanionIds,
+        isChildTheme,
+        processedInitialContent,
+        processedInitialPlainText,
+    ]);
 
     const [initialSnapshot, setInitialSnapshot] = useState(baselineSnapshot);
 
@@ -396,18 +426,26 @@ const AddEditDiaryScreen = () => {
     }, [baselineSnapshot]);
     
     const currentSnapshot = useMemo(() => JSON.stringify({
-        title: title.trim(),
+        title: effectiveTitle,
         content: contentHtml || '',
         mood: selectedMood || null,
         weather: normalizeWeather(weather),
         companionIDs: selectedCompanionIDs,
         themeID: selectedThemeId ?? null,
-    }), [title, contentHtml, selectedMood, weather, selectedCompanionIDs, selectedThemeId]);
+    }), [contentHtml, effectiveTitle, selectedMood, selectedCompanionIDs, selectedThemeId, weather]);
 
     const hasUnsavedChanges = currentSnapshot !== initialSnapshot;
     const [preventRemove, setPreventRemove] = useState(false);
-    const plainTextContent = useMemo(() => extractTextFromHTML(contentHtml), [contentHtml]);
-    const canSubmit = Boolean(selectedMood && title.trim() && plainTextContent.trim());
+    const canSubmit = useMemo(() => {
+        const hasContent = plainTextContent.trim().length > 0;
+        if (!selectedMood || !hasContent) {
+            return false;
+        }
+        if (!isChildTheme && !title.trim()) {
+            return false;
+        }
+        return true;
+    }, [isChildTheme, plainTextContent, selectedMood, title]);
     const saveEnabled = canSubmit && hasUnsavedChanges;
 
     useEffect(() => {
@@ -757,7 +795,17 @@ const AddEditDiaryScreen = () => {
     const handleSave = useCallback(async () => {
         try {
             if (!canSubmit) {
-                Alert.alert('Incomplete Entry', 'Please select a mood and fill in the title and content.');
+                const missingTitle = !isChildTheme && !title.trim();
+                const missingContent = plainTextContent.trim().length === 0;
+                let message = 'Please select a mood and add your entry.';
+                if (missingTitle && missingContent) {
+                    message = 'Please select a mood, add a title, and write your entry.';
+                } else if (missingTitle) {
+                    message = 'Please select a mood and add a title.';
+                } else if (missingContent) {
+                    message = 'Please select a mood and write your entry.';
+                }
+                Alert.alert('Incomplete Entry', message);
                 return;
             }
 
@@ -790,7 +838,7 @@ const AddEditDiaryScreen = () => {
             console.log('Saving content with file URIs (production-ready format)');
 
             const diaryData = {
-                title,
+                title: effectiveTitle,
                 content: contentToSave, // Use processed content with file URIs
                 mood: selectedMood,
                 weather,
@@ -825,19 +873,22 @@ const AddEditDiaryScreen = () => {
         }
     }, [
         addDiary,
+        canSubmit,
         contentHtml,
         currentSnapshot,
-        canSubmit,
+        effectiveTitle,
         entryDateParam,
         existingDiary,
+        isChildTheme,
         isEditMode,
+        plainTextContent,
         router,
+        selectedCompanionIDs,
         selectedMood,
+        selectedThemeId,
         title,
         updateDiary,
         weather,
-        selectedCompanionIDs,
-        selectedThemeId,
     ]);
 
     // --- Weather logic ---
@@ -1150,30 +1201,32 @@ const AddEditDiaryScreen = () => {
                             />
                         )}
                     </View>
-                    <TextInput
-                        ref={titleInputRef}
-                        style={[
-                            styles.input,
-                            styles.titleInputStandalone,
-                            {
-                                backgroundColor: themeStyles.card,
-                                color: themeStyles.text,
-                                borderColor: themeStyles.border,
-                                borderRadius: themeStyles.inputRadius,
-                                fontFamily: headingFontFamily,
-                            },
-                        ]}
-                        value={title}
-                        onChangeText={setTitle}
-                        placeholder="Title"
-                        placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
-                        onFocus={() => {
-                            setEmojiTarget('title');
-                            const cursor = title.length;
-                            setTitleSelection({ start: cursor, end: cursor });
-                        }}
-                        onSelectionChange={(event) => setTitleSelection(event.nativeEvent.selection)}
-                    />
+                    {!isChildTheme && (
+                        <TextInput
+                            ref={titleInputRef}
+                            style={[
+                                styles.input,
+                                styles.titleInputStandalone,
+                                {
+                                    backgroundColor: themeStyles.card,
+                                    color: themeStyles.text,
+                                    borderColor: themeStyles.border,
+                                    borderRadius: themeStyles.inputRadius,
+                                    fontFamily: headingFontFamily,
+                                },
+                            ]}
+                            value={title}
+                            onChangeText={setTitle}
+                            placeholder="Title"
+                            placeholderTextColor={themeStyles.inputPlaceholder}
+                            onFocus={() => {
+                                setEmojiTarget('title');
+                                const cursor = title.length;
+                                setTitleSelection({ start: cursor, end: cursor });
+                            }}
+                            onSelectionChange={(event) => setTitleSelection(event.nativeEvent.selection)}
+                        />
+                    )}
                     <RichEditor
                             ref={editorRef}
                         initialContentHTML={contentHtml}
@@ -1378,7 +1431,7 @@ const AddEditDiaryScreen = () => {
                                 observer.observe(document.body, { childList: true, subtree: true });
                             })();
                         `}
-                            placeholder="How was your day?"
+                            placeholder={isChildTheme ? 'Title\n\nHow was your day?' : 'How was your day?'}
                             placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         useContainer={true}
                         initialHeight={400}
