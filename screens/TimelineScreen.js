@@ -1,7 +1,7 @@
 // screens/TimelineScreen.js
 import { useRouter } from 'expo-router';
 import React, { useContext, useMemo, useRef } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -10,6 +10,7 @@ import { ThemeContext } from '../context/ThemeContext';
 import DiarySummaryCard from '../components/DiarySummaryCard';
 import FloatingActionButton from '../components/FloatingActionButton';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 

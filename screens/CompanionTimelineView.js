@@ -7,13 +7,14 @@ import {
   FlatList,
   Image,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { CompanionContext } from '../context/CompanionContext';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const PALETTE = [
   '#6C5CE7',
@@ -48,6 +49,8 @@ const CompanionTimelineView = () => {
   const companionContext = useContext(CompanionContext);
   const diaryContext = useContext(DiaryContext);
   const themeContext = useContext(ThemeContext);
+  const themeStyles = useThemeStyles();
+  const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
   const colors = themeContext?.colors ?? {
     background: '#fff',
@@ -115,10 +118,18 @@ const CompanionTimelineView = () => {
         onPress={() => handleOpenEntry(item)}
         activeOpacity={0.85}
       >
-        <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
+        <Text style={[
+          styles.cardTitle, 
+          { color: colors.text },
+          isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
+        ]} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={[styles.cardSnippet, { color: colors.text }]} numberOfLines={3}>
+        <Text style={[
+          styles.cardSnippet, 
+          { color: colors.text },
+          isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
+        ]} numberOfLines={3}>
           {plainText || 'No additional notes for this entry.'}
         </Text>
         <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>

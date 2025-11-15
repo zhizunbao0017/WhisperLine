@@ -1,9 +1,10 @@
 import React, { useCallback, useContext, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 
 import ThemeSelector from '@/components/ThemeSelector';
 import { getThemeDefinition } from '@/constants/themes';
 import { ThemeContext } from '@/context/ThemeContext';
+import { ThemedText as Text } from '@/components/ThemedText';
 
 const ThemeSettingsScreen: React.FC = () => {
   const themeContext = useContext(ThemeContext);

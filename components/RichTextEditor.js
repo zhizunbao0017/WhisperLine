@@ -2,8 +2,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import PropTypes from 'prop-types';
 import React, { forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import { ThemeContext } from '../context/ThemeContext';
+import { ThemedText as Text } from './ThemedText';
 
 // 动态导入 RichEditor 以避免启动时崩溃
 let RichEditor, RichToolbar, actions;

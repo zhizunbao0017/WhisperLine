@@ -11,7 +11,6 @@ import {
     ScrollView,
     StyleSheet,
     Switch,
-    Text,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -24,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
 import { DiaryContext } from '../context/DiaryContext';
 import { getThemeDefinition } from '@/constants/themes';
+import { ThemedText as Text } from '../components/ThemedText';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({

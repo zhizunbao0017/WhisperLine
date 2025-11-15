@@ -12,13 +12,13 @@ import {
     Alert,
     Animated,
     LogBox,
-    Text,
     View,
 } from 'react-native';
 import { AuthContext, AuthProvider } from '../context/AuthContext';
 import { DiaryContext, DiaryProvider } from '../context/DiaryContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { ThemeContext, ThemeProvider } from '../context/ThemeContext';
+import { getThemeStyles } from '../hooks/useThemeStyles';
 import UnlockScreen from '../screens/UnlockScreen';
 import { CompanionProvider } from '../context/CompanionContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -29,6 +29,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
 import { useFonts } from 'expo-font';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const FALLBACK_THEME_COLORS = {
     background: '#ffffff',
@@ -428,23 +429,66 @@ function RootLayoutNav() {
                 screenOptions={{
                     headerStyle: { backgroundColor: colors.background },
                     headerTintColor: colors.text,
+                    headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
                 }}
             >
                 <Stack.Screen
                     name="(tabs)"
                     options={{
                         headerTitle: 'WhisperLine',
+                        headerTitleStyle: theme === 'cyberpunk' 
+                            ? { color: '#39FF14', fontFamily: getThemeStyles(theme).fontFamily }
+                            : { fontFamily: getThemeStyles(theme).fontFamily },
                         headerLeft: () => null, 
                     }}
                 />
                 
                 <Stack.Screen name="add-edit-diary" />
-                <Stack.Screen name="privacy-policy" options={{ title: 'Privacy Policy', presentation: 'modal' }} />
-                <Stack.Screen name="user-guide" options={{ title: 'User Guide', presentation: 'modal' }} />
-                <Stack.Screen name="diary-detail" options={{ title: 'Diary Detail', presentation: 'modal' }} />
-                <Stack.Screen name="companions" options={{ title: 'Companions' }} />
-                <Stack.Screen name="companion-timeline" options={{ title: 'Companion Timeline' }} />
-                <Stack.Screen name="theme-settings" options={{ title: 'Appearance' }} />
+                <Stack.Screen 
+                    name="privacy-policy" 
+                    options={{ 
+                        title: 'Privacy Policy', 
+                        presentation: 'modal',
+                        headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
+                    }} 
+                />
+                <Stack.Screen 
+                    name="user-guide" 
+                    options={{ 
+                        title: 'User Guide', 
+                        presentation: 'modal',
+                        headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
+                    }} 
+                />
+                <Stack.Screen 
+                    name="diary-detail" 
+                    options={{ 
+                        title: 'Diary Detail', 
+                        presentation: 'modal',
+                        headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
+                    }} 
+                />
+                <Stack.Screen 
+                    name="companions" 
+                    options={{ 
+                        title: 'Companions',
+                        headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
+                    }} 
+                />
+                <Stack.Screen 
+                    name="companion-timeline" 
+                    options={{ 
+                        title: 'Companion Timeline',
+                        headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
+                    }} 
+                />
+                <Stack.Screen 
+                    name="theme-settings" 
+                    options={{ 
+                        title: 'Appearance',
+                        headerTitleStyle: { fontFamily: getThemeStyles(theme).fontFamily },
+                    }} 
+                />
                 <Stack.Screen name="theme-onboarding" options={{ headerShown: false, presentation: 'modal' }} />
                 <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'modal' }} />
             </Stack>
@@ -477,16 +521,21 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+    // 尝试加载字体，但如果失败则继续运行（使用系统默认字体）
     const [fontsLoaded, fontError] = useFonts({
         'HanziPen TC': require('../assets/fonts/HanziPenTC-Regular.ttf'),
+        'Orbitron': require('../assets/fonts/Orbitron-Regular.ttf'),
     });
 
     useEffect(() => {
         if (fontError) {
-            console.error('Failed to load HanziPen TC font:', fontError);
+            console.warn('Font loading failed, using system fonts as fallback:', fontError);
+            // 不阻塞应用，继续使用系统默认字体
         }
     }, [fontError]);
 
+    // 如果字体加载失败，仍然继续渲染应用（使用系统默认字体）
+    // 只在字体正在加载且没有错误时显示加载指示器
     if (!fontsLoaded && !fontError) {
         return (
             <GestureHandlerRootView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>

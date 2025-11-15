@@ -1,7 +1,8 @@
 // app/user-guide.js
 import React, { useContext } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { ThemeContext } from '../context/ThemeContext';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const Section = ({ title, children }) => {
     const { colors } = useContext(ThemeContext);

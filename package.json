@@ -69,6 +69,7 @@
     "babel-plugin-transform-replace-expressions": "^0.2.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "expo-dev-client": "^6.0.17",
     "typescript": "~5.9.2"
   },
   "overrides": {

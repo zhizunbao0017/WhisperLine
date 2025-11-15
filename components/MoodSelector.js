@@ -1,9 +1,10 @@
 // components/MoodSelector.js
 import { useContext } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ThemeContext } from '../context/ThemeContext';
 // --- 1. Import our new mood data source ---
 import { MOODS } from '../data/moods';
+import { ThemedText as Text } from './ThemedText';
 
 const MoodSelector = ({
     onSelectMood,
@@ -14,7 +15,9 @@ const MoodSelector = ({
     moodLabelStyle = {},
     containerStyle = {},
 }) => {
-    const { colors } = useContext(ThemeContext);
+    const themeContext = useContext(ThemeContext);
+    const { colors } = themeContext;
+    const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
     // If theme colors haven't loaded yet, don't render anything
     if (!colors) {
@@ -81,7 +84,7 @@ const MoodSelector = ({
                                         ]} 
                                     />
                                 </View>
-                                {!hideMoodLabels && (
+                                {!hideMoodLabels && !isCyberpunkTheme && (
                                     <Text style={[
                                         styles.moodLabel,
                                         { 

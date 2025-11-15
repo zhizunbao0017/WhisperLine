@@ -1,7 +1,8 @@
 // screens/UnlockScreen.js
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ThemedText as Text } from '../components/ThemedText';
 
 // 1. Ensure component correctly receives onUnlock prop
 const UnlockScreen = ({ onUnlock }) => {

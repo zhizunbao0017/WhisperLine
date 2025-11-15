@@ -1,7 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useContext, useEffect, useRef } from 'react';
+import { Animated, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MOODS } from '../data/moods';
+import { ThemeContext } from '../context/ThemeContext';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { ThemedText as Text } from './ThemedText';
 
 const extractTextFromHTML = (html) => {
   if (!html) return '';
@@ -11,6 +14,9 @@ const extractTextFromHTML = (html) => {
 const DiarySummaryCard = ({ item, index, onPress, colors }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
+  const themeContext = useContext(ThemeContext);
+  const themeStyles = useThemeStyles();
+  const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
   const moodData = MOODS.find((m) => m.name === item.mood);
 
@@ -66,9 +72,17 @@ const DiarySummaryCard = ({ item, index, onPress, colors }) => {
         ) : null}
         <View style={styles.cardHeader}>
           {moodData && moodData.image && <Image source={moodData.image} style={styles.moodImage} />}
-          <Text style={[styles.cardTitle, { color: colors.text }]}>{displayTitle}</Text>
+          <Text style={[
+            styles.cardTitle, 
+            { color: colors.text },
+            isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
+          ]}>{displayTitle}</Text>
         </View>
-        <Text style={[styles.cardContent, { color: colors.text }]} numberOfLines={2}>
+        <Text style={[
+          styles.cardContent, 
+          { color: colors.text },
+          isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
+        ]} numberOfLines={2}>
           {displayContent}
         </Text>
         <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>

@@ -2,9 +2,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useContext } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import RenderHTML from 'react-native-render-html';
 import { ThemeContext } from '../context/ThemeContext';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const DiaryDetailScreen = () => {
     const router = useRouter();

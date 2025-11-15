@@ -2,16 +2,21 @@
 import { Ionicons } from '@expo/vector-icons'; // We'll use a nice icon library
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useContext, useMemo } from 'react';
-import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Dimensions, Image, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import RenderHTML from 'react-native-render-html';
 import { ThemeContext } from '../context/ThemeContext';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DiaryDetailScreen = () => {
     const router = useRouter();
     const params = useLocalSearchParams();
-    const { colors } = useContext(ThemeContext);
+    const themeContext = useContext(ThemeContext);
+    const { colors } = themeContext;
+    const themeStyles = useThemeStyles();
+    const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
     const { width } = useWindowDimensions(); // Get screen width for responsive layout
 
     // Parse diary data from parameters
@@ -77,9 +82,11 @@ const DiaryDetailScreen = () => {
             fontSize: 18,
             lineHeight: 28,
             color: colors.text,
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+            fontFamily: isCyberpunkTheme 
+                ? themeStyles.fontFamily 
+                : '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         },
-    }), [colors.text]);
+    }), [colors.text, isCyberpunkTheme, themeStyles.fontFamily]);
 
     // Function to navigate to edit page
     const handleEdit = () => {
@@ -107,7 +114,11 @@ const DiaryDetailScreen = () => {
                 {diary.mood?.image && (
                     <Image source={diary.mood.image} style={styles.moodImage} />
                 )}
-                <Text style={[styles.title, { color: colors.text }]}>{diary.title}</Text>
+                <Text style={[
+                    styles.title, 
+                    { color: colors.text },
+                    isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
+                ]}>{diary.title}</Text>
             </View>
 
             {/* --- Date and weather information --- */}

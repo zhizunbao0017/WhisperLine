@@ -1,7 +1,8 @@
 // screens/PrivacyPolicyScreen.js
 import React, { useContext } from 'react';
-import { ScrollView, Text, StyleSheet, View, Linking, ActivityIndicator } from 'react-native';
+import { ScrollView, StyleSheet, View, Linking, ActivityIndicator } from 'react-native';
 import { ThemeContext } from '../context/ThemeContext';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const PrivacyPolicyScreen = () => {
     const themeContext = useContext(ThemeContext);

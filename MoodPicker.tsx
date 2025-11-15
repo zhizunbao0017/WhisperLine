@@ -1,7 +1,8 @@
 // components/MoodPicker.tsx
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ThemedText as Text } from '../components/ThemedText';
 
 const moods = [
   { name: "Happy", color: "#FFD60A", icon: "happy" },

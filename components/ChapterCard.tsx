@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef } from 'react';
-import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
@@ -7,6 +7,7 @@ import { Chapter } from '../models/Chapter';
 import { DiaryContext } from '../context/DiaryContext';
 import { CompanionContext } from '../context/CompanionContext';
 import { getEmotionGradientForChapter } from '../services/ChapterService';
+import { ThemedText as Text } from './ThemedText';
 
 type ChapterCardProps = {
   chapter: Chapter;

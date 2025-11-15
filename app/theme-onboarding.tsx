@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useContext, useMemo, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, StyleSheet, View } from 'react-native';
 
 import ThemeSelector from '@/components/ThemeSelector';
 import { ThemeContext } from '@/context/ThemeContext';
+import { ThemedText as Text } from '@/components/ThemedText';
 
 const ThemeOnboardingScreen: React.FC = () => {
   const router = useRouter();

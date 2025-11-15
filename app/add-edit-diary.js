@@ -12,7 +12,6 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
-    Text,
     TextInput,
     TouchableOpacity,
     TouchableWithoutFeedback,
@@ -36,6 +35,7 @@ import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { CompanionContext } from '../context/CompanionContext';
+import { ThemedText as Text } from '../components/ThemedText';
 import { getCurrentWeather } from '../services/weatherService';
 import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 import themeAnalysisService from '../services/ThemeAnalysisService';
@@ -237,6 +237,7 @@ const AddEditDiaryScreen = () => {
     const themeStyles = useThemeStyles();
     const currentAvatar = themeContext?.currentAvatar;
     const isChildTheme = themeContext?.theme === 'child';
+    const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
     const headingFontFamily = themeStyles.headingFontFamily ?? 'System';
     const bodyFontFamily = themeStyles.bodyFontFamily ?? 'System';
     const buttonFontFamily = themeStyles.buttonFontFamily ?? headingFontFamily;
@@ -254,23 +255,64 @@ const AddEditDiaryScreen = () => {
         fontWeight: isChildTheme ? '400' : '600',
     }), [headingFontFamily, isChildTheme, themeStyles.text]);
     const toolbarContainerStyle = useMemo(
-        () => [
-            styles.toolbar,
-            isChildTheme
-                ? {
-                    backgroundColor: '#FFF6E0',
-                    borderRadius: 30,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: '#F3D5C1',
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                }
-                : {
+        () => {
+            const baseStyle = {
+                width: '100%',
+                alignSelf: 'stretch',
+                flexDirection: 'row',
+                justifyContent: 'space-evenly',
+                alignItems: 'center',
+                minHeight: 50,
+                height: 50,
+            };
+            
+            if (isChildTheme) {
+                return [
+                    styles.toolbar,
+                    baseStyle,
+                    {
+                        backgroundColor: '#FFF6E0',
+                        borderRadius: 30,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: '#F3D5C1',
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                    },
+                ];
+            }
+            
+            if (isCyberpunkTheme && themeStyles.toolbarStyle) {
+                return [
+                    styles.toolbar,
+                    baseStyle,
+                    {
+                        // --- 使用主题样式文件中定义的高优先级完整样式 ---
+                        ...themeStyles.toolbarStyle,
+                        // 强制覆盖宽度和对齐（确保覆盖主题样式中的任何限制）
+                        width: '100%',
+                        alignSelf: 'stretch',
+                        flexDirection: 'row',
+                        justifyContent: 'space-evenly',
+                        alignItems: 'center',
+                        minHeight: 50,
+                        height: 50,
+                    },
+                ];
+            }
+            
+            // --- 基础模板的样式 ---
+            return [
+                styles.toolbar,
+                baseStyle,
+                {
                     backgroundColor: themeStyles.surface,
                     borderRadius: themeStyles.cardRadius,
+                    minHeight: 50,
+                    height: 50,
                 },
-        ],
-        [isChildTheme, themeStyles.surface, themeStyles.cardRadius]
+            ];
+        },
+        [isChildTheme, isCyberpunkTheme, themeStyles.surface, themeStyles.cardRadius, themeStyles.toolbarStyle]
     );
     const heroContainerStyle = useMemo(
         () => [
@@ -366,11 +408,11 @@ const AddEditDiaryScreen = () => {
         return firstLine ? firstLine.slice(0, 60) : '';
     }, []);
     const effectiveTitle = useMemo(() => {
-        if (isChildTheme) {
+        if (isChildTheme || isCyberpunkTheme) {
             return deriveTitleFromText(plainTextContent);
         }
         return title.trim();
-    }, [isChildTheme, deriveTitleFromText, plainTextContent, title]);
+    }, [isChildTheme, isCyberpunkTheme, deriveTitleFromText, plainTextContent, title]);
 
     const resolveImageSource = useCallback((identifier) => {
         if (!identifier) {
@@ -441,11 +483,12 @@ const AddEditDiaryScreen = () => {
         if (!selectedMood || !hasContent) {
             return false;
         }
-        if (!isChildTheme && !title.trim()) {
+        // Child and Cyberpunk themes don't require title
+        if (!isChildTheme && !isCyberpunkTheme && !title.trim()) {
             return false;
         }
         return true;
-    }, [isChildTheme, plainTextContent, selectedMood, title]);
+    }, [isChildTheme, isCyberpunkTheme, plainTextContent, selectedMood, title]);
     const saveEnabled = canSubmit && hasUnsavedChanges;
 
     useEffect(() => {
@@ -794,8 +837,18 @@ const AddEditDiaryScreen = () => {
     // --- Save logic ---
     const handleSave = useCallback(async () => {
         try {
+            console.log('handleSave called', {
+                canSubmit,
+                hasUnsavedChanges,
+                selectedMood,
+                hasContent: plainTextContent.trim().length > 0,
+                title: title.trim(),
+                isChildTheme,
+                isCyberpunkTheme,
+            });
+
             if (!canSubmit) {
-                const missingTitle = !isChildTheme && !title.trim();
+                const missingTitle = !isChildTheme && !isCyberpunkTheme && !title.trim();
                 const missingContent = plainTextContent.trim().length === 0;
                 let message = 'Please select a mood and add your entry.';
                 if (missingTitle && missingContent) {
@@ -835,7 +888,13 @@ const AddEditDiaryScreen = () => {
                 return updated;
             });
             
-            console.log('Saving content with file URIs (production-ready format)');
+            console.log('Saving content with file URIs (production-ready format)', {
+                title: effectiveTitle,
+                contentLength: contentToSave.length,
+                mood: selectedMood,
+                companionIDs: selectedCompanionIDs,
+                themeID: selectedThemeId,
+            });
 
             const diaryData = {
                 title: effectiveTitle,
@@ -847,15 +906,19 @@ const AddEditDiaryScreen = () => {
             };
 
             if (isEditMode) {
+                console.log('Updating diary entry:', existingDiary.id);
                 await updateDiary({ ...diaryData, id: existingDiary.id, createdAt: existingDiary.createdAt });
                 await themeAnalysisService.assignEntryToTheme(
                     existingDiary.id,
                     selectedThemeId ?? null,
                     { ...diaryData, id: existingDiary.id }
                 );
+                console.log('Diary entry updated successfully');
             } else {
                 const createdAtOverride = entryDateParam ? new Date(entryDateParam).toISOString() : undefined;
+                console.log('Adding new diary entry', { createdAtOverride });
                 const createdEntry = await addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
+                console.log('Diary entry created:', createdEntry?.id);
                 if (createdEntry?.id) {
                     await themeAnalysisService.assignEntryToTheme(
                         createdEntry.id,
@@ -866,6 +929,7 @@ const AddEditDiaryScreen = () => {
             }
             setInitialSnapshot(currentSnapshot);
             setPreventRemove(false);
+            console.log('Save completed, navigating back');
             router.back(); // Return directly after saving
         } catch (error) {
             console.error('Error saving diary:', error);
@@ -880,6 +944,7 @@ const AddEditDiaryScreen = () => {
         entryDateParam,
         existingDiary,
         isChildTheme,
+        isCyberpunkTheme,
         isEditMode,
         plainTextContent,
         router,
@@ -892,12 +957,35 @@ const AddEditDiaryScreen = () => {
     ]);
 
     // --- Weather logic ---
-    const handleGetWeather = async () => {
+    const handleGetWeather = useCallback(async () => {
         setIsFetchingWeather(true);
-        const weatherData = await getCurrentWeather();
-        if (weatherData) setWeather(weatherData);
-        setIsFetchingWeather(false);
-    };
+        try {
+            console.log('Fetching weather and location...');
+            const weatherData = await getCurrentWeather();
+            if (weatherData) {
+                console.log('Weather data received:', weatherData);
+                setWeather(weatherData);
+            }
+        } catch (error) {
+            console.error('Error fetching weather:', error);
+            // Don't show alert here, fail silently as weather is optional
+        } finally {
+            setIsFetchingWeather(false);
+        }
+    }, []);
+
+    // --- Mood selection handler with auto weather fetch ---
+    const handleMoodSelect = useCallback(async (mood) => {
+        // Set the selected mood
+        setSelectedMood(mood);
+        
+        // Automatically fetch weather and location when mood is selected
+        // Weather is considered essential for diary entries
+        // Only fetch if not already fetching to avoid duplicate requests
+        if (!isFetchingWeather) {
+            await handleGetWeather();
+        }
+    }, [isFetchingWeather, handleGetWeather]);
 
     const companionLookup = useMemo(() => {
         const map = new Map();
@@ -1022,7 +1110,7 @@ const AddEditDiaryScreen = () => {
     ]);
 
     useLayoutEffect(() => {
-        const headerTitle = isChildTheme ? '' : (isEditMode ? 'Edit Entry' : 'New Entry');
+        const headerTitle = isChildTheme || isCyberpunkTheme ? '' : (isEditMode ? 'Edit Entry' : 'New Entry');
 
         const childHeaderLeft = () => (
             <TouchableOpacity
@@ -1030,7 +1118,7 @@ const AddEditDiaryScreen = () => {
                 style={styles.childHeaderBack}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-                <Ionicons name="chevron-back" size={20} color="#7090AC" />
+                <Ionicons name="chevron-back" size={20} color={isCyberpunkTheme ? '#39FF14' : '#7090AC'} />
             </TouchableOpacity>
         );
 
@@ -1038,7 +1126,7 @@ const AddEditDiaryScreen = () => {
             headerBackTitleVisible: false,
             headerTitle,
             headerTransparent: isChildTheme,
-            headerTintColor: isChildTheme ? '#7090AC' : undefined,
+            headerTintColor: isChildTheme ? '#7090AC' : (isCyberpunkTheme ? '#39FF14' : undefined),
             headerStyle: isChildTheme
                 ? {
                     backgroundColor: 'transparent',
@@ -1046,7 +1134,14 @@ const AddEditDiaryScreen = () => {
                     elevation: 0,
                     shadowOpacity: 0,
                 }
-                : undefined,
+                : isCyberpunkTheme
+                    ? {
+                        backgroundColor: '#0A0A1A',
+                        borderBottomWidth: 0,
+                        elevation: 0,
+                        shadowOpacity: 0,
+                    }
+                    : undefined,
             headerTitleStyle: isChildTheme
                 ? {
                     fontFamily: headingFontFamily,
@@ -1054,7 +1149,7 @@ const AddEditDiaryScreen = () => {
                     color: '#7090AC',
                 }
                 : undefined,
-            headerLeft: isChildTheme ? childHeaderLeft : undefined,
+            headerLeft: isChildTheme || isCyberpunkTheme ? childHeaderLeft : undefined,
             headerRight: () => (
                 <TouchableOpacity
                     onPress={handleSave}
@@ -1100,7 +1195,10 @@ const AddEditDiaryScreen = () => {
         themeStyles.primary,
         saveEnabled,
         isChildTheme,
+        isCyberpunkTheme,
         headingFontFamily,
+        canSubmit,
+        hasUnsavedChanges,
     ]);
 
     useEffect(() => {
@@ -1159,11 +1257,11 @@ const AddEditDiaryScreen = () => {
                     bounces={true}
                 >
                     <MoodSelector
-                        onSelectMood={setSelectedMood}
+                        onSelectMood={handleMoodSelect}
                         selectedMood={selectedMood}
                         titleStyle={moodLabelTitleStyle}
                         hideMoodLabels={isChildTheme}
-                        hideTitle={isChildTheme}
+                        hideTitle={isChildTheme || isCyberpunkTheme}
                         moodLabelStyle={{ fontFamily: bodyFontFamily }}
                         containerStyle={isChildTheme ? { marginBottom: 28 } : null}
                     />
@@ -1171,7 +1269,11 @@ const AddEditDiaryScreen = () => {
                         <View style={styles.carouselHeader}>
                             <Ionicons name="people-outline" size={18} color={themeStyles.text} style={{ marginRight: 8 }} />
                             {!isChildTheme && (
-                                <Text style={[styles.carouselTitle, sectionTitleStyle]}>
+                                <Text style={[
+                                    styles.carouselTitle, 
+                                    sectionTitleStyle,
+                                    isCyberpunkTheme && { color: '#39FF14' }
+                                ]}>
                                     Companions
                                 </Text>
                             )}
@@ -1201,7 +1303,7 @@ const AddEditDiaryScreen = () => {
                             />
                         )}
                     </View>
-                    {!isChildTheme && (
+                    {!isChildTheme && !isCyberpunkTheme && (
                         <TextInput
                             ref={titleInputRef}
                             style={[
@@ -1236,15 +1338,17 @@ const AddEditDiaryScreen = () => {
                         style={[
                             styles.editor,
                             {
-                                borderColor: themeStyles.border,
-                                backgroundColor: themeStyles.card,
+                                borderColor: isCyberpunkTheme ? '#00FFFF' : themeStyles.border,
+                                backgroundColor: isCyberpunkTheme ? 'transparent' : themeStyles.card,
                                 borderRadius: themeStyles.cardRadius,
+                                borderWidth: isCyberpunkTheme ? 1 : undefined,
                             },
                         ]}
                         editorStyle={{
-                            backgroundColor: themeStyles.card,
+                            backgroundColor: isCyberpunkTheme ? 'transparent' : themeStyles.card,
                             color: themeStyles.text,
                             placeholderColor: isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder,
+                            caretColor: isCyberpunkTheme ? '#00FFFF' : undefined,
                             contentCSSText: `
                                 font-family: '${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                                 font-size: 16px;
@@ -1431,7 +1535,13 @@ const AddEditDiaryScreen = () => {
                                 observer.observe(document.body, { childList: true, subtree: true });
                             })();
                         `}
-                            placeholder={isChildTheme ? 'Title\n\nHow was your day?' : 'How was your day?'}
+                            placeholder={
+                                isChildTheme 
+                                    ? 'Title\n\nHow was your day?' 
+                                    : isCyberpunkTheme 
+                                        ? 'Title\n> How was your day?' 
+                                        : 'How was your day?'
+                            }
                             placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         useContainer={true}
                         initialHeight={400}
@@ -1446,9 +1556,11 @@ const AddEditDiaryScreen = () => {
                         backgroundColor: themeStyles.surface, 
                         borderTopColor: themeStyles.border,
                         paddingBottom: Math.max(insets.bottom, 16), // Use safe area insets or at least 16px
+                        width: '100%',
+                        alignSelf: 'stretch',
                     }
                 ]}>
-                    <RichToolbar
+                        <RichToolbar
                         getEditor={() => editorRef.current}
                         actions={[
                             actions.setBold,
@@ -1457,43 +1569,57 @@ const AddEditDiaryScreen = () => {
                             actions.insertBulletsList,
                             actions.insertImage,
                             'insertEmoji',
-                            'addWeather',
                         ]}
                         iconMap={{
                             insertEmoji: ({ tintColor }) => (
                                 <Ionicons name="happy-outline" size={24} color={tintColor || themeStyles.text} />
                             ),
-                            addWeather: ({ tintColor }) => (
-                                <Ionicons name="cloud-outline" size={24} color={tintColor || themeStyles.text} />
-                            ),
                         }}
                         onPressAddImage={handleInsertImage}
                         insertEmoji={handleInsertEmoji}
-                        iconTint={themeStyles.text}
+                        iconTint={isCyberpunkTheme ? '#00FFFF' : themeStyles.text}
                         selectedIconTint={themeStyles.primary}
-                        iconGap={isChildTheme ? 24 : undefined}
+                        iconGap={isChildTheme ? 24 : (isCyberpunkTheme ? 0 : undefined)}
                         itemStyle={
                             isChildTheme
                                 ? {
                                     flex: 1,
                                     minWidth: 44,
-                                    flex: 1,
                                     justifyContent: 'center',
                                     alignItems: 'center',
                                     marginHorizontal: 6,
                                 }
-                                : undefined
+                                : isCyberpunkTheme
+                                    ? {
+                                        flex: 1,
+                                        width: 'auto',
+                                        minWidth: 40,
+                                        height: 40,
+                                        minHeight: 40,
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        alignSelf: 'center',
+                                    }
+                                    : {
+                                        minWidth: 40,
+                                        height: 40,
+                                        minHeight: 40,
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        alignSelf: 'center',
+                                    }
                         }
-                        flatContainerStyle={
-                            isChildTheme
-                                ? {
-                                    flexGrow: 1,
-                                    flex: 1,
-                                }
-                                : undefined
-                        }
+                        flatContainerStyle={{
+                            width: '100%',
+                            alignSelf: 'stretch',
+                            flex: 1,
+                            flexGrow: 1,
+                            flexShrink: 0,
+                            minWidth: '100%',
+                            minHeight: 50,
+                            height: 50,
+                        }}
                         style={toolbarContainerStyle}
-                        addWeather={handleGetWeather}
                     />
                     <TouchableOpacity 
                         style={styles.saveButton}
@@ -1527,6 +1653,32 @@ const AddEditDiaryScreen = () => {
                                     {isEditMode ? "Save Changes" : "Save Diary"}
                                 </Text>
                             </LinearGradient>
+                        ) : isCyberpunkTheme ? (
+                            <View
+                                style={[
+                                    styles.saveButtonContent,
+                                    {
+                                        backgroundColor: 'transparent',
+                                        borderRadius: themeStyles.buttonRadius,
+                                        borderWidth: 2,
+                                        borderColor: '#FF00FF',
+                                        opacity: saveEnabled ? 1 : 0.4,
+                                    },
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.saveButtonText,
+                                        {
+                                            color: '#FFFFFF',
+                                            fontFamily: buttonFontFamily,
+                                            fontSize: 20,
+                                        },
+                                    ]}
+                                >
+                                    {isEditMode ? "Save Changes" : "Save Diary"}
+                                </Text>
+                            </View>
                         ) : (
                             <View
                                 style={[
@@ -1821,12 +1973,19 @@ const styles = StyleSheet.create({
         paddingBottom: 16, // Base bottom padding, will be overridden by safe area insets
         zIndex: 1000, // Ensure footer is on top
         elevation: 10, // Android shadow level
+        width: '100%',
+        alignSelf: 'stretch',
     },
     toolbar: {
         marginBottom: 12,
         alignItems: 'center',
         justifyContent: 'space-evenly',
         flexDirection: 'row',
+        width: '100%',
+        alignSelf: 'stretch',
+        flex: 1,
+        minHeight: 50,
+        height: 50,
     },
     saveButton: {
         width: '90%',
@@ -1837,9 +1996,10 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,
         shadowRadius: 4,
-        elevation: 5,
-        zIndex: 1001, // Ensure button is on top
+        elevation: 15, // Higher elevation to ensure button is clickable
+        zIndex: 1002, // Ensure button is on top of footer
         height: 52,
+        marginTop: 8, // Add some spacing from toolbar
     },
     saveButtonContent: {
         width: '100%',

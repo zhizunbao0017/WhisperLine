@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import CompanionAvatarItem from './CompanionAvatarItem';
+import { ThemedText as Text } from './ThemedText';
 
 const CompanionSelectorCarousel = ({ allCompanions = [], selectedIDs = [], onSelectionChange }) => {
   const router = useRouter();
