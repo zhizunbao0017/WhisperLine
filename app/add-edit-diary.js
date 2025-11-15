@@ -31,7 +31,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- 组件和 Context ---
 import MoodSelector from '../components/MoodSelector';
-import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
+// Removed CompanionSelectorCarousel import - companion selection moved to settings
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { CompanionContext } from '../context/CompanionContext';
@@ -97,26 +97,7 @@ const EMOJI_OPTIONS = [
     '😽','🙀','😿','😾','🐶','🐱','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🦊','🐦','🦄','🐝','🌸','🌻','🌈','⭐','⚡',
 ];
 
-const COMPANION_COLOR_PALETTE = [
-    '#6C5CE7',
-    '#E17055',
-    '#00CEC9',
-    '#0984E3',
-    '#FF7675',
-    '#00B894',
-    '#FAB1A0',
-    '#74B9FF',
-    '#D63031',
-    '#636EFA',
-];
-
-const getCompanionColor = (name = '') => {
-    if (!name) {
-        return COMPANION_COLOR_PALETTE[0];
-    }
-    const code = Array.from(name).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return COMPANION_COLOR_PALETTE[code % COMPANION_COLOR_PALETTE.length];
-};
+// Removed getCompanionColor - no longer needed after removing companion picker modal
 
 const normalizeWeather = (value) => {
     if (!value) return null;
@@ -145,7 +126,7 @@ const CompanionAvatarView = ({ size = 80, visual }) => {
                             {
                                 width: size * 0.7,
                                 height: size * 0.7,
-                                borderRadius: (size * 0.7) / 2,
+                                borderRadius: 0, // Cyberpunk style: square corners
                             },
                         ]}
                         resizeMode="cover"
@@ -157,7 +138,7 @@ const CompanionAvatarView = ({ size = 80, visual }) => {
                             {
                                 width: size * 0.8,
                                 height: size * 0.8,
-                                borderRadius: (size * 0.8) / 2,
+                                borderRadius: 0, // Cyberpunk style: square corners
                             },
                         ]}
                         resizeMode="cover"
@@ -178,10 +159,10 @@ const CompanionAvatarView = ({ size = 80, visual }) => {
     if (config.type === 'image' && config.source) {
         return (
             <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center' }]}>
-                <View style={[styles.glow, { width: size + 24, height: size + 24, borderRadius: (size + 24) / 2 }]}>
+                <View style={[styles.glow, { width: size + 24, height: size + 24, borderRadius: 0 }]}>
                     <Image
                         source={config.source}
-                        style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: '#fff', backgroundColor: '#fff' }}
+                        style={{ width: size, height: size, borderRadius: 0, borderWidth: 2, borderColor: '#FF0000', backgroundColor: '#fff' }}
                         resizeMode="cover"
                     />
                 </View>
@@ -256,63 +237,57 @@ const AddEditDiaryScreen = () => {
     }), [headingFontFamily, isChildTheme, themeStyles.text]);
     const toolbarContainerStyle = useMemo(
         () => {
-            const baseStyle = {
-                width: '100%',
-                alignSelf: 'stretch',
-                flexDirection: 'row',
-                justifyContent: 'space-evenly',
-                alignItems: 'center',
-                minHeight: 50,
-                height: 50,
-            };
-            
             if (isChildTheme) {
-                return [
-                    styles.toolbar,
-                    baseStyle,
-                    {
-                        backgroundColor: '#FFF6E0',
-                        borderRadius: 30,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: '#F3D5C1',
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                    },
-                ];
+                return {
+                    backgroundColor: '#FFF6E0',
+                    borderRadius: isCyberpunkTheme ? 0 : 30,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: '#F3D5C1',
+                    overflow: 'hidden',
+                };
             }
             
             if (isCyberpunkTheme && themeStyles.toolbarStyle) {
-                return [
-                    styles.toolbar,
-                    baseStyle,
-                    {
-                        // --- 使用主题样式文件中定义的高优先级完整样式 ---
-                        ...themeStyles.toolbarStyle,
-                        // 强制覆盖宽度和对齐（确保覆盖主题样式中的任何限制）
-                        width: '100%',
-                        alignSelf: 'stretch',
-                        flexDirection: 'row',
-                        justifyContent: 'space-evenly',
-                        alignItems: 'center',
-                        minHeight: 50,
-                        height: 50,
-                    },
-                ];
+                return {
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: '#FFFF00',
+                    borderRadius: 0,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-around',
+                    minHeight: 50,
+                    overflow: 'hidden',
+                };
             }
             
-            // --- 基础模板的样式 ---
-            return [
-                styles.toolbar,
-                baseStyle,
-                {
-                    backgroundColor: themeStyles.surface,
-                    borderRadius: themeStyles.cardRadius,
-                    minHeight: 50,
-                    height: 50,
-                },
-            ];
+            return {
+                backgroundColor: themeStyles.surface,
+                borderRadius: isCyberpunkTheme ? 0 : themeStyles.cardRadius,
+                overflow: 'hidden',
+            };
         },
         [isChildTheme, isCyberpunkTheme, themeStyles.surface, themeStyles.cardRadius, themeStyles.toolbarStyle]
+    );
+
+    // Cyberpunk toolbar item style
+    const cyberpunkToolbarItemStyle = useMemo(
+        () => {
+            if (isCyberpunkTheme) {
+                return {
+                    flex: 1,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: 44,
+                    height: 44,
+                    backgroundColor: 'transparent',
+                };
+            }
+            return undefined;
+        },
+        [isCyberpunkTheme]
     );
     const heroContainerStyle = useMemo(
         () => [
@@ -380,13 +355,13 @@ const AddEditDiaryScreen = () => {
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
     const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
-    const [isCompanionPickerVisible, setCompanionPickerVisible] = useState(false);
+    // Removed companion picker modal - companion selection moved to settings
     const [emojiTarget, setEmojiTarget] = useState('content');
     const titleInputRef = useRef(null);
     const [titleSelection, setTitleSelection] = useState({ start: 0, end: 0 });
     const [allCompanions, setAllCompanions] = useState([]);
+    // Removed manual companion selection - will auto-use primary companion or existing diary companions
     const [selectedCompanionIDs, setSelectedCompanionIDs] = useState(existingCompanionIds);
-    const [tempSelectedCompanionIDs, setTempSelectedCompanionIDs] = useState(existingCompanionIds);
     const [selectedThemeId, setSelectedThemeId] = useState(
         existingDiary?.themeID ?? existingDiary?.themeId ?? null
     );
@@ -497,7 +472,6 @@ const AddEditDiaryScreen = () => {
         setSelectedMood(existingDiary?.mood || null);
         setWeather(existingDiary?.weather || null);
         setSelectedCompanionIDs(existingCompanionIds);
-        setTempSelectedCompanionIDs(existingCompanionIds);
     }, [existingDiary, existingCompanionIds]);
 
     useEffect(() => {
@@ -518,6 +492,7 @@ const AddEditDiaryScreen = () => {
         }
     }, [companionContext?.companions]);
 
+    // Update hero visual based on selected companions
     useEffect(() => {
         const selectedCompanionsData = selectedCompanionIDs
             .map((id) => allCompanions.find((item) => String(item.id) === String(id)))
@@ -695,7 +670,7 @@ const AddEditDiaryScreen = () => {
                             target.style.height = 'auto';
                             target.style.display = 'block';
                             target.style.margin = '12px 0';
-                            target.style.borderRadius = '8px';
+                            target.style.borderRadius = '0px'; // Cyberpunk: square corners
                             if (register) { register(target); }
                             const scrollToBottom = () => {
                                 const editorEl = document.querySelector('.pell-content');
@@ -987,6 +962,7 @@ const AddEditDiaryScreen = () => {
         }
     }, [isFetchingWeather, handleGetWeather]);
 
+    // Clean up selectedCompanionIDs to ensure they reference valid companions
     const companionLookup = useMemo(() => {
         const map = new Map();
         allCompanions.forEach((companion) => {
@@ -997,82 +973,37 @@ const AddEditDiaryScreen = () => {
 
     useEffect(() => {
         setSelectedCompanionIDs((prev) => prev.filter((id) => companionLookup.has(id)));
-        setTempSelectedCompanionIDs((prev) => prev.filter((id) => companionLookup.has(id)));
     }, [companionLookup]);
 
-    const toggleTempCompanion = (id) => {
-        setTempSelectedCompanionIDs((prev) => {
-            if (prev.includes(id)) {
-                return prev.filter((existingId) => existingId !== id);
-            }
-            return [...prev, id];
-        });
-    };
-
-    const handleConfirmCompanions = () => {
-        const selected = allCompanions.filter((companion) =>
-            tempSelectedCompanionIDs.includes(String(companion.id))
-        );
-        handleCompanionSelectionChange(selected);
-        setCompanionPickerVisible(false);
-    };
-
-    const handleCancelCompanions = () => {
-        setTempSelectedCompanionIDs(selectedCompanionIDs);
-        setCompanionPickerVisible(false);
-    };
-
-    const handleCompanionSelectionChange = useCallback(
-        (selectedCompanions = []) => {
-            const ids = selectedCompanions.map((companion) => String(companion.id));
-            setSelectedCompanionIDs(ids);
-
-            if (selectedCompanions.length === 1) {
-                const avatar = selectedCompanions[0]?.avatarIdentifier;
-                if (avatar) {
-                    setHeroVisual({
-                        type: 'image',
-                        source: resolveImageSource(avatar),
-                    });
-                } else {
-                    applyDefaultHero();
-                }
-            } else if (selectedCompanions.length > 1) {
-                const primaryCompanion = selectedCompanions[0];
-                const secondaryCompanion = selectedCompanions[1] || selectedCompanions[0];
-
-                const primarySource = resolveImageSource(primaryCompanion?.avatarIdentifier);
-                const secondarySource = resolveImageSource(secondaryCompanion?.avatarIdentifier);
-
-                setHeroVisual({
-                    type: 'stacked',
-                    primary: { source: primarySource },
-                    secondary: { source: secondarySource },
-                });
-            } else {
-                applyDefaultHero();
-            }
-        },
-        [applyDefaultHero, resolveImageSource]
-    );
-
+    // Initialize companion IDs: use existing diary companions in edit mode, or primary companion for new entries
     useEffect(() => {
-        if (isEditMode || hasInitialPrimaryApplied) {
+        if (companionsLoading) {
             return;
         }
-        if (companionsLoading) {
+
+        if (isEditMode) {
+            // In edit mode, use existing diary companions
+            setSelectedCompanionIDs(existingCompanionIds);
+            setHasInitialPrimaryApplied(true);
+            return;
+        }
+
+        if (hasInitialPrimaryApplied) {
             return;
         }
 
         let isMounted = true;
         const initializePrimaryCompanion = async () => {
             try {
+                // For new entries, use primary companion if set
                 const storedPrimary = await AsyncStorage.getItem('primaryCompanionID');
                 if (!isMounted) {
                     return;
                 }
 
                 if (!storedPrimary || storedPrimary === 'null' || storedPrimary === 'undefined') {
+                    // No primary companion set, use empty array
+                    setSelectedCompanionIDs([]);
                     applyDefaultHero();
                     setHasInitialPrimaryApplied(true);
                     return;
@@ -1082,12 +1013,18 @@ const AddEditDiaryScreen = () => {
                     (item) => String(item.id) === String(storedPrimary)
                 );
 
-                if (!matched) {
-                    applyDefaultHero();
+                if (matched) {
+                    // Set primary companion as selected
+                    setSelectedCompanionIDs([String(matched.id)]);
+                } else {
+                    // Primary companion not found, clear it
+                    setSelectedCompanionIDs([]);
                     await AsyncStorage.removeItem('primaryCompanionID');
+                    applyDefaultHero();
                 }
             } catch (error) {
                 console.warn('Failed to load primary companion for editor', error);
+                setSelectedCompanionIDs([]);
                 applyDefaultHero();
             } finally {
                 if (isMounted) {
@@ -1105,6 +1042,7 @@ const AddEditDiaryScreen = () => {
         allCompanions,
         applyDefaultHero,
         companionsLoading,
+        existingCompanionIds,
         hasInitialPrimaryApplied,
         isEditMode,
     ]);
@@ -1158,7 +1096,7 @@ const AddEditDiaryScreen = () => {
                         styles.headerSaveButton,
                         isChildTheme && {
                             backgroundColor: '#FFF6E4',
-                            borderRadius: 30,
+                            borderRadius: isCyberpunkTheme ? 0 : 30, // Cyberpunk: square corners
                             paddingHorizontal: 22,
                             paddingVertical: 6,
                             borderWidth: 1,
@@ -1265,44 +1203,6 @@ const AddEditDiaryScreen = () => {
                         moodLabelStyle={{ fontFamily: bodyFontFamily }}
                         containerStyle={isChildTheme ? { marginBottom: 28 } : null}
                     />
-                    <View style={styles.carouselWrapper}>
-                        <View style={styles.carouselHeader}>
-                            <Ionicons name="people-outline" size={18} color={themeStyles.text} style={{ marginRight: 8 }} />
-                            {!isChildTheme && (
-                                <Text style={[
-                                    styles.carouselTitle, 
-                                    sectionTitleStyle,
-                                    isCyberpunkTheme && { color: '#39FF14' }
-                                ]}>
-                                    Companions
-                                </Text>
-                            )}
-                        </View>
-                        {allCompanions.length === 0 ? (
-                            <TouchableOpacity
-                                style={[
-                                    styles.emptyCarouselCallout,
-                                    {
-                                        borderColor: themeStyles.primary,
-                                        backgroundColor: themeStyles.tagBackground,
-                                    },
-                                ]}
-                                onPress={() => router.push('/companions')}
-                                activeOpacity={0.85}
-                            >
-                                <Ionicons name="sparkles-outline" size={18} color={themeStyles.primary} style={{ marginRight: 6 }} />
-                                <Text style={{ color: themeStyles.primary, fontWeight: '500', fontFamily: headingFontFamily }}>
-                                    Add your first companion
-                                </Text>
-                            </TouchableOpacity>
-                        ) : (
-                            <CompanionSelectorCarousel
-                                allCompanions={allCompanions}
-                                selectedIDs={selectedCompanionIDs}
-                                onSelectionChange={handleCompanionSelectionChange}
-                            />
-                        )}
-                    </View>
                     {!isChildTheme && !isCyberpunkTheme && (
                         <TextInput
                             ref={titleInputRef}
@@ -1313,7 +1213,7 @@ const AddEditDiaryScreen = () => {
                                     backgroundColor: themeStyles.card,
                                     color: themeStyles.text,
                                     borderColor: themeStyles.border,
-                                    borderRadius: themeStyles.inputRadius,
+                                    borderRadius: isCyberpunkTheme ? 0 : themeStyles.inputRadius, // Cyberpunk: square corners
                                     fontFamily: headingFontFamily,
                                 },
                             ]}
@@ -1340,7 +1240,7 @@ const AddEditDiaryScreen = () => {
                             {
                                 borderColor: isCyberpunkTheme ? '#00FFFF' : themeStyles.border,
                                 backgroundColor: isCyberpunkTheme ? 'transparent' : themeStyles.card,
-                                borderRadius: themeStyles.cardRadius,
+                                borderRadius: isCyberpunkTheme ? 0 : themeStyles.cardRadius, // Cyberpunk: square corners
                                 borderWidth: isCyberpunkTheme ? 1 : undefined,
                             },
                         ]}
@@ -1514,7 +1414,7 @@ const AddEditDiaryScreen = () => {
                                             img.style.minHeight = '200px';
                                             img.style.margin = '10px 0';
                                             img.style.display = 'block';
-                                            img.style.borderRadius = '8px';
+                                            img.style.borderRadius = '0px'; // Cyberpunk: square corners
                                             img.style.backgroundColor = '#f5f5f5';
                                             ns.bindImage(img);
                                             img.onerror = function() {
@@ -1555,72 +1455,95 @@ const AddEditDiaryScreen = () => {
                     { 
                         backgroundColor: themeStyles.surface, 
                         borderTopColor: themeStyles.border,
-                        paddingBottom: Math.max(insets.bottom, 16), // Use safe area insets or at least 16px
+                        paddingTop: 12,
+                        paddingBottom: Math.max(insets.bottom, 16),
+                        paddingHorizontal: 16,
                         width: '100%',
                         alignSelf: 'stretch',
                     }
                 ]}>
+                    {/* Rich Text Toolbar */}
+                    <View style={[styles.toolbarWrapper, toolbarContainerStyle]}>
                         <RichToolbar
-                        getEditor={() => editorRef.current}
-                        actions={[
-                            actions.setBold,
-                            actions.setItalic,
-                            actions.setUnderline,
-                            actions.insertBulletsList,
-                            actions.insertImage,
-                            'insertEmoji',
-                        ]}
-                        iconMap={{
-                            insertEmoji: ({ tintColor }) => (
-                                <Ionicons name="happy-outline" size={24} color={tintColor || themeStyles.text} />
-                            ),
-                        }}
-                        onPressAddImage={handleInsertImage}
-                        insertEmoji={handleInsertEmoji}
-                        iconTint={isCyberpunkTheme ? '#00FFFF' : themeStyles.text}
-                        selectedIconTint={themeStyles.primary}
-                        iconGap={isChildTheme ? 24 : (isCyberpunkTheme ? 0 : undefined)}
-                        itemStyle={
-                            isChildTheme
-                                ? {
-                                    flex: 1,
-                                    minWidth: 44,
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    marginHorizontal: 6,
-                                }
-                                : isCyberpunkTheme
-                                    ? {
-                                        flex: 1,
-                                        width: 'auto',
-                                        minWidth: 40,
-                                        height: 40,
-                                        minHeight: 40,
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        alignSelf: 'center',
-                                    }
-                                    : {
-                                        minWidth: 40,
-                                        height: 40,
-                                        minHeight: 40,
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        alignSelf: 'center',
-                                    }
-                        }
-                        flatContainerStyle={{
-                            width: '100%',
-                            alignSelf: 'stretch',
-                            flex: 1,
-                            flexGrow: 1,
-                            flexShrink: 0,
-                            minWidth: '100%',
-                            minHeight: 50,
-                            height: 50,
-                        }}
-                        style={toolbarContainerStyle}
-                    />
+                            getEditor={() => editorRef.current}
+                            actions={[
+                                actions.setBold,
+                                actions.setItalic,
+                                actions.setUnderline,
+                                actions.insertBulletsList,
+                                actions.insertImage,
+                                'insertEmoji',
+                            ]}
+                            iconMap={{
+                                insertEmoji: ({ tintColor }) => (
+                                    <Ionicons name="happy-outline" size={24} color={tintColor || themeStyles.text} />
+                                ),
+                            }}
+                            onPressAddImage={handleInsertImage}
+                            insertEmoji={handleInsertEmoji}
+                            iconTint={isCyberpunkTheme ? '#00FFFF' : themeStyles.text}
+                            selectedIconTint={themeStyles.primary}
+                            iconGap={0}
+                            unselectedButtonStyle={isCyberpunkTheme ? {
+                                backgroundColor: 'transparent',
+                            } : undefined}
+                            selectedButtonStyle={isCyberpunkTheme ? {
+                                backgroundColor: 'transparent',
+                            } : undefined}
+                            itemStyle={isCyberpunkTheme ? (cyberpunkToolbarItemStyle || {
+                                flex: 1,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                minWidth: 44,
+                                height: 44,
+                                backgroundColor: 'transparent',
+                            }) : {
+                                flex: 1,
+                                minWidth: 0,
+                                height: 50,
+                                minHeight: 50,
+                                maxHeight: 50,
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                paddingVertical: 0,
+                                paddingHorizontal: 0,
+                                marginHorizontal: 0,
+                                marginVertical: 0,
+                            }}
+                            flatContainerStyle={isCyberpunkTheme ? {
+                                flexDirection: 'row',
+                                minHeight: 50,
+                                paddingHorizontal: 0,
+                                paddingVertical: 0,
+                                backgroundColor: 'transparent',
+                            } : {
+                                width: '100%',
+                                height: 50,
+                                minHeight: 50,
+                                maxHeight: 50,
+                                paddingHorizontal: 0,
+                                marginHorizontal: 0,
+                                paddingVertical: 0,
+                                marginVertical: 0,
+                                flexDirection: 'row',
+                            }}
+                            style={isCyberpunkTheme ? {
+                                minHeight: 50,
+                                margin: 0,
+                                padding: 0,
+                                backgroundColor: 'transparent',
+                            } : {
+                                width: '100%',
+                                height: 50,
+                                minHeight: 50,
+                                maxHeight: 50,
+                                margin: 0,
+                                padding: 0,
+                            }}
+                        />
+                    </View>
+                    
+                    {/* Save Button */}
                     <TouchableOpacity 
                         style={styles.saveButton}
                         onPress={handleSave}
@@ -1659,7 +1582,7 @@ const AddEditDiaryScreen = () => {
                                     styles.saveButtonContent,
                                     {
                                         backgroundColor: 'transparent',
-                                        borderRadius: themeStyles.buttonRadius,
+                                        borderRadius: 0, // Cyberpunk style: square corners
                                         borderWidth: 2,
                                         borderColor: '#FF00FF',
                                         opacity: saveEnabled ? 1 : 0.4,
@@ -1685,7 +1608,7 @@ const AddEditDiaryScreen = () => {
                                     styles.saveButtonContent,
                                     {
                                         backgroundColor: themeStyles.primary,
-                                        borderRadius: themeStyles.buttonRadius,
+                                        borderRadius: isCyberpunkTheme ? 0 : themeStyles.buttonRadius, // Cyberpunk: square corners
                                         opacity: saveEnabled ? 1 : 0.4,
                                     },
                                 ]}
@@ -1705,123 +1628,6 @@ const AddEditDiaryScreen = () => {
                         )}
                     </TouchableOpacity>
                 </View>
-
-                <Modal
-                    animationType="slide"
-                    transparent
-                    visible={isCompanionPickerVisible}
-                    onRequestClose={handleCancelCompanions}
-                >
-                    <TouchableWithoutFeedback onPress={handleCancelCompanions}>
-                        <View style={styles.companionModalOverlay}>
-                            <TouchableWithoutFeedback onPress={() => {}}>
-                                <View style={[styles.companionModalCard, { backgroundColor: themeStyles.card, borderColor: themeStyles.border }]}>
-                                    <Text style={[styles.companionModalTitle, { color: themeStyles.text, fontFamily: headingFontFamily }]}>
-                                        Link companions
-                                    </Text>
-                                    {allCompanions.length === 0 ? (
-                                        <View style={styles.companionModalEmpty}>
-                                            <Text style={[styles.companionModalEmptyText, { color: themeStyles.text, fontFamily: bodyFontFamily }]}>
-                                                You haven&apos;t created any companions yet.
-                                            </Text>
-                                            <TouchableOpacity
-                                                style={[styles.companionModalCreateButton, { backgroundColor: themeStyles.primary }]}
-                                                onPress={() => {
-                                                    handleCancelCompanions();
-                                                    router.push('/companions');
-                                                }}
-                                                activeOpacity={0.85}
-                                            >
-                                                <Text style={[styles.companionModalCreateButtonText, { color: themeStyles.primaryText, fontFamily: buttonFontFamily }]}>Create companion</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    ) : (
-                                        <ScrollView
-                                            style={styles.companionPickerList}
-                                            contentContainerStyle={{ paddingBottom: 8 }}
-                                        >
-                                        {allCompanions.map((companion) => {
-                                                const isSelected = tempSelectedCompanionIDs.includes(companion.id);
-                                                const initials = companion.name
-                                                    ? companion.name
-                                                          .split(' ')
-                                                          .map((part) => part[0])
-                                                          .join('')
-                                                          .slice(0, 2)
-                                                          .toUpperCase()
-                                                    : '?';
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={companion.id}
-                                                        style={[
-                                                            styles.companionPickerRow,
-                                                            {
-                                                                borderColor: themeStyles.border,
-                                                                backgroundColor: isSelected ? themeStyles.surface : themeStyles.card,
-                                                            },
-                                                        ]}
-                                                        onPress={() => toggleTempCompanion(companion.id)}
-                                                        activeOpacity={0.85}
-                                                    >
-                                                        {companion.avatarIdentifier ? (
-                                                            <Image
-                                                                source={{ uri: companion.avatarIdentifier }}
-                                                                style={styles.companionPickerAvatar}
-                                                            />
-                                                        ) : (
-                                                            <View
-                                                                style={[
-                                                                    styles.companionPickerPlaceholder,
-                                                                    { backgroundColor: getCompanionColor(companion.name) },
-                                                                ]}
-                                                            >
-                                                                <Text style={styles.companionPickerPlaceholderText}>{initials}</Text>
-                                                            </View>
-                                                        )}
-                                                        <View style={{ flex: 1 }}>
-                                                            <Text style={[styles.companionPickerName, { color: themeStyles.text, fontFamily: headingFontFamily }]} numberOfLines={1}>
-                                                                {companion.name}
-                                                            </Text>
-                                                            <Text style={[styles.companionPickerMeta, { color: themeStyles.secondaryText, fontFamily: bodyFontFamily }]}>
-                                                                Added {new Date(companion.createdAt).toLocaleDateString()}
-                                                            </Text>
-                                                        </View>
-                                                        <Ionicons
-                                                            name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
-                                                            size={22}
-                                                            color={isSelected ? themeStyles.primary : themeStyles.border}
-                                                        />
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    )}
-                                    <View style={styles.companionModalActions}>
-                                        <TouchableOpacity
-                                            style={[styles.secondaryButton, { borderColor: themeStyles.border }]}
-                                            onPress={handleCancelCompanions}
-                                            activeOpacity={0.85}
-                                        >
-                                            <Text style={[styles.secondaryButtonText, { color: themeStyles.text, fontFamily: buttonFontFamily }]}>Cancel</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.primaryButton,
-                                                {
-                                                    backgroundColor: themeStyles.primary,
-                                                },
-                                            ]}
-                                            onPress={handleConfirmCompanions}
-                                            activeOpacity={0.85}
-                                        >
-                                            <Text style={[styles.primaryButtonText, { color: themeStyles.primaryText, fontFamily: buttonFontFamily }]}>Done</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-                            </TouchableWithoutFeedback>
-                        </View>
-                    </TouchableWithoutFeedback>
-                </Modal>
 
                 <Modal
                     animationType="slide"
@@ -1912,54 +1718,30 @@ const styles = StyleSheet.create({
         top: 8,
         left: 8,
         borderWidth: 2,
-        borderColor: '#fff',
+        borderColor: '#FF0000', // Cyberpunk style: red border
         backgroundColor: '#fff',
+        borderRadius: 0, // Cyberpunk style: square corners
     },
     stackedPrimary: {
         position: 'absolute',
         bottom: 0,
         right: 0,
         borderWidth: 2,
-        borderColor: '#fff',
+        borderColor: '#FF0000', // Cyberpunk style: red border
         backgroundColor: '#fff',
+        borderRadius: 0, // Cyberpunk style: square corners
     },
-    weatherContainer: { alignItems: 'center', padding: 15, marginBottom: 20, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+    weatherContainer: { alignItems: 'center', padding: 15, marginBottom: 20, borderRadius: 0, borderWidth: StyleSheet.hairlineWidth }, // Cyberpunk: square corners
     titleInputStandalone: {
         marginBottom: 20,
     },
-    carouselWrapper: {
-        marginBottom: 20,
-    },
-    carouselHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    carouselTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    emptyCarouselCallout: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 14,
-        borderRadius: 12,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: '#D0D3FF',
-        backgroundColor: 'rgba(74,108,247,0.08)',
-    },
-    companionEmptyText: {
-        marginTop: 12,
-        fontSize: 13,
-        opacity: 0.6,
-    },
-    input: { borderWidth: 1, borderRadius: 8, padding: 15, fontSize: 16, marginBottom: 20 },
+    // Removed carousel styles - companion selection moved to settings
+    input: { borderWidth: 1, borderRadius: 0, padding: 15, fontSize: 16, marginBottom: 20 }, // Cyberpunk: square corners
     editor: { 
         width: '100%',
         minHeight: 400, 
         borderWidth: 1, 
-        borderRadius: 8, 
+        borderRadius: 0, // Cyberpunk: square corners
         marginBottom: 20,
         overflow: 'hidden',
     },
@@ -1968,51 +1750,64 @@ const styles = StyleSheet.create({
     },
     footer: {
         borderTopWidth: 1,
-        paddingHorizontal: 16,
+        paddingHorizontal: 0,
         paddingTop: 12,
-        paddingBottom: 16, // Base bottom padding, will be overridden by safe area insets
-        zIndex: 1000, // Ensure footer is on top
-        elevation: 10, // Android shadow level
+        paddingBottom: 0, // Will be set dynamically with safe area insets
+        zIndex: 1000,
+        elevation: 10,
         width: '100%',
         alignSelf: 'stretch',
+        flexDirection: 'column',
+        alignItems: 'stretch',
     },
     toolbar: {
-        marginBottom: 12,
-        alignItems: 'center',
+        marginBottom: 0,
+        alignItems: 'stretch',
         justifyContent: 'space-evenly',
         flexDirection: 'row',
         width: '100%',
         alignSelf: 'stretch',
-        flex: 1,
         minHeight: 50,
         height: 50,
+        maxHeight: 50,
+        paddingHorizontal: 0,
+        marginHorizontal: 0,
+        overflow: 'hidden',
+    },
+    toolbarWrapper: {
+        width: '100%',
+        alignSelf: 'stretch',
+        marginBottom: 12,
+        overflow: 'hidden',
+        minHeight: 50,
+        backgroundColor: 'transparent',
     },
     saveButton: {
-        width: '90%',
-        alignSelf: 'center',
+        width: '100%',
+        alignSelf: 'stretch',
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,
         shadowRadius: 4,
-        elevation: 15, // Higher elevation to ensure button is clickable
-        zIndex: 1002, // Ensure button is on top of footer
+        elevation: 15,
+        zIndex: 1002,
         height: 52,
-        marginTop: 8, // Add some spacing from toolbar
+        marginTop: 0,
     },
     saveButtonContent: {
         width: '100%',
         paddingVertical: 12,
         paddingHorizontal: 20,
-        borderRadius: 22,
+        borderRadius: 0, // Cyberpunk: square corners
         alignItems: 'center',
         justifyContent: 'center',
     },
     saveButtonGradient: {
         width: '100%',
         paddingHorizontal: 20,
-        borderRadius: 44,
+        borderRadius: 0, // Cyberpunk: square corners
         alignItems: 'center',
         justifyContent: 'center',
         height: 52,
@@ -2021,110 +1816,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         textAlign: 'center',
-    },
-    companionModalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.35)',
-        justifyContent: 'center',
-        padding: 24,
-    },
-    companionModalCard: {
-        borderRadius: 20,
-        padding: 20,
-        maxHeight: '80%',
-        borderWidth: StyleSheet.hairlineWidth,
-    },
-    companionModalTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        marginBottom: 16,
-    },
-    companionModalEmpty: {
-        alignItems: 'center',
-        paddingVertical: 12,
-    },
-    companionModalEmptyText: {
-        fontSize: 15,
-        textAlign: 'center',
-        marginBottom: 12,
-    },
-    companionModalCreateButton: {
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 12,
-    },
-    companionModalCreateButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    companionPickerList: {
-        maxHeight: 320,
-        marginBottom: 16,
-    },
-    companionPickerRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderRadius: 16,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        marginBottom: 12,
-    },
-    companionPickerAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        marginRight: 12,
-    },
-    companionPickerPlaceholder: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    companionPickerPlaceholderText: {
-        color: '#fff',
-        fontWeight: '600',
-    },
-    companionPickerName: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#7090AC',
-    },
-    companionPickerMeta: {
-        marginTop: 2,
-        fontSize: 12,
-        opacity: 0.7,
-    },
-    companionModalActions: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    secondaryButton: {
-        flex: 1,
-        borderWidth: 1,
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: 'center',
-    },
-    secondaryButtonText: {
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    primaryButton: {
-        flex: 1,
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: 'center',
-        marginLeft: 12,
-    },
-    primaryButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
     },
     headerSaveButton: {
         paddingHorizontal: 12,
@@ -2136,7 +1827,7 @@ const styles = StyleSheet.create({
     },
     childHeaderBack: {
         backgroundColor: '#FFF1DC',
-        borderRadius: 28,
+        borderRadius: 0, // Cyberpunk: square corners
         paddingHorizontal: 14,
         paddingVertical: 4,
         borderWidth: 1,
@@ -2187,7 +1878,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 12,
-        borderRadius: 12,
+        borderRadius: 0, // Cyberpunk: square corners
         backgroundColor: 'rgba(120,120,120,0.12)',
     },
     emojiText: {
