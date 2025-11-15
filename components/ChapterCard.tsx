@@ -13,6 +13,7 @@ type ChapterCardProps = {
   chapter: Chapter;
   onPress?: () => void;
   isNew?: boolean;
+  isFocus?: boolean;
 };
 
 const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -53,7 +54,7 @@ const formatTimeSince = (isoString?: string) => {
   return new Date(updatedAt).toLocaleDateString();
 };
 
-const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = false }) => {
+const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = false, isFocus = false }) => {
   const diaryContext = useContext(DiaryContext);
   const diaries = diaryContext?.diaries;
   const companionContext = useContext(CompanionContext);
@@ -84,7 +85,9 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
   }, [chapter.sourceId, chapter.type, companions]);
 
   const glowAnim = useRef(new Animated.Value(0)).current;
+  const focusGlowAnim = useRef(new Animated.Value(0)).current;
 
+  // Animation for "new" indicator
   useEffect(() => {
     if (!isNew) {
       glowAnim.stopAnimation();
@@ -109,22 +112,63 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
     return () => loop.stop();
   }, [glowAnim, isNew]);
 
-  const animatedWrapperStyle = useMemo(() => {
-    if (!isNew) {
-      return styles.card;
+  // Animation for "focus" indicator (subtle pulsing glow)
+  useEffect(() => {
+    if (!isFocus) {
+      focusGlowAnim.stopAnimation();
+      focusGlowAnim.setValue(0);
+      return;
     }
-    const borderColor = glowAnim.interpolate({
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(focusGlowAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(focusGlowAnim, {
+          toValue: 0,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [focusGlowAnim, isFocus]);
+
+  const animatedWrapperStyle = useMemo(() => {
+    const baseStyle = [styles.card];
+    
+    // Apply focus style first (it has stronger visual presence)
+    if (isFocus) {
+      // For focus cards, use cyan border with glow
+      const borderColor = isNew
+        ? glowAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['rgba(0, 255, 200, 0.6)', 'rgba(0, 255, 200, 0.9)'],
+          })
+        : 'rgba(0, 255, 200, 0.6)';
+      baseStyle.push(styles.focusCard, { borderColor });
+    } else if (isNew) {
+      // Only apply new style if not focus
+      const borderColor = glowAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.75)'],
+      });
+      baseStyle.push(styles.cardNew, { borderColor });
+    }
+    
+    return baseStyle;
+  }, [glowAnim, isNew, isFocus]);
+
+  const focusGlowOpacity = useMemo(() => {
+    if (!isFocus) return 0;
+    return focusGlowAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: ['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.75)'],
+      outputRange: [0.15, 0.3],
     });
-    return [
-      styles.card,
-      styles.cardNew,
-      {
-        borderColor,
-      },
-    ];
-  }, [glowAnim, isNew]);
+  }, [focusGlowAnim, isFocus]);
 
   return (
     <Animated.View style={animatedWrapperStyle}>
@@ -140,7 +184,23 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
           end={{ x: 1, y: 1 }}
         >
           <View style={styles.overlay} />
+          {/* Focus glow effect */}
+          {isFocus && (
+            <Animated.View
+              style={[
+                styles.focusGlow,
+                {
+                  opacity: focusGlowOpacity,
+                },
+              ]}
+            />
+          )}
           {isNew ? <View style={styles.newDot} /> : null}
+          {isFocus && !isNew && (
+            <View style={styles.focusBadge}>
+              <Ionicons name="star" size={12} color="#fff" />
+            </View>
+          )}
           <View style={styles.topRow}>
             <View style={styles.iconPill}>
               {companionAvatarSource ? (
@@ -194,6 +254,14 @@ const styles = StyleSheet.create({
   cardNew: {
     borderWidth: 2,
   },
+  focusCard: {
+    borderWidth: 2,
+    shadowColor: 'rgba(0, 255, 200, 0.8)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   pressable: {
     borderRadius: 18,
     overflow: 'hidden',
@@ -208,6 +276,13 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: 18,
     backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  focusGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 255, 200, 0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 255, 200, 0.4)',
   },
   title: {
     fontSize: 18,
@@ -252,6 +327,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 2,
     elevation: 3,
+  },
+  focusBadge: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 255, 200, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: 'rgba(0, 255, 200, 1)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 5,
   },
   titleContainer: {
     flexGrow: 1,

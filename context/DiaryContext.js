@@ -1,12 +1,30 @@
 // context/DiaryContext.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { InteractionManager } from 'react-native';
 import { ensureAnalysis } from '../services/moodAnalysis';
 import { createDiaryEntry, normalizeDiaryEntry } from '../models/DiaryEntry';
 import themeAnalysisService from '../services/ThemeAnalysisService';
 import achievementService from '../services/AchievementService';
 import chapterService from '../services/ChapterService';
+import { useUserState } from './UserStateContext';
+import { pieService } from '../services/PIE/PIEService';
+
+// Helper function to extract plain text from diary entry
+// Used for PIE processing which requires plain text content
+const extractTextContent = (entry) => {
+  // Use content if available and not empty
+  if (entry.content && entry.content.trim().length > 0) {
+    // If content contains HTML, strip it
+    return entry.content.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+  }
+  // Otherwise use contentHTML and strip HTML tags
+  if (entry.contentHTML && entry.contentHTML.trim().length > 0) {
+    return entry.contentHTML.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+  }
+  // Fallback to empty string
+  return '';
+};
 
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
@@ -34,6 +52,12 @@ export const DiaryProvider = ({ children }) => {
 
   // ---- Free Trial Used State ----
   const [freeTrialUsed, setFreeTrialUsed] = useState(false);
+
+  // --- PIE Integration: Get UserState context ---
+  // Note: UserStateProvider MUST be a parent of DiaryProvider in the component tree
+  // This is ensured by the provider order in app/_layout.js
+  // If UserStateProvider is not available, this will throw an error (which is intentional)
+  const userStateContext = useUserState();
 
   const [themeReanalysisState, setThemeReanalysisState] = useState({
     lastRun: null,
@@ -324,6 +348,42 @@ export const DiaryProvider = ({ children }) => {
       console.warn('DiaryContext: achievement evaluation failed (addDiary)', error);
     }
 
+    // --- PIE Integration: Process new entry with PIE service ---
+    try {
+      console.log('PIE: Processing new diary entry...');
+      
+      // Extract plain text content for PIE processing
+      const textContent = extractTextContent(newEntry);
+      
+      // Convert DiaryEntry to format expected by PIE service
+      const pieEntry = {
+        id: newEntry.id,
+        content: textContent,
+        createdAt: newEntry.createdAt,
+      };
+      
+      // Get current user state and rich entries
+      const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
+      
+      // Process entry with PIE service
+      const { updatedState, richEntry } = pieService.processNewEntry(
+        pieEntry,
+        userState,
+        allRichEntries
+      );
+      
+      // Update user state (this will persist to AsyncStorage automatically)
+      await updateUserState(updatedState);
+      
+      // Add the new rich entry to the collection
+      await addRichEntry(richEntry);
+      
+      console.log('PIE: Entry processed and user state updated.');
+    } catch (error) {
+      // Don't block diary saving if PIE processing fails
+      console.warn('DiaryContext: PIE processing failed (addDiary)', error);
+    }
+
     return newEntry;
   };
 
@@ -366,9 +426,46 @@ export const DiaryProvider = ({ children }) => {
       } catch (error) {
         console.warn('DiaryContext: achievement evaluation failed (quick entry)', error);
       }
+
+      // --- PIE Integration: Process quick entry with PIE service ---
+      try {
+        console.log('PIE: Processing quick entry...');
+        
+        // Extract plain text content for PIE processing
+        const textContent = extractTextContent(analyzed);
+        
+        // Convert DiaryEntry to format expected by PIE service
+        const pieEntry = {
+          id: analyzed.id,
+          content: textContent,
+          createdAt: analyzed.createdAt,
+        };
+        
+        // Get current user state and rich entries
+        const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
+        
+        // Process entry with PIE service
+        const { updatedState, richEntry } = pieService.processNewEntry(
+          pieEntry,
+          userState,
+          allRichEntries
+        );
+        
+        // Update user state (this will persist to AsyncStorage automatically)
+        await updateUserState(updatedState);
+        
+        // Add the new rich entry to the collection
+        await addRichEntry(richEntry);
+        
+        console.log('PIE: Quick entry processed and user state updated.');
+      } catch (error) {
+        // Don't block quick entry creation if PIE processing fails
+        console.warn('DiaryContext: PIE processing failed (quick entry)', error);
+      }
+
       return analyzed;
     },
-    [diaries, saveDiariesToStorage]
+    [diaries, saveDiariesToStorage, userStateContext]
   );
 
   useEffect(() => {
@@ -446,6 +543,44 @@ export const DiaryProvider = ({ children }) => {
     } catch (error) {
       console.warn('DiaryContext: achievement evaluation failed (updateDiary)', error);
     }
+
+    // --- PIE Integration: Process updated entry with PIE service ---
+    // Note: For updates, we process it as a new entry (the aggregation will handle it correctly)
+    try {
+      console.log('PIE: Processing updated diary entry...');
+      
+      // Extract plain text content for PIE processing
+      const textContent = extractTextContent(analyzedDiary);
+      
+      // Convert DiaryEntry to format expected by PIE service
+      const pieEntry = {
+        id: analyzedDiary.id,
+        content: textContent,
+        createdAt: analyzedDiary.createdAt,
+      };
+      
+      // Get current user state and rich entries
+      const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
+      
+      // Process entry with PIE service (this will update existing chapters if entry already exists)
+      const { updatedState, richEntry } = pieService.processNewEntry(
+        pieEntry,
+        userState,
+        allRichEntries
+      );
+      
+      // Update user state (this will persist to AsyncStorage automatically)
+      await updateUserState(updatedState);
+      
+      // Update the rich entry in the collection
+      await addRichEntry(richEntry);
+      
+      console.log('PIE: Updated entry processed and user state updated.');
+    } catch (error) {
+      // Don't block diary updating if PIE processing fails
+      console.warn('DiaryContext: PIE processing failed (updateDiary)', error);
+    }
+
     return analyzedDiary;
   };
 

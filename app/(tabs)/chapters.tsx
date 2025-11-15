@@ -18,6 +18,7 @@ import { Chapter } from '../../models/Chapter';
 import { ThemeContext } from '../../context/ThemeContext';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import QuickCaptureContextValue from '../../context/QuickCaptureContext';
+import { useUserState } from '../../context/UserStateContext';
 
 const NUM_COLUMNS = 2;
 type SortMode = 'recent' | 'entries' | 'name';
@@ -35,12 +36,18 @@ const ChaptersScreen: React.FC = () => {
   const router = useRouter();
   const { colors } = useContext(ThemeContext);
   const { openQuickCapture } = useContext(QuickCaptureContextValue);
+  const { userState } = useUserState();
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [isControlSheetVisible, setControlSheetVisible] = useState(false);
+
+  // Extract focus chapter IDs for quick lookup
+  const focusChapterIds = useMemo(() => {
+    return new Set(userState?.focus?.currentFocusChapters?.map(fc => fc.chapterId) || []);
+  }, [userState?.focus?.currentFocusChapters]);
 
   const loadChapters = useCallback(async () => {
     try {
@@ -199,6 +206,7 @@ const ChaptersScreen: React.FC = () => {
                     chapter={chapter}
                     onPress={() => handlePressChapter(chapter.id)}
                     isNew={isChapterNew(chapter)}
+                    isFocus={focusChapterIds.has(chapter.id)}
                   />
                 </View>
               ))}

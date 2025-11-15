@@ -21,6 +21,7 @@ import { ThemeContext, ThemeProvider } from '../context/ThemeContext';
 import { getThemeStyles } from '../hooks/useThemeStyles';
 import UnlockScreen from '../screens/UnlockScreen';
 import { CompanionProvider } from '../context/CompanionContext';
+import { UserStateProvider } from '../context/UserStateContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FloatingIntentCatcher from '../components/FloatingIntentCatcher';
 import MoodQuickPickerModal from '../components/MoodQuickPickerModal';
@@ -547,15 +548,17 @@ export default function RootLayout() {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <AuthProvider>
-                <DiaryProvider>
-                    <CompanionProvider>
-                        <SubscriptionProvider>
-                            <ThemeProvider>
-                                <RootLayoutNav />
-                            </ThemeProvider>
-                        </SubscriptionProvider>
-                    </CompanionProvider>
-                </DiaryProvider>
+                <UserStateProvider>
+                    <DiaryProvider>
+                        <CompanionProvider>
+                            <SubscriptionProvider>
+                                <ThemeProvider>
+                                    <RootLayoutNav />
+                                </ThemeProvider>
+                            </SubscriptionProvider>
+                        </CompanionProvider>
+                    </DiaryProvider>
+                </UserStateProvider>
             </AuthProvider>
         </GestureHandlerRootView>
     );

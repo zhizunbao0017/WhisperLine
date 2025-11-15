@@ -7,6 +7,7 @@ import { Calendar } from 'react-native-calendars';
 import { Swipeable } from 'react-native-gesture-handler';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
+import { useUserState } from '../context/UserStateContext';
 import DiarySummaryCard from '../components/DiarySummaryCard';
 import FloatingActionButton from '../components/FloatingActionButton';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
@@ -52,6 +53,15 @@ const TimelineScreen = () => {
     const { openQuickCapture } = useContext(QuickCaptureContextValue);
     const { selectedDate, setSelectedDate } = diaryContext || {};
 
+    // --- PIE Integration: Get UserState for focus chapters ---
+    let userStateContext = null;
+    try {
+        userStateContext = useUserState();
+    } catch (error) {
+        // UserStateProvider not available, focus features will be disabled
+        console.warn('TimelineScreen: UserStateProvider not available, focus features disabled', error);
+    }
+
     if (!diaryContext || !themeContext) {
         return <ActivityIndicator size="large" style={{ flex: 1 }} />;
     }
@@ -59,17 +69,149 @@ const TimelineScreen = () => {
     const { diaries, isLoading, deleteDiary } = diaryContext;
     const { colors } = themeContext;
 
+    // Extract focus chapter IDs for efficient lookup
+    const focusChapterIds = useMemo(() => {
+        if (!userStateContext?.userState?.focus?.currentFocusChapters) {
+            return new Set();
+        }
+        return new Set(
+            userStateContext.userState.focus.currentFocusChapters.map(fc => fc.chapterId)
+        );
+    }, [userStateContext?.userState?.focus?.currentFocusChapters]);
+
+    // Get all rich entries for checking chapter associations
+    const allRichEntries = userStateContext?.allRichEntries || {};
+
+    // Create a map of dates to focus status
+    const focusDatesMap = useMemo(() => {
+        const focusDates = new Set();
+        
+        if (focusChapterIds.size === 0 || Object.keys(allRichEntries).length === 0) {
+            return focusDates;
+        }
+
+        // Iterate through all rich entries to find dates with focus entries
+        for (const entry of Object.values(allRichEntries)) {
+            if (!entry.chapterIds || entry.chapterIds.length === 0) {
+                continue;
+            }
+
+            // Check if this entry belongs to any focus chapter
+            const belongsToFocusChapter = entry.chapterIds.some(chapterId => 
+                focusChapterIds.has(chapterId)
+            );
+
+            if (belongsToFocusChapter) {
+                // Extract date string (YYYY-MM-DD)
+                const dateString = entry.createdAt.split('T')[0];
+                focusDates.add(dateString);
+            }
+        }
+
+        return focusDates;
+    }, [allRichEntries, focusChapterIds]);
+
     const markedDates = useMemo(() => {
         const marks = {};
+        
+        // First, mark all dates with diary entries
         if (diaries) {
             diaries.forEach(diary => {
                 const dateString = new Date(diary.createdAt).toISOString().split('T')[0];
-                marks[dateString] = { marked: true, dotColor: colors.primary };
+                const isFocusDate = focusDatesMap.has(dateString);
+                const isSelected = dateString === selectedDate;
+                
+                // Determine background and border styles based on focus and selection
+                let containerBg = 'transparent';
+                let containerBorderWidth = 0;
+                let containerBorderColor = 'transparent';
+                let textColor = colors.text;
+                let textWeight = 'normal';
+                
+                if (isSelected) {
+                    // Selected date takes priority
+                    containerBg = isFocusDate 
+                        ? 'rgba(0, 255, 200, 0.4)' // Stronger focus highlight when selected
+                        : colors.primary; // Primary color when selected
+                    containerBorderWidth = isFocusDate ? 2 : 0;
+                    containerBorderColor = isFocusDate ? 'rgba(0, 255, 200, 0.9)' : 'transparent';
+                    textColor = '#fff';
+                    textWeight = '700';
+                } else if (isFocusDate) {
+                    // Focus date (not selected)
+                    containerBg = 'rgba(0, 255, 200, 0.15)';
+                    containerBorderWidth = 1;
+                    containerBorderColor = 'rgba(0, 255, 200, 0.5)';
+                    textColor = colors.text;
+                    textWeight = '600';
+                }
+                
+                // Use custom marking to show both entry and focus status
+                marks[dateString] = {
+                    customStyles: {
+                        container: {
+                            backgroundColor: containerBg,
+                            borderRadius: 4,
+                            borderWidth: containerBorderWidth,
+                            borderColor: containerBorderColor,
+                        },
+                        text: {
+                            color: textColor,
+                            fontWeight: textWeight,
+                        },
+                    },
+                    // Add dot for entries
+                    marked: true,
+                    dotColor: isFocusDate 
+                        ? 'rgba(0, 255, 200, 0.9)' // Focus dot color (cyan)
+                        : colors.primary, // Regular entry dot color
+                    // Add selected state
+                    selected: isSelected,
+                    selectedColor: colors.primary,
+                };
             });
         }
-        marks[selectedDate] = { ...marks[selectedDate], selected: true, selectedColor: colors.primary };
+
+        // Mark selected date even if it has no entries (for visual feedback)
+        if (selectedDate && !marks[selectedDate]) {
+            const isFocusDate = focusDatesMap.has(selectedDate);
+            // Convert hex color to rgba for semi-transparent background
+            // If colors.primary is already rgba, use it directly
+            let selectedBg = colors.primary;
+            if (typeof colors.primary === 'string' && colors.primary.startsWith('#')) {
+                // Convert hex to rgba (assuming 6-digit hex)
+                const hex = colors.primary.slice(1);
+                const r = parseInt(hex.slice(0, 2), 16);
+                const g = parseInt(hex.slice(2, 4), 16);
+                const b = parseInt(hex.slice(4, 6), 16);
+                selectedBg = `rgba(${r}, ${g}, ${b}, 0.4)`;
+            } else if (typeof colors.primary === 'string' && colors.primary.startsWith('rgba')) {
+                // Already rgba, just use it
+                selectedBg = colors.primary;
+            }
+            
+            marks[selectedDate] = {
+                selected: true,
+                selectedColor: colors.primary,
+                customStyles: {
+                    container: {
+                        backgroundColor: isFocusDate 
+                            ? 'rgba(0, 255, 200, 0.3)' // Focus highlight background
+                            : selectedBg, // Semi-transparent primary color
+                        borderRadius: 4,
+                        borderWidth: isFocusDate ? 2 : 0,
+                        borderColor: isFocusDate ? 'rgba(0, 255, 200, 0.8)' : 'transparent',
+                    },
+                    text: {
+                        color: '#fff',
+                        fontWeight: '700',
+                    },
+                },
+            };
+        }
+
         return marks;
-    }, [diaries, selectedDate, colors]);
+    }, [diaries, selectedDate, colors, focusDatesMap]);
 
     const filteredDiaries = useMemo(() => {
         if (!diaries) return [];
@@ -92,6 +234,7 @@ const TimelineScreen = () => {
             }}
             onDayPress={day => setSelectedDate && setSelectedDate(day.dateString)}
             markedDates={markedDates}
+            markingType="custom"
         />
     );
 
