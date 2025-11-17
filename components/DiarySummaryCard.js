@@ -33,7 +33,8 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
   // Get emotion from RichEntry metadata, fallback to user-selected mood
   const detectedEmotion = richEntry?.metadata?.detectedEmotion?.primary;
   // Convert item.mood (e.g., 'Happy') to lowercase emotion type (e.g., 'happy')
-  const moodToEmotionType = item.mood ? item.mood.toLowerCase() : null;
+  // Safely check if item.mood is a string before calling toLowerCase()
+  const moodToEmotionType = (item.mood && typeof item.mood === 'string') ? item.mood.toLowerCase() : null;
   const emotionType = detectedEmotion || moodToEmotionType;
   const emotionEmoji = emotionType && EMOTION_EMOJI_MAP[emotionType] ? EMOTION_EMOJI_MAP[emotionType] : null;
   
