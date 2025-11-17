@@ -66,9 +66,12 @@ class AggregationService {
 
       for (const entryId of chapter.entryIds) {
           const entry = allRichEntries[entryId];
-          if (entry) {
-              const emotion = entry.metadata.detectedEmotion.primary;
-              emotionDistribution[emotion]++;
+          if (entry?.metadata) {
+              // Use primaryEmotion (authoritative) with fallback to detectedEmotion for legacy entries
+              const emotion = entry.metadata.primaryEmotion || entry.metadata.detectedEmotion?.primary;
+              if (emotion) {
+                  emotionDistribution[emotion]++;
+              }
           }
       }
       

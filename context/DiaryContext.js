@@ -366,10 +366,12 @@ export const DiaryProvider = ({ children }) => {
       const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
       
       // Process entry with PIE service
+      // Pass the user-selected mood to ensure it takes priority over AI detection
       const { updatedState, richEntry } = pieService.processNewEntry(
         pieEntry,
         userState,
-        allRichEntries
+        allRichEntries,
+        newDiary.mood || null // Pass user-selected mood (e.g., "Happy", "Sad")
       );
       
       // Update user state (this will persist to AsyncStorage automatically)
@@ -445,10 +447,12 @@ export const DiaryProvider = ({ children }) => {
         const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
         
         // Process entry with PIE service
+        // Pass the user-selected mood to ensure it takes priority over AI detection
         const { updatedState, richEntry } = pieService.processNewEntry(
           pieEntry,
           userState,
-          allRichEntries
+          allRichEntries,
+          analyzed.mood || null // Pass user-selected mood from quick entry
         );
         
         // Update user state (this will persist to AsyncStorage automatically)
@@ -563,10 +567,12 @@ export const DiaryProvider = ({ children }) => {
       const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
       
       // Process entry with PIE service (this will update existing chapters if entry already exists)
+      // Pass the user-selected mood to ensure it takes priority over AI detection
       const { updatedState, richEntry } = pieService.processNewEntry(
         pieEntry,
         userState,
-        allRichEntries
+        allRichEntries,
+        analyzedDiary.mood || null // Pass user-selected mood from updated diary
       );
       
       // Update user state (this will persist to AsyncStorage automatically)

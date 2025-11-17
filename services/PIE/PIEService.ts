@@ -1,11 +1,29 @@
 // services/PIE/PIEService.ts
 
-import { DiaryEntry, RichEntry } from '../../models/RichEntry';
-import { Chapter, Companion } from '../../models/PIE';
+import { DiaryEntry, RichEntry, RichEntryMetadata } from '../../models/RichEntry';
+import { Chapter, Companion, EmotionType } from '../../models/PIE';
 import { UserStateModel } from '../../models/UserState';
 import { atomizationService } from './AtomizationService';
 import { associationService } from './AssociationService';
 import { aggregationService } from './AggregationService'; // We will call its placeholder functions
+
+/**
+ * Helper function to convert mood string (e.g., "Happy") to EmotionType (e.g., "happy")
+ */
+function moodStringToEmotionType(mood: string | null | undefined): EmotionType | undefined {
+  if (!mood || typeof mood !== 'string') return undefined;
+  const normalized = mood.toLowerCase().trim();
+  // Map mood names to EmotionType
+  const moodMap: Record<string, EmotionType> = {
+    'happy': 'happy',
+    'sad': 'sad',
+    'angry': 'angry',
+    'calm': 'calm',
+    'excited': 'excited',
+    'tired': 'tired',
+  };
+  return moodMap[normalized];
+}
 
 class PIEService {
   /**
@@ -14,15 +32,47 @@ class PIEService {
    * @param newEntry The newly created DiaryEntry.
    * @param currentState The current UserStateModel.
    * @param allRichEntries Optional dictionary of all existing RichEntry objects for aggregation.
+   * @param userSelectedMood Optional user-selected mood (e.g., "Happy", "Sad") - takes priority over AI detection.
    * @returns An object containing the updated UserStateModel and the new RichEntry.
    */
   public processNewEntry(
     newEntry: DiaryEntry,
     currentState: UserStateModel,
-    allRichEntries?: Record<string, RichEntry>
+    allRichEntries?: Record<string, RichEntry>,
+    userSelectedMood?: string | null
   ): { updatedState: UserStateModel; richEntry: RichEntry } {
-    // Layer 1: Enrich the entry
-    const richEntry = atomizationService.enrichEntry(newEntry);
+    // Layer 1: Enrich the entry (this generates AI analysis)
+    const richEntryWithAI = atomizationService.enrichEntry(newEntry);
+    
+    // --- KEY LOGIC CHANGE: Establish the authoritative emotion ---
+    // Convert user-selected mood to EmotionType if provided
+    const userEmotionType = moodStringToEmotionType(userSelectedMood);
+    
+    // Priority: User-selected mood > AI-detected emotion
+    const primaryEmotion: EmotionType = userEmotionType || richEntryWithAI.metadata.detectedEmotion.primary;
+    
+    // Rebuild metadata with the authoritative emotion
+    const metadata: RichEntryMetadata = {
+      processedAt: richEntryWithAI.metadata.processedAt,
+      keywords: richEntryWithAI.metadata.keywords,
+      entities: richEntryWithAI.metadata.entities,
+      primaryEmotion: primaryEmotion, // The authoritative field
+      aiAnalysis: {
+        primary: richEntryWithAI.metadata.detectedEmotion.primary,
+        score: richEntryWithAI.metadata.detectedEmotion.score,
+        sentiment: richEntryWithAI.metadata.sentiment,
+      },
+      // Legacy fields for backward compatibility
+      detectedEmotion: richEntryWithAI.metadata.detectedEmotion,
+      sentiment: richEntryWithAI.metadata.sentiment,
+    };
+    
+    // Create the final rich entry with updated metadata
+    const richEntry: RichEntry = {
+      ...richEntryWithAI,
+      metadata,
+    };
+    // --- END KEY LOGIC CHANGE ---
 
     // Layer 2: Find associations
     const associations = associationService.processAssociation(richEntry, currentState);
@@ -103,7 +153,9 @@ class PIEService {
     for (const entry of sortedEntries) {
       // NOTE: We pass the incrementally built `allRichEntries` dictionary
       // even though it's a full rebuild, to satisfy the function signature.
-      const { updatedState, richEntry } = this.processNewEntry(entry, freshState, allRichEntries);
+      // For rebuild, we don't have access to original user-selected mood, so pass undefined
+      // The AI-detected emotion will be used as fallback
+      const { updatedState, richEntry } = this.processNewEntry(entry, freshState, allRichEntries, entry.mood || undefined);
       freshState = updatedState;
       allRichEntries[richEntry.id] = richEntry;
     }

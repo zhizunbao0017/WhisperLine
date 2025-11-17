@@ -121,7 +121,7 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
       .map((id) => allRichEntries[id])
       .filter((entry) => {
         // Filter out entries without emotion metadata
-        return entry && entry.metadata && entry.metadata.detectedEmotion;
+        return entry && entry.metadata && (entry.metadata.primaryEmotion || entry.metadata.detectedEmotion);
       })
       .sort((a, b) => {
         // Sort by creation date to ensure chronological order
@@ -139,10 +139,11 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
     const height = 30;  // ViewBox height
 
     // Calculate points for the sparkline
-    const points = lastEntries.map((entry, index) => {
-      const x = (index / (lastEntries.length - 1)) * width;
-      const emotion = entry.metadata.detectedEmotion.primary;
-      const emotionValue = emotionToValue[emotion] ?? 3; // Default to 'calm' if emotion not found
+      const points = lastEntries.map((entry, index) => {
+        const x = (index / (lastEntries.length - 1)) * width;
+        // Use primaryEmotion (authoritative) with fallback to detectedEmotion for legacy entries
+        const emotion = entry.metadata.primaryEmotion || entry.metadata.detectedEmotion?.primary;
+        const emotionValue = emotion ? (emotionToValue[emotion] ?? 3) : 3; // Default to 'calm' if emotion not found
       // Invert Y-axis for SVG (0 at bottom, 5 at top)
       const y = height - (emotionValue / 5) * height;
       return { x, y };

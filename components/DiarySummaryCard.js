@@ -30,13 +30,10 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
   const themeStyles = useThemeStyles();
   const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
-  // Priority: User-selected mood > AI-detected emotion
-  // Convert item.mood (e.g., 'Happy') to lowercase emotion type (e.g., 'happy')
-  // Safely check if item.mood is a string before calling toLowerCase()
-  const moodToEmotionType = (item.mood && typeof item.mood === 'string') ? item.mood.toLowerCase() : null;
-  // Fallback to AI-detected emotion only if user hasn't selected a mood
-  const detectedEmotion = richEntry?.metadata?.detectedEmotion?.primary;
-  const emotionType = moodToEmotionType || detectedEmotion;
+  // Use the authoritative primaryEmotion field from metadata
+  // This field already prioritizes user-selected mood over AI detection
+  const emotionType = richEntry?.metadata?.primaryEmotion || 
+    (richEntry?.metadata?.detectedEmotion?.primary); // Fallback for legacy entries
   const emotionEmoji = emotionType && EMOTION_EMOJI_MAP[emotionType] ? EMOTION_EMOJI_MAP[emotionType] : null;
   
   // Fallback to mood icon if no emoji available

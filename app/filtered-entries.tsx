@@ -77,7 +77,9 @@ const FilteredEntriesScreen: React.FC = () => {
         if (!richEntry || !richEntry.metadata) {
           return false;
         }
-        return richEntry.metadata.detectedEmotion?.primary === emotionType;
+        // Use primaryEmotion (authoritative) with fallback to detectedEmotion for legacy entries
+        const entryEmotion = richEntry.metadata.primaryEmotion || richEntry.metadata.detectedEmotion?.primary;
+        return entryEmotion === emotionType;
       });
     }
 

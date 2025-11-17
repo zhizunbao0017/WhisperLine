@@ -223,11 +223,23 @@ class AtomizationService {
     const keywords = this.extractTopKeywords(cleanedTokens);
     const emotionAnalysis = this.analyzeEmotion(cleanedTokens);
 
+    // Build metadata with new structure (primaryEmotion will be set by PIEService if user mood is provided)
+    // For now, use AI-detected emotion as primaryEmotion (PIEService will override if user mood exists)
     const metadata: RichEntryMetadata = {
       processedAt: new Date().toISOString(),
       keywords,
       entities,
-      detectedEmotion: emotionAnalysis,
+      primaryEmotion: emotionAnalysis.primary, // Default to AI-detected emotion
+      aiAnalysis: {
+        primary: emotionAnalysis.primary,
+        score: emotionAnalysis.score,
+        sentiment: emotionAnalysis.sentiment,
+      },
+      // Legacy fields for backward compatibility
+      detectedEmotion: {
+        primary: emotionAnalysis.primary,
+        score: emotionAnalysis.score,
+      },
       sentiment: emotionAnalysis.sentiment,
     };
 

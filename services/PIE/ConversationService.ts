@@ -43,8 +43,9 @@ class ConversationService {
       const lastEntryId = chapter.entryIds[0]; // Most recent entry
       const lastEntry = allRichEntries[lastEntryId];
       
-      if (lastEntry?.metadata?.detectedEmotion) {
-        const lastEmotion = lastEntry.metadata.detectedEmotion.primary;
+      if (lastEntry?.metadata) {
+        // Use primaryEmotion (authoritative) with fallback to detectedEmotion for legacy entries
+        const lastEmotion = lastEntry.metadata.primaryEmotion || lastEntry.metadata.detectedEmotion?.primary;
         
         if (lastEmotion === 'excited' || lastEmotion === 'happy') {
           prompts.add("You seemed really happy recently. What was the best part of that moment?");

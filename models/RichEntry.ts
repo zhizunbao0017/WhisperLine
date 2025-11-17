@@ -13,12 +13,22 @@ export interface RichEntryMetadata {
   processedAt: string;
   keywords: string[];
   entities: NamedEntity[];
-  detectedEmotion: {
+  primaryEmotion: EmotionType; // The authoritative emotion (user-selected or AI-detected)
+  aiAnalysis: {
     primary: EmotionType;
     score: number; // e.g., 0.85
+    sentiment: {
+      score: number; // a value from -1 (negative) to 1 (positive)
+      label: 'positive' | 'negative' | 'neutral';
+    };
   };
-  sentiment: {
-    score: number; // a value from -1 (negative) to 1 (positive)
+  // Legacy fields for backward compatibility (deprecated, use primaryEmotion instead)
+  detectedEmotion?: {
+    primary: EmotionType;
+    score: number;
+  };
+  sentiment?: {
+    score: number;
     label: 'positive' | 'negative' | 'neutral';
   };
 }
