@@ -71,7 +71,6 @@ const DiarySummaryCard = ({ item, index, onPress, colors }) => {
           </View>
         ) : null}
         <View style={styles.cardHeader}>
-          {moodData && moodData.image && <Image source={moodData.image} style={styles.moodImage} />}
           <Text style={[
             styles.cardTitle, 
             { color: colors.text },
@@ -87,6 +86,17 @@ const DiarySummaryCard = ({ item, index, onPress, colors }) => {
         </Text>
         <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
           <View style={styles.footerLeft}>
+            {/* Mood icon displayed next to weather */}
+            {moodData && moodData.image && (
+              <View
+                style={[
+                  styles.moodBadge,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <Image source={moodData.image} style={styles.moodIcon} />
+              </View>
+            )}
             {item.weather ? (
               <View
                 style={[
@@ -143,7 +153,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  moodImage: { width: 32, height: 32, marginRight: 12 },
   cardTitle: { fontSize: 18, fontWeight: 'bold', flex: 1 },
   cardContent: { fontSize: 14, marginBottom: 15, color: '#666' },
   cardFooter: {
@@ -155,15 +164,23 @@ const styles = StyleSheet.create({
   },
   footerLeft: { flexDirection: 'row', alignItems: 'center' },
   footerText: { fontSize: 12 },
+  moodBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginRight: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  moodIcon: { width: 24, height: 24 },
   weatherBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
-    marginRight: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d5d5d5',
   },
   weatherIcon: { width: 28, height: 28, marginRight: 6 },
   weatherText: { fontSize: 12, fontWeight: '600' },

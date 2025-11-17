@@ -277,6 +277,14 @@ const AddEditDiaryScreen = () => {
     const { addDiary, updateDiary } = useContext(DiaryContext);
     const companionContext = useContext(CompanionContext);
     const companionsLoading = companionContext?.isLoading;
+    // Get userState to access user-created companions
+    let userStateContext = null;
+    try {
+        userStateContext = useUserState();
+    } catch (error) {
+        // UserStateProvider not available, will use only CompanionContext
+        console.warn('add-edit-diary: UserStateProvider not available, using only CompanionContext companions');
+    }
     const themeContext = useContext(ThemeContext);
     const themeStyles = useThemeStyles();
     const currentAvatar = themeContext?.currentAvatar;
@@ -578,11 +586,35 @@ const AddEditDiaryScreen = () => {
         }
     }, [existingDiary]);
 
+    // Merge companions from both sources: CompanionContext (legacy) and userState.companions (new)
     useEffect(() => {
-        if (companionContext?.companions) {
-            setAllCompanions(companionContext.companions);
+        const legacyCompanions = companionContext?.companions || [];
+        const userCreatedCompanions = Object.values(userStateContext?.userState?.companions || {});
+        // Convert userState companions to format compatible with existing code
+        const formattedUserCompanions = userCreatedCompanions.map(comp => ({
+            id: comp.id,
+            name: comp.name,
+            avatarIdentifier: comp.avatarUri || '',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        }));
+        // Merge both sources, prioritizing user-created companions
+        const merged = [...formattedUserCompanions];
+        legacyCompanions.forEach(legacy => {
+            if (!merged.find(c => String(c.id) === String(legacy.id))) {
+                merged.push(legacy);
+            }
+        });
+        setAllCompanions(merged);
+    }, [companionContext?.companions, userStateContext?.userState?.companions]);
+
+    // Initialize hero visual with currentAvatar when component first mounts
+    // This ensures the avatar from Settings is displayed immediately
+    useEffect(() => {
+        if (selectedCompanionIDs.length === 0 && currentAvatar && !hasInitialPrimaryApplied) {
+            applyDefaultHero();
         }
-    }, [companionContext?.companions]);
+    }, [currentAvatar, applyDefaultHero]); // Run when currentAvatar becomes available
 
     // Update hero visual based on selected companions
     useEffect(() => {
@@ -616,6 +648,14 @@ const AddEditDiaryScreen = () => {
             applyDefaultHero();
         }
     }, [allCompanions, selectedCompanionIDs, applyDefaultHero, resolveImageSource]);
+
+    // Sync hero visual when currentAvatar changes (from Settings)
+    // Only update if no companions are selected and initialization is complete
+    useEffect(() => {
+        if (selectedCompanionIDs.length === 0 && hasInitialPrimaryApplied) {
+            applyDefaultHero();
+        }
+    }, [currentAvatar, selectedCompanionIDs.length, hasInitialPrimaryApplied, applyDefaultHero]);
 
     useEffect(() => {
         setContentHtml(processedInitialContent);
@@ -1098,6 +1138,10 @@ const AddEditDiaryScreen = () => {
         if (isEditMode) {
             // In edit mode, use existing diary companions
             setSelectedCompanionIDs(existingCompanionIds);
+            // If no companions selected in edit mode, apply default hero from settings
+            if (existingCompanionIds.length === 0) {
+                applyDefaultHero();
+            }
             setHasInitialPrimaryApplied(true);
             return;
         }

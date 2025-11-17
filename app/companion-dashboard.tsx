@@ -149,13 +149,20 @@ const CompanionDashboardScreen: React.FC = () => {
     }
   }, [chapterId, userState, allRichEntries]);
 
-  // Get companion from CompanionContext using chapter.sourceId
+  // Get companion from userState.companions using chapter.sourceId
+  // This ensures we use the same data source as ManageCompanionsScreen
   const companion = useMemo(() => {
-    if (!chapter?.sourceId) {
+    if (!chapter?.sourceId || !userState?.companions) {
       return null;
     }
+    // First try to get from userState.companions (new system)
+    const companionFromState = userState.companions[chapter.sourceId];
+    if (companionFromState) {
+      return companionFromState;
+    }
+    // Fallback to CompanionContext (old system) for backward compatibility
     return companions.find((c) => String(c.id) === String(chapter.sourceId)) || null;
-  }, [chapter?.sourceId, companions]);
+  }, [chapter?.sourceId, userState?.companions, companions]);
 
   // Get entries for this chapter
   const entries = useMemo(() => {
@@ -266,6 +273,31 @@ const CompanionDashboardScreen: React.FC = () => {
   const metrics = chapter.metrics;
   const emotionDistribution = metrics?.emotionDistribution ?? {};
   const companionName = companion?.name || chapter.title;
+
+  // Check if AI interaction is enabled for this companion
+  // Only show chat if both global and individual settings are enabled
+  const isChatEnabled = useMemo(() => {
+    if (!chapter || !userState) {
+      return false;
+    }
+    
+    // Get companion from userState using sourceId
+    const companionId = chapter.sourceId;
+    if (!companionId) {
+      return false;
+    }
+    
+    const companionFromState = userState.companions?.[companionId];
+    if (!companionFromState) {
+      return false;
+    }
+    
+    // Both global and individual settings must be enabled
+    const globalEnabled = userState.settings?.isAIInteractionEnabled === true;
+    const individualEnabled = companionFromState.isInteractionEnabled === true;
+    
+    return globalEnabled && individualEnabled;
+  }, [chapter, userState]);
 
   // Render stacked bar chart for emotion distribution
   const renderEmotionSpectrum = () => {
@@ -496,9 +528,9 @@ const CompanionDashboardScreen: React.FC = () => {
           </TouchableOpacity>
           <View style={styles.headerContent}>
             <View style={styles.avatarContainer}>
-              {companion?.avatarIdentifier ? (
+              {(companion?.avatarUri || companion?.avatarIdentifier) ? (
                 <Image
-                  source={{ uri: companion.avatarIdentifier }}
+                  source={{ uri: companion.avatarUri || companion.avatarIdentifier }}
                   style={styles.avatarImage}
                 />
               ) : (
@@ -510,6 +542,25 @@ const CompanionDashboardScreen: React.FC = () => {
             <Text style={[styles.title, { color: colors.text }]}>{companionName}</Text>
             <Text style={[styles.subtitle, { color: colors.text }]}>Companion</Text>
           </View>
+          {isChatEnabled && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={() => {
+                // Navigate to CompanionChat screen when it's implemented
+                // For now, we'll just log or show an alert
+                console.log('Navigate to CompanionChat for companion:', chapter?.sourceId);
+                // router.push({
+                //   pathname: '/companion-chat',
+                //   params: { chapterId: chapter?.id, companionId: chapter?.sourceId },
+                // });
+              }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="chatbubble-outline" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          )}
+          {!isChatEnabled && <View style={styles.backButton} />}
         </View>
 
         {/* Relationship Snapshot */}
@@ -567,6 +618,16 @@ const styles = StyleSheet.create({
   backButton: {
     marginRight: 12,
     padding: 4,
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatButton: {
+    marginLeft: 12,
+    padding: 4,
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerContent: {
     flex: 1,

@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState, useMemo } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -144,13 +144,35 @@ const SettingsScreen = () => {
 
     const { isProMember, upgradeToPro } = subContext;
     const { isLockEnabled, toggleLock } = authContext;
-    const allCompanions = companionContext?.companions || [];
+    
+    // Get user state data for export and AI settings
+    const { userState, allRichEntries, updateUserState } = useUserState();
+    const [isExporting, setIsExporting] = useState(false);
+    
+    // Merge companions from both sources: CompanionContext (legacy) and userState.companions (new)
+    const legacyCompanions = companionContext?.companions || [];
+    const userCreatedCompanions = Object.values(userState?.companions || {});
+    // Convert userState companions to format compatible with CompanionSelectorCarousel
+    const formattedUserCompanions = userCreatedCompanions.map(comp => ({
+        id: comp.id,
+        name: comp.name,
+        avatarIdentifier: comp.avatarUri || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    }));
+    // Merge both sources, prioritizing user-created companions
+    const allCompanions = useMemo(() => {
+        const merged = [...formattedUserCompanions];
+        // Add legacy companions that don't already exist
+        legacyCompanions.forEach(legacy => {
+            if (!merged.find(c => String(c.id) === String(legacy.id))) {
+                merged.push(legacy);
+            }
+        });
+        return merged;
+    }, [legacyCompanions, formattedUserCompanions]);
     const companionsLoading = companionContext?.isLoading;
     const [primaryCompanionId, setPrimaryCompanionId] = useState(null);
-    
-    // Get user state data for export
-    const { userState, allRichEntries } = useUserState();
-    const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
         let mounted = true;
@@ -334,6 +356,33 @@ const SettingsScreen = () => {
                     value={isLockEnabled}
                     onValueChange={toggleLock}
                     thumbColor={isLockEnabled ? colors.primary : (Platform.OS === 'android' ? '#f4f3f4' : undefined)}
+                    trackColor={{ false: colors.border, true: colors.primary + '87' }}
+                />
+            </View>
+
+            {/* Enable AI Companion Interaction */}
+            <View style={[styles.row, { borderBottomColor: colors.border }]}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={[styles.rowText, { color: colors.text }]}>Enable AI Companion Interaction</Text>
+                    <Text style={[styles.rowSubText, { color: colors.secondaryText }]}>
+                        Allow AI to interact with your companions
+                    </Text>
+                </View>
+                <Switch
+                    value={userState?.settings?.isAIInteractionEnabled || false}
+                    onValueChange={async (value) => {
+                        const newSettings = {
+                            ...(userState.settings || { isAIInteractionEnabled: false }),
+                            isAIInteractionEnabled: value,
+                        };
+                        const updatedState = {
+                            ...userState,
+                            settings: newSettings,
+                            lastUpdatedAt: new Date().toISOString(),
+                        };
+                        await updateUserState(updatedState);
+                    }}
+                    thumbColor={(userState?.settings?.isAIInteractionEnabled || false) ? colors.primary : (Platform.OS === 'android' ? '#f4f3f4' : undefined)}
                     trackColor={{ false: colors.border, true: colors.primary + '87' }}
                 />
             </View>

@@ -15,6 +15,8 @@ export interface NamedEntity {
 export interface Companion {
   id: string;
   name: string;
+  isInteractionEnabled: boolean; // User preference for AI interaction with this companion
+  avatarUri?: string; // Optional URI to companion's avatar image
 }
 
 // --- Aggregated Data Structures for Dashboards ---

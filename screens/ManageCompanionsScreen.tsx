@@ -11,9 +11,13 @@ import {
   Alert,
   SafeAreaView,
   ScrollView,
+  Switch,
+  Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useUserState } from '../context/UserStateContext';
 import { Companion } from '../models/PIE';
 import { ThemeContext } from '../context/ThemeContext';
@@ -34,6 +38,8 @@ const ManageCompanionsScreen = () => {
   const [name, setName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [editingAvatarUri, setEditingAvatarUri] = useState<string | null>(null);
+  const [pickingAvatarForId, setPickingAvatarForId] = useState<string | null>(null);
 
   const companions = useMemo(() => {
     return Object.values(userState.companions || {});
@@ -53,7 +59,12 @@ const ManageCompanionsScreen = () => {
     }
 
     const newId = `comp-${Date.now()}`;
-    const newCompanion: Companion = { id: newId, name: name.trim() };
+    const newCompanion: Companion = {
+      id: newId,
+      name: name.trim(),
+      isInteractionEnabled: false, // Default to disabled
+      avatarUri: editingAvatarUri || undefined, // Use picked avatar if available
+    };
 
     const updatedCompanions = {
       ...(userState.companions || {}),
@@ -68,11 +79,13 @@ const ManageCompanionsScreen = () => {
 
     await updateUserState(updatedState);
     setName('');
+    setEditingAvatarUri(null); // Clear avatar preview
   };
 
   const handleStartEdit = (companion: Companion) => {
     setEditingId(companion.id);
     setEditingName(companion.name);
+    setEditingAvatarUri(companion.avatarUri || null);
   };
 
   const handleSaveEdit = async () => {
@@ -94,6 +107,10 @@ const ManageCompanionsScreen = () => {
       [editingId]: {
         ...userState.companions[editingId],
         name: editingName.trim(),
+        // Preserve isInteractionEnabled if it exists, otherwise default to false
+        isInteractionEnabled: userState.companions[editingId]?.isInteractionEnabled !== false,
+        // Preserve or update avatarUri (use editingAvatarUri if set, otherwise keep existing or undefined)
+        avatarUri: editingAvatarUri !== null ? (editingAvatarUri || undefined) : userState.companions[editingId]?.avatarUri,
       },
     };
 
@@ -106,11 +123,119 @@ const ManageCompanionsScreen = () => {
     await updateUserState(updatedState);
     setEditingId(null);
     setEditingName('');
+    setEditingAvatarUri(null);
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditingName('');
+    setEditingAvatarUri(null);
+  };
+
+  const handlePickAvatar = async (companionId: string | null) => {
+    try {
+      // Request permission
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant photo library access to add an avatar.');
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const uri = result.assets[0].uri;
+        
+        if (companionId === null) {
+          // Adding new companion - store temporarily
+          setEditingAvatarUri(uri);
+        } else {
+          // Updating existing companion
+          if (editingId === companionId) {
+            setEditingAvatarUri(uri);
+          } else {
+            // Update directly
+            const updatedCompanion = {
+              ...userState.companions[companionId],
+              avatarUri: uri,
+            };
+            const updatedCompanions = {
+              ...userState.companions,
+              [companionId]: updatedCompanion,
+            };
+            const updatedState = {
+              ...userState,
+              companions: updatedCompanions,
+              lastUpdatedAt: new Date().toISOString(),
+            };
+            await updateUserState(updatedState);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to pick avatar:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    } finally {
+      setPickingAvatarForId(null);
+    }
+  };
+
+  const handleRemoveAvatar = async (companionId: string) => {
+    if (editingId === companionId) {
+      setEditingAvatarUri(null);
+    } else {
+      const updatedCompanion = {
+        ...userState.companions[companionId],
+        avatarUri: undefined,
+      };
+      const updatedCompanions = {
+        ...userState.companions,
+        [companionId]: updatedCompanion,
+      };
+      const updatedState = {
+        ...userState,
+        companions: updatedCompanions,
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      await updateUserState(updatedState);
+    }
+  };
+
+  // Helper to get avatar URI for display
+  const getAvatarUri = (companion: Companion, isEditing: boolean): string | null => {
+    if (isEditing && editingAvatarUri !== null) {
+      return editingAvatarUri;
+    }
+    return companion.avatarUri || null;
+  };
+
+  // Helper to get initials for fallback avatar
+  const getInitials = (name: string): string => {
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
+  // Helper to get fallback color
+  const getFallbackColor = (name: string): string => {
+    const colors = [
+      '#6C5CE7', '#E17055', '#00CEC9', '#0984E3',
+      '#FF7675', '#00B894', '#FAB1A0', '#74B9FF',
+      '#D63031', '#636EFA',
+    ];
+    if (!name) return colors[0];
+    const code = Array.from(name).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return colors[code % colors.length];
   };
 
   const handleDeleteCompanion = (companion: Companion) => {
@@ -141,6 +266,9 @@ const ManageCompanionsScreen = () => {
 
   const renderCompanionItem = ({ item }: { item: Companion }) => {
     const isEditing = editingId === item.id;
+    const avatarUri = getAvatarUri(item, isEditing);
+    const initials = getInitials(isEditing ? editingName : item.name);
+    const fallbackColor = getFallbackColor(isEditing ? editingName : item.name);
 
     return (
       <View
@@ -154,6 +282,34 @@ const ManageCompanionsScreen = () => {
       >
         {isEditing ? (
           <View style={styles.editContainer}>
+            {/* Avatar Section */}
+            <View style={styles.avatarSection}>
+              <TouchableOpacity
+                onPress={() => handlePickAvatar(item.id)}
+                style={styles.avatarButton}
+                activeOpacity={0.8}
+              >
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={styles.avatarPreview} />
+                ) : (
+                  <View style={[styles.avatarFallback, { backgroundColor: fallbackColor }]}>
+                    <ThemedText style={styles.avatarInitials}>{initials}</ThemedText>
+                  </View>
+                )}
+                <View style={styles.avatarOverlay}>
+                  <Ionicons name="camera" size={20} color="#ffffff" />
+                </View>
+              </TouchableOpacity>
+              {avatarUri && (
+                <TouchableOpacity
+                  onPress={() => handleRemoveAvatar(item.id)}
+                  style={styles.removeAvatarButton}
+                  hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                >
+                  <Ionicons name="close-circle" size={24} color="#FF6B6B" />
+                </TouchableOpacity>
+              )}
+            </View>
             <TextInput
               style={[
                 styles.editInput,
@@ -166,6 +322,8 @@ const ManageCompanionsScreen = () => {
               value={editingName}
               onChangeText={setEditingName}
               autoFocus
+              placeholder="Companion Name"
+              placeholderTextColor={colors.text + '80'}
             />
             <View style={styles.editActions}>
               <TouchableOpacity
@@ -184,8 +342,73 @@ const ManageCompanionsScreen = () => {
           </View>
         ) : (
           <View style={styles.companionContent}>
-            <ThemedText style={styles.companionName}>{item.name}</ThemedText>
+            {/* Avatar Display */}
+            <TouchableOpacity
+              onPress={() => handlePickAvatar(item.id)}
+              style={styles.avatarDisplayContainer}
+              activeOpacity={0.8}
+            >
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarDisplay} />
+              ) : (
+                <View style={[styles.avatarDisplayFallback, { backgroundColor: fallbackColor }]}>
+                  <ThemedText style={styles.avatarDisplayInitials}>{initials}</ThemedText>
+                </View>
+              )}
+            </TouchableOpacity>
+            <View style={styles.companionInfo}>
+              <ThemedText style={styles.companionName}>{item.name}</ThemedText>
+              <ThemedText
+                style={[
+                  styles.interactionLabel,
+                  { color: colors.secondaryText },
+                ]}
+              >
+                AI Interaction: {item.isInteractionEnabled !== false ? 'Enabled' : 'Disabled'}
+              </ThemedText>
+            </View>
             <View style={styles.actionButtons}>
+              <View style={styles.switchContainer}>
+                <Switch
+                  value={item.isInteractionEnabled !== false}
+                  onValueChange={async (value) => {
+                    // Ensure global setting is also enabled
+                    if (value && !userState.settings?.isAIInteractionEnabled) {
+                      Alert.alert(
+                        'Global Setting Required',
+                        'Please enable "AI Companion Interaction" in Settings first to use this feature.',
+                        [{ text: 'OK' }]
+                      );
+                      return;
+                    }
+                    const updatedCompanion = {
+                      ...item,
+                      isInteractionEnabled: value,
+                    };
+                    const updatedCompanions = {
+                      ...userState.companions,
+                      [item.id]: updatedCompanion,
+                    };
+                    const updatedState = {
+                      ...userState,
+                      companions: updatedCompanions,
+                      lastUpdatedAt: new Date().toISOString(),
+                    };
+                    await updateUserState(updatedState);
+                  }}
+                  thumbColor={
+                    item.isInteractionEnabled !== false
+                      ? colors.primary
+                      : Platform.OS === 'android'
+                      ? '#f4f3f4'
+                      : undefined
+                  }
+                  trackColor={{
+                    false: colors.border,
+                    true: colors.primary + '87',
+                  }}
+                />
+              </View>
               <TouchableOpacity
                 onPress={() => handleStartEdit(item)}
                 style={styles.actionButton}
@@ -265,6 +488,20 @@ const ManageCompanionsScreen = () => {
           <ThemedText style={[styles.addFormTitle, { color: colors.text }]}>
             Add New Companion
           </ThemedText>
+          
+          {/* Avatar Preview for New Companion */}
+          {editingAvatarUri && (
+            <View style={styles.newAvatarSection}>
+              <Image source={{ uri: editingAvatarUri }} style={styles.newAvatarPreview} />
+              <TouchableOpacity
+                onPress={() => setEditingAvatarUri(null)}
+                style={styles.removeNewAvatarButton}
+              >
+                <Ionicons name="close-circle" size={24} color="#FF6B6B" />
+              </TouchableOpacity>
+            </View>
+          )}
+          
           <View style={styles.inputContainer}>
             <TextInput
               style={[
@@ -281,6 +518,19 @@ const ManageCompanionsScreen = () => {
               onChangeText={setName}
               onSubmitEditing={handleAddCompanion}
             />
+            <TouchableOpacity
+              onPress={() => handlePickAvatar(null)}
+              style={[
+                styles.avatarPickerButton,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
+              ]}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="camera" size={20} color={colors.primary} />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={handleAddCompanion}
               style={[
@@ -361,10 +611,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  companionInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
   companionName: {
     fontSize: 18,
     fontWeight: '600',
-    flex: 1,
+    marginBottom: 4,
+  },
+  interactionLabel: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  switchContainer: {
+    marginRight: 8,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -422,6 +683,97 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  avatarButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  avatarPreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  avatarFallback: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 28,
+  },
+  avatarOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingVertical: 4,
+    alignItems: 'center',
+  },
+  removeAvatarButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+  },
+  avatarDisplayContainer: {
+    marginRight: 12,
+  },
+  avatarDisplay: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  avatarDisplayFallback: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarDisplayInitials: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 18,
+  },
+  newAvatarSection: {
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  newAvatarPreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  removeNewAvatarButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+  },
+  avatarPickerButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
 });
 

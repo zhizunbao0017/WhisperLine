@@ -17,6 +17,9 @@ const createEmptyUserState = (): UserStateModel => {
     focus: {
       currentFocusChapters: [],
     },
+    settings: {
+      isAIInteractionEnabled: false, // Default to disabled, user must opt-in
+    },
   };
 };
 
@@ -54,6 +57,26 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // Ensure companions field exists for backward compatibility
           if (!parsed.companions) {
             parsed.companions = {};
+          }
+          // Ensure settings field exists for backward compatibility
+          if (!parsed.settings) {
+            parsed.settings = {
+              isAIInteractionEnabled: false,
+            };
+          }
+          // Ensure isInteractionEnabled and avatarUri exist for each companion (backward compatibility)
+          if (parsed.companions) {
+            Object.keys(parsed.companions).forEach((companionId) => {
+              if (parsed.companions[companionId]) {
+                if (typeof parsed.companions[companionId].isInteractionEnabled === 'undefined') {
+                  parsed.companions[companionId].isInteractionEnabled = false;
+                }
+                // Migrate avatarIdentifier to avatarUri if needed
+                if (parsed.companions[companionId].avatarIdentifier && !parsed.companions[companionId].avatarUri) {
+                  parsed.companions[companionId].avatarUri = parsed.companions[companionId].avatarIdentifier;
+                }
+              }
+            });
           }
           setUserState(parsed);
           console.log('UserStateContext: UserState loaded successfully');

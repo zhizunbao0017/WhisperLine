@@ -1,6 +1,10 @@
 // models/UserState.ts
 import { Chapter, Storyline, FocusChapter, Companion } from './PIE';
 
+export interface AppSettings {
+  isAIInteractionEnabled: boolean;
+}
+
 export interface UserStateModel {
   lastUpdatedAt: string;
   chapters: Record<string, Chapter>; // Use a dictionary for fast lookups by ID
@@ -9,6 +13,7 @@ export interface UserStateModel {
   focus: {
     currentFocusChapters: FocusChapter[];
   };
+  settings: AppSettings;
   // This model will grow to hold all high-level insights
 }
 
