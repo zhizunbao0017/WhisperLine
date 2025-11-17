@@ -1504,9 +1504,10 @@ const AddEditDiaryScreen = () => {
             >
                     <View style={heroContainerStyle}>
                         {(() => {
-                            console.log('[AddEditDiaryScreen] Rendering header visual...');
+                            console.log('[AddEditDiaryScreen] ====== Rendering Hero Visual ======');
                             console.log('[AddEditDiaryScreen] existingDiary:', existingDiary ? `ID: ${existingDiary.id}` : 'NULL');
                             console.log('[AddEditDiaryScreen] userState available:', !!userState);
+                            console.log('[AddEditDiaryScreen] userState.companions:', userState?.companions ? Object.keys(userState.companions).length + ' companions' : 'NULL');
                             
                             // --- PRIORITY 1: Check for associated Companion in EDIT mode ---
                             // This is the surgical fix: directly check existingDiary.companionIDs
@@ -1517,6 +1518,8 @@ const AddEditDiaryScreen = () => {
                                                     existingDiary.companions || 
                                                     [];
                                 
+                                console.log('[AddEditDiaryScreen] Companion IDs from diary:', companionIds);
+                                
                                 // Get the first companion ID (for single companion display)
                                 const firstCompanionId = Array.isArray(companionIds) ? companionIds[0] : companionIds;
                                 
@@ -1524,40 +1527,52 @@ const AddEditDiaryScreen = () => {
                                     const companionIdStr = String(firstCompanionId);
                                     const companion = userState.companions[companionIdStr];
                                     
-                                    console.log('[AddEditDiaryScreen] Found companion ID:', companionIdStr);
-                                    console.log('[AddEditDiaryScreen] Companion data:', companion ? `Name: ${companion.name}, Avatar: ${companion.avatarUri || 'NONE'}` : 'NOT FOUND');
+                                    console.log('[AddEditDiaryScreen] Looking for companion ID:', companionIdStr);
+                                    console.log('[AddEditDiaryScreen] Companion found:', companion ? `Name: ${companion.name}` : 'NOT FOUND');
                                     
                                     if (companion) {
                                         const avatarUri = companion.avatarUri || companion.avatarIdentifier;
+                                        console.log('[AddEditDiaryScreen] Companion avatarUri:', avatarUri || 'NONE');
                                         
                                         if (avatarUri && avatarUri.trim()) {
-                                            console.log('[AddEditDiaryScreen] Rendering companion avatar directly from existingDiary');
-                                            const resolvedSource = resolveImageSource(avatarUri);
-                                            return (
-                                                <CompanionAvatarView 
-                                                    size={150} 
-                                                    visual={{ 
-                                                        type: 'image', 
-                                                        source: resolvedSource 
-                                                    }} 
-                                                />
-                                            );
+                                            console.log('[AddEditDiaryScreen] ✅ Rendering companion avatar directly from existingDiary');
+                                            try {
+                                                const resolvedSource = resolveImageSource(avatarUri);
+                                                console.log('[AddEditDiaryScreen] Resolved source:', resolvedSource);
+                                                return (
+                                                    <CompanionAvatarView 
+                                                        size={150} 
+                                                        visual={{ 
+                                                            type: 'image', 
+                                                            source: resolvedSource 
+                                                        }} 
+                                                    />
+                                                );
+                                            } catch (error) {
+                                                console.error('[AddEditDiaryScreen] Error resolving image source:', error);
+                                            }
                                         } else {
-                                            console.log('[AddEditDiaryScreen] Companion found but no avatar URI, falling back to state-based rendering');
+                                            console.log('[AddEditDiaryScreen] ⚠️ Companion found but no avatar URI, falling back');
                                         }
                                     } else {
-                                        console.log('[AddEditDiaryScreen] Companion ID not found in userState.companions, falling back to state-based rendering');
+                                        console.log('[AddEditDiaryScreen] ⚠️ Companion ID not found in userState.companions, falling back');
                                     }
+                                } else {
+                                    console.log('[AddEditDiaryScreen] ⚠️ No companion IDs in diary, falling back');
                                 }
+                            } else {
+                                console.log('[AddEditDiaryScreen] ⚠️ No existingDiary or userState.companions, using state-based rendering');
                             }
                             
                             // --- FALLBACK: Use state-based rendering (for CREATE mode or when direct check fails) ---
                             console.log('[AddEditDiaryScreen] Using state-based heroVisual rendering');
-                            console.log('[AddEditDiaryScreen] heroVisual:', JSON.stringify(heroVisual, null, 2));
+                            console.log('[AddEditDiaryScreen] heroVisual state:', JSON.stringify(heroVisual, null, 2));
+                            console.log('[AddEditDiaryScreen] selectedCompanionIDs:', selectedCompanionIDs);
+                            console.log('[AddEditDiaryScreen] allCompanions count:', allCompanions.length);
                             
                             // --- DEFENSIVE: Ensure heroVisual is always valid ---
                             if (!heroVisual || typeof heroVisual !== 'object') {
-                                console.error('[AddEditDiaryScreen] CRITICAL: heroVisual is invalid, using fallback');
+                                console.error('[AddEditDiaryScreen] ❌ CRITICAL: heroVisual is invalid, using DEFAULT_HERO_IMAGE');
                                 return (
                                     <CompanionAvatarView 
                                         size={150} 
@@ -1566,6 +1581,18 @@ const AddEditDiaryScreen = () => {
                                 );
                             }
                             
+                            // Ensure heroVisual has a valid source
+                            if (!heroVisual.source) {
+                                console.warn('[AddEditDiaryScreen] ⚠️ heroVisual has no source, using DEFAULT_HERO_IMAGE');
+                                return (
+                                    <CompanionAvatarView 
+                                        size={150} 
+                                        visual={{ type: 'image', source: DEFAULT_HERO_IMAGE }} 
+                                    />
+                                );
+                            }
+                            
+                            console.log('[AddEditDiaryScreen] ✅ Rendering heroVisual from state');
                             return <CompanionAvatarView size={150} visual={heroVisual} />;
                         })()}
                     </View>
@@ -2067,6 +2094,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 24,
+        paddingHorizontal: 20,
+        minHeight: 200, // Ensure minimum height for visibility
         borderBottomLeftRadius: 32,
         borderBottomRightRadius: 32,
         marginBottom: 18,
