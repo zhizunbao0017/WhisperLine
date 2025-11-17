@@ -19,6 +19,7 @@ const createEmptyUserState = (): UserStateModel => {
     },
     settings: {
       isAIInteractionEnabled: false, // Default to disabled, user must opt-in
+      hasSeenLongPressHint: false, // Show tutorial by default
     },
   };
 };
@@ -31,6 +32,7 @@ export interface UserStateContextValue {
   updateRichEntries: (richEntries: Record<string, RichEntry>) => Promise<void>;
   addRichEntry: (richEntry: RichEntry) => Promise<void>;
   refreshUserState: () => Promise<void>;
+  markLongPressHintSeen: () => Promise<void>; // Helper to mark hint as seen
 }
 
 export const UserStateContext = createContext<UserStateContextValue | null>(null);
@@ -62,7 +64,12 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (!parsed.settings) {
             parsed.settings = {
               isAIInteractionEnabled: false,
+              hasSeenLongPressHint: false,
             };
+          }
+          // Ensure hasSeenLongPressHint exists for backward compatibility
+          if (typeof parsed.settings.hasSeenLongPressHint === 'undefined') {
+            parsed.settings.hasSeenLongPressHint = false;
           }
           // Ensure isInteractionEnabled and avatarUri exist for each companion (backward compatibility)
           if (parsed.companions) {
@@ -156,6 +163,23 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await loadUserState();
   }, [loadUserState]);
 
+  const markLongPressHintSeen = useCallback(async () => {
+    try {
+      const updatedState = {
+        ...userState,
+        settings: {
+          ...userState.settings,
+          hasSeenLongPressHint: true,
+        },
+      };
+      setUserState(updatedState);
+      await AsyncStorage.setItem(USER_STATE_STORAGE_KEY, JSON.stringify(updatedState));
+      console.log('UserStateContext: Long press hint marked as seen');
+    } catch (error) {
+      console.warn('UserStateContext: failed to mark long press hint as seen', error);
+    }
+  }, [userState]);
+
   useEffect(() => {
     // Load data immediately on mount
     // No delay - we want to block rendering until data is ready
@@ -170,6 +194,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updateRichEntries,
     addRichEntry,
     refreshUserState,
+    markLongPressHintSeen,
   };
 
   // --- CRITICAL: Conditional Rendering ---

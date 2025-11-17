@@ -3,6 +3,7 @@ import { Chapter, Storyline, FocusChapter, Companion } from './PIE';
 
 export interface AppSettings {
   isAIInteractionEnabled: boolean;
+  hasSeenLongPressHint?: boolean; // Track if user has seen the long-press tutorial
 }
 
 export interface UserStateModel {

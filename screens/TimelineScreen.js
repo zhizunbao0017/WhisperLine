@@ -1,6 +1,6 @@
 // screens/TimelineScreen.js
 import { useRouter } from 'expo-router';
-import React, { useContext, useMemo, useRef } from 'react';
+import React, { useContext, useMemo, useRef, useState, useEffect } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
@@ -13,6 +13,7 @@ import FloatingActionButton from '../components/FloatingActionButton';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
 import { ThemedText as Text } from '../components/ThemedText';
 import OnThisDay from '../components/OnThisDay';
+import LongPressCoachMark from '../components/LongPressCoachMark';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -62,6 +63,36 @@ const TimelineScreen = () => {
         // UserStateProvider not available, focus features will be disabled
         console.warn('TimelineScreen: UserStateProvider not available, focus features disabled', error);
     }
+
+    // --- Coach Mark State ---
+    const [showCoachMark, setShowCoachMark] = useState(false);
+
+    // Check if we should show the coach mark
+    useEffect(() => {
+        if (!userStateContext) return;
+
+        const hasSeenHint = userStateContext.userState?.settings?.hasSeenLongPressHint || false;
+        const diaryCount = diaries?.length || 0;
+        
+        // Show coach mark if:
+        // 1. User hasn't seen the hint yet
+        // 2. User has at least 2 diary entries (engaged user)
+        // 3. Not currently loading
+        if (!hasSeenHint && diaryCount >= 2 && !isLoading) {
+            // Small delay to ensure UI is ready
+            const timer = setTimeout(() => {
+                setShowCoachMark(true);
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [userStateContext, diaries, isLoading]);
+
+    const handleDismissCoachMark = async () => {
+        setShowCoachMark(false);
+        if (userStateContext?.markLongPressHintSeen) {
+            await userStateContext.markLongPressHintSeen();
+        }
+    };
 
     if (!diaryContext || !themeContext) {
         return <ActivityIndicator size="large" style={{ flex: 1 }} />;
@@ -302,6 +333,10 @@ const TimelineScreen = () => {
                     params: selectedDate ? { date: selectedDate } : {}
                 })}
                 onLongPress={openQuickCapture}
+            />
+            <LongPressCoachMark
+                visible={showCoachMark}
+                onDismiss={handleDismissCoachMark}
             />
         </View>
     );
