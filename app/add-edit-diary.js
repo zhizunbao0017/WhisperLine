@@ -279,7 +279,7 @@ const AddEditDiaryScreen = () => {
     }, [existingDiary]);
 
     // --- Hooks and Context ---
-    const { addDiary, updateDiary } = useContext(DiaryContext);
+    const { addDiary, updateDiary, saveDiary } = useContext(DiaryContext);
     const companionContext = useContext(CompanionContext);
     const companionsLoading = companionContext?.isLoading;
     // Get userState to access user-created companions
@@ -1010,71 +1010,59 @@ const AddEditDiaryScreen = () => {
                 return updated;
             });
             
-            // Integrate title into content HTML for all templates
-            const finalTitle = effectiveTitle || title.trim();
-            const integratedContent = integrateTitleIntoContent(finalTitle, contentToSave);
+            // --- USE UNIFIED saveDiary FUNCTION ---
+            // The saveDiary function intelligently handles create vs update internally
+            // Extract mood string if it's an object
+            const moodString = selectedMood && typeof selectedMood === 'object' 
+                ? selectedMood.name 
+                : selectedMood;
             
-            console.log('Saving content with integrated title (production-ready format)', {
-                title: finalTitle,
-                contentLength: integratedContent.length,
-                mood: selectedMood,
-                companionIDs: selectedCompanionIDs,
-                themeID: selectedThemeId,
-            });
-
-            const diaryData = {
-                title: finalTitle,
-                content: integratedContent, // Content with title integrated as <h1>
-                mood: selectedMood,
-                weather,
+            // Handle date parameter: if provided, use it to set createdAt
+            // entryDateParam should be in YYYY-MM-DD format
+            let createdAtOverride = undefined;
+            if (!isEditMode && entryDateParam) {
+                try {
+                    // Parse the date string (YYYY-MM-DD) and set time to noon to avoid timezone issues
+                    const dateParts = entryDateParam.split('-');
+                    if (dateParts.length === 3) {
+                        const year = parseInt(dateParts[0], 10);
+                        const month = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
+                        const day = parseInt(dateParts[2], 10);
+                        // Create date at noon local time to avoid timezone conversion issues
+                        const date = new Date(year, month, day, 12, 0, 0, 0);
+                        createdAtOverride = date.toISOString();
+                    } else {
+                        // Fallback: try parsing as-is
+                        createdAtOverride = new Date(entryDateParam).toISOString();
+                    }
+                } catch (error) {
+                    console.warn('Failed to parse entryDateParam:', entryDateParam, error);
+                    // Fallback to current time if parsing fails
+                    createdAtOverride = undefined;
+                }
+            }
+            
+            // Use the unified saveDiary function
+            // It will automatically determine create vs update based on entryId
+            const savedEntry = await saveDiary({
+                entryId: isEditMode ? existingDiary.id : undefined,
+                htmlContent: contentToSave, // Content from editor (saveDiary handles title integration)
+                selectedMood: moodString,
+                weather: weather,
                 companionIDs: selectedCompanionIDs,
                 themeID: selectedThemeId ?? null,
-            };
-
-            if (isEditMode) {
-                console.log('Updating diary entry:', existingDiary.id);
-                await updateDiary({ ...diaryData, id: existingDiary.id, createdAt: existingDiary.createdAt });
+                createdAt: isEditMode ? existingDiary.createdAt : createdAtOverride,
+            });
+            
+            console.log(isEditMode ? 'Diary entry updated successfully' : 'Diary entry created:', savedEntry?.id);
+            
+            // Handle theme assignment
+            if (savedEntry?.id) {
                 await themeAnalysisService.assignEntryToTheme(
-                    existingDiary.id,
+                    savedEntry.id,
                     selectedThemeId ?? null,
-                    { ...diaryData, id: existingDiary.id }
+                    savedEntry
                 );
-                console.log('Diary entry updated successfully');
-            } else {
-                // Handle date parameter: if provided, use it to set createdAt
-                // entryDateParam should be in YYYY-MM-DD format
-                let createdAtOverride = undefined;
-                if (entryDateParam) {
-                    try {
-                        // Parse the date string (YYYY-MM-DD) and set time to noon to avoid timezone issues
-                        const dateParts = entryDateParam.split('-');
-                        if (dateParts.length === 3) {
-                            const year = parseInt(dateParts[0], 10);
-                            const month = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
-                            const day = parseInt(dateParts[2], 10);
-                            // Create date at noon local time to avoid timezone conversion issues
-                            const date = new Date(year, month, day, 12, 0, 0, 0);
-                            createdAtOverride = date.toISOString();
-                        } else {
-                            // Fallback: try parsing as-is
-                            createdAtOverride = new Date(entryDateParam).toISOString();
-                        }
-                    } catch (error) {
-                        console.warn('Failed to parse entryDateParam:', entryDateParam, error);
-                        // Fallback to current time if parsing fails
-                        createdAtOverride = undefined;
-                    }
-                }
-                console.log('Adding new diary entry', { entryDateParam, createdAtOverride });
-                const createdEntry = await addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
-                console.log('Diary entry created:', createdEntry?.id);
-                if (createdEntry?.id) {
-                    await themeAnalysisService.assignEntryToTheme(
-                        createdEntry.id,
-                        selectedThemeId ?? null,
-                        createdEntry
-                    );
-                }
             }
             // Update state before navigation to prevent usePreventRemove from triggering
             setInitialSnapshot(currentSnapshot);

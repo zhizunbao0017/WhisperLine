@@ -109,18 +109,6 @@ const DiaryDetailScreen = () => {
                 </TouchableOpacity>
             </View>
 
-            {/* --- Mood and title area --- */}
-            <View style={styles.titleContainer}>
-                {diary.mood?.image && (
-                    <Image source={diary.mood.image} style={styles.moodImage} />
-                )}
-                <Text style={[
-                    styles.title, 
-                    { color: colors.text },
-                    isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
-                ]}>{diary.title}</Text>
-            </View>
-
             {/* --- Date and weather information --- */}
             <View style={styles.metaContainer}>
                 <Text style={[styles.metaText, { color: colors.text }]}>
@@ -146,16 +134,28 @@ const DiaryDetailScreen = () => {
             {/* --- Divider --- */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            {/* --- Diary content --- */}
+            {/* --- Diary content (includes title as <h1>) --- */}
+            {/* --- KEY FIX: Content is the single source of truth, no separate title rendering --- */}
             {(diary.content || diary.contentHTML) ? (
                 // Use RenderHTML to render (supports images and rich text formatting)
+                // The content now includes the title as <h1>, so we render it directly
                 <View style={styles.htmlContainer}>
                     <RenderHTML
                         contentWidth={width - 40} // Use useWindowDimensions width
                         source={{ html: diary.content || diary.contentHTML || '' }}
-                        tagsStyles={renderHTMLConfig.tagsStyles}
+                        tagsStyles={{
+                            ...renderHTMLConfig.tagsStyles,
+                            h1: {
+                                fontSize: 28,
+                                fontWeight: 'bold',
+                                marginTop: 0,
+                                marginBottom: 15,
+                                color: colors.text,
+                                fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined,
+                            },
+                        }}
                         baseStyle={renderHTMLConfig.baseStyle}
-                        systemFonts={['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']}
+                        systemFonts={isCyberpunkTheme ? [themeStyles.fontFamily] : ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']}
                         renderersProps={{
                             img: {
                                 // Ensure local file URI images can load correctly

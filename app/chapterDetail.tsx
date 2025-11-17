@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -48,6 +48,16 @@ const EMOTION_LABELS: Record<EmotionType, string> = {
   angry: 'Angry',
 };
 
+// --- Internal State Management ---
+interface ChapterData {
+  chapter: Chapter;
+  entries: any[];
+  recentEntries: any[];
+  relatedStorylines: Storyline[];
+  totalEmotions: number;
+  emotionDistribution: Record<EmotionType, number>;
+}
+
 const ChapterDetailScreen: React.FC = () => {
   const { id } = useLocalSearchParams<ChapterDetailParams>();
   const router = useRouter();
@@ -58,50 +68,163 @@ const ChapterDetailScreen: React.FC = () => {
   const colors = themeContext?.colors ?? FALLBACK_COLORS;
   const diaries = diaryContext?.diaries ?? [];
 
-  // Get chapter from UserStateModel (which has metrics)
-  const chapter: Chapter | undefined = useMemo(() => {
-    if (!id || !userState?.chapters) {
-      return undefined;
-    }
-    return userState.chapters[id];
-  }, [id, userState?.chapters]);
+  // --- Internal State Management ---
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [chapterData, setChapterData] = useState<ChapterData | null>(null);
 
-  // Get entries for this chapter
-  const entries = useMemo(() => {
-    if (!chapter || !Array.isArray(diaries)) {
-      return [];
-    }
-    const ids = new Set((chapter.entryIds ?? []).map(String));
-    return diaries.filter((entry) => ids.has(String(entry.id))).sort((a, b) => {
-      const dateA = new Date(a.createdAt || 0).getTime();
-      const dateB = new Date(b.createdAt || 0).getTime();
-      return dateB - dateA; // Sort descending (newest first)
-    });
-  }, [chapter, diaries]);
+  useEffect(() => {
+    // --- CRITICAL: Use try...catch...finally to ensure loading state is always cleared ---
+    try {
+      // --- Start Data Processing ---
+      console.log(`[ChapterDetail] Loading data for chapterId: ${id}`);
 
-  // Get recent entries (last 3)
-  const recentEntries = useMemo(() => {
-    return entries.slice(0, 3);
-  }, [entries]);
+      // --- Defensive Check 1: Chapter ID exists ---
+      if (!id) {
+        throw new Error('Chapter ID is missing.');
+      }
 
-  // Get storylines that contain entries from this chapter
-  const relatedStorylines = useMemo(() => {
-    if (!chapter || !userState?.storylines) {
-      return [];
-    }
-    const chapterEntryIds = new Set((chapter.entryIds ?? []).map(String));
-    return userState.storylines.filter((storyline: Storyline) => {
-      return storyline.entryIds.some((entryId) => chapterEntryIds.has(String(entryId)));
-    });
-  }, [chapter, userState?.storylines]);
+      // --- Defensive Check 2: UserState is available ---
+      if (!userState) {
+        throw new Error('User state is not available. Please wait for data to load.');
+      }
 
-  // Calculate total emotions for the stacked bar
-  const totalEmotions = useMemo(() => {
-    if (!chapter?.metrics?.emotionDistribution) {
-      return 0;
+      // --- Defensive Check 3: Chapters object exists ---
+      if (!userState.chapters) {
+        throw new Error('Chapter data could not be found.');
+      }
+
+      const chapter = userState.chapters[id];
+
+      // --- Defensive Check 4: Chapter exists ---
+      if (!chapter) {
+        throw new Error(`Chapter with ID "${id}" could not be found.`);
+      }
+
+      // --- Defensive Check 5: Chapter has required properties ---
+      if (!chapter.id || !chapter.title) {
+        throw new Error('Chapter data is incomplete. Some required fields are missing.');
+      }
+
+      // --- Defensive Check 6: Metrics exist (warn but don't fail) ---
+      if (!chapter.metrics) {
+        console.warn(`[ChapterDetail] Metrics not found for chapter ${id}. May need a rebuild.`);
+      }
+
+      // --- Process entries for this chapter ---
+      const entryIds = chapter.entryIds ?? [];
+      const ids = new Set(entryIds.map(String));
+      const entries = diaries
+        .filter((entry) => ids.has(String(entry.id)))
+        .sort((a, b) => {
+          const dateA = new Date(a.createdAt || 0).getTime();
+          const dateB = new Date(b.createdAt || 0).getTime();
+          return dateB - dateA; // Sort descending (newest first)
+        });
+
+      // --- Get recent entries (last 3) ---
+      const recentEntries = entries.slice(0, 3);
+
+      // --- Get storylines that contain entries from this chapter ---
+      const chapterEntryIds = new Set(entryIds.map(String));
+      const relatedStorylines = (userState.storylines || []).filter((storyline: Storyline) => {
+        return storyline.entryIds.some((entryId) => chapterEntryIds.has(String(entryId)));
+      });
+
+      // --- Calculate total emotions for the stacked bar ---
+      const emotionDistribution = chapter.metrics?.emotionDistribution ?? {};
+      const totalEmotions = Object.values(emotionDistribution).reduce((a, b) => a + b, 0);
+
+      // --- If all checks pass, set the data for rendering ---
+      setChapterData({
+        chapter,
+        entries,
+        recentEntries,
+        relatedStorylines,
+        totalEmotions,
+        emotionDistribution: emotionDistribution as Record<EmotionType, number>,
+      });
+
+      console.log(`[ChapterDetail] Successfully loaded chapter data for ${id}`);
+    } catch (e: any) {
+      console.error(`[ChapterDetail] Error loading chapter:`, e);
+      setError(e?.message || 'An error occurred while loading chapter details.');
+    } finally {
+      // --- CRITICAL STEP ---
+      // This block will run regardless of success or failure in the try/catch.
+      // It GUARANTEES the loading state will be turned off.
+      setIsLoading(false);
+      console.log(`[ChapterDetail] Finished loading attempt for chapterId: ${id}`);
     }
-    return Object.values(chapter.metrics.emotionDistribution).reduce((a, b) => a + b, 0);
-  }, [chapter?.metrics?.emotionDistribution]);
+  }, [id, userState, diaries]); // Rerun if the ID, global state, or diaries change
+
+  // --- Conditional Rendering ---
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text, marginTop: 16 }]}>Loading chapter...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Ionicons name="alert-circle-outline" size={48} color={colors.primary} style={{ marginBottom: 16 }} />
+        <Text style={[styles.errorText, { color: colors.text }]}>{error}</Text>
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.primary, marginTop: 24 }]}
+          onPress={() => {
+            setIsLoading(true);
+            setError(null);
+            // Trigger re-render by updating a dependency
+            setChapterData(null);
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>Retry</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.backButton, { marginTop: 12 }]}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.backButtonText, { color: colors.primary }]}>Go Back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  if (!chapterData) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Text style={[styles.errorText, { color: colors.text }]}>No chapter data available.</Text>
+        <TouchableOpacity
+          style={[styles.backButton, { marginTop: 24 }]}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.backButtonText, { color: colors.primary }]}>Go Back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  // --- Success: Render the actual dashboard ---
+  return <ChapterDashboardUI chapterData={chapterData} colors={colors} router={router} allRichEntries={allRichEntries} />;
+};
+
+// --- Presentation Component: Separated for clarity ---
+interface ChapterDashboardUIProps {
+  chapterData: ChapterData;
+  colors: typeof FALLBACK_COLORS;
+  router: any;
+  allRichEntries: Record<string, any>;
+}
+
+const ChapterDashboardUI: React.FC<ChapterDashboardUIProps> = ({ chapterData, colors, router, allRichEntries }) => {
+  const { chapter, entries, recentEntries, relatedStorylines, totalEmotions, emotionDistribution } = chapterData;
 
   // Format date range for storylines
   const formatDateRange = (startDate: string, endDate: string) => {
@@ -112,25 +235,7 @@ const ChapterDetailScreen: React.FC = () => {
     return `${startStr} - ${endStr}`;
   };
 
-  if (!id) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Text style={[styles.notFoundTitle, { color: colors.text }]}>Chapter ID missing</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (!chapter) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.notFoundTitle, { color: colors.text, marginTop: 16 }]}>Loading chapter...</Text>
-      </SafeAreaView>
-    );
-  }
-
   const metrics = chapter.metrics;
-  const emotionDistribution = metrics?.emotionDistribution ?? {};
 
   // Render stacked bar chart for emotion distribution
   const renderEmotionSpectrum = () => {
@@ -288,15 +393,20 @@ const ChapterDetailScreen: React.FC = () => {
             </TouchableOpacity>
           )}
         </View>
-        {recentEntries.map((entry, index) => (
-          <DiarySummaryCard
-            key={entry.id}
-            item={entry}
-            index={index}
-            onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(entry) } })}
-            colors={colors}
-          />
-        ))}
+        {recentEntries.map((entry, index) => {
+          const richEntry = allRichEntries?.[entry.id] || undefined;
+          
+          return (
+            <DiarySummaryCard
+              key={entry.id}
+              item={entry}
+              richEntry={richEntry}
+              index={index}
+              onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(entry) } })}
+              colors={colors}
+            />
+          );
+        })}
       </View>
     );
   };
@@ -344,15 +454,20 @@ const ChapterDetailScreen: React.FC = () => {
         {entries.length > 3 && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>All Entries</Text>
-            {entries.slice(3).map((entry, index) => (
-              <DiarySummaryCard
-                key={entry.id}
-                item={entry}
-                index={index + 3}
-                onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(entry) } })}
-                colors={colors}
-              />
-            ))}
+            {entries.slice(3).map((entry, index) => {
+              const richEntry = allRichEntries?.[entry.id] || undefined;
+              
+              return (
+                <DiarySummaryCard
+                  key={entry.id}
+                  item={entry}
+                  richEntry={richEntry}
+                  index={index + 3}
+                  onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(entry) } })}
+                  colors={colors}
+                />
+              );
+            })}
           </View>
         )}
 
@@ -535,16 +650,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
   },
-  notFoundTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 8,
-    textAlign: 'center',
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
-  notFoundSubtitle: {
-    fontSize: 15,
-    opacity: 0.7,
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
     textAlign: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
 

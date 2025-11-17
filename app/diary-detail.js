@@ -53,12 +53,7 @@ const DiaryDetailScreen = () => {
                     <Ionicons name="create-outline" size={28} color={colors.primary} /> 
                 </TouchableOpacity> 
             </View>
-            <View style={styles.titleContainer}> 
-                {diary.mood?.image && (
-                    <Image source={diary.mood.image} style={styles.moodImage} resizeMode="contain" />
-                )}
-                <Text style={[styles.title, { color: colors.text }]}>{diary.title}</Text>
-            </View>
+            {/* --- Date information --- */}
             <View style={styles.metaContainer}> 
                 <Text style={[styles.metaText, { color: colors.text }]}>
                     {new Date(diary.createdAt).toLocaleDateString('en-US', {
@@ -69,12 +64,31 @@ const DiaryDetailScreen = () => {
                 </Text>
             </View>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            
+            {/* --- Diary content (includes title as <h1>) --- */}
+            {/* --- KEY FIX: Content is the single source of truth, no separate title rendering --- */}
             {diary.content ? (
                 <View style={styles.htmlContainer}>
                     <RenderHTML
                         contentWidth={width - 40}
                         source={{ html: diary.content }}
                         renderers={renderers}
+                        tagsStyles={{
+                            h1: {
+                                fontSize: 26,
+                                fontWeight: '600',
+                                marginTop: 0,
+                                marginBottom: 15,
+                                color: colors.text,
+                            },
+                            p: {
+                                fontSize: 18,
+                                lineHeight: 26,
+                                color: colors.text,
+                                marginTop: 10,
+                                marginBottom: 10,
+                            },
+                        }}
                         baseStyle={{ color: colors.text, fontSize: 18, lineHeight: 26 }}
                     />
                 </View>

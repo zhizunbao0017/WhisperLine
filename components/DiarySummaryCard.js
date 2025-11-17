@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useRef } from 'react';
-import { Animated, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Animated, Image, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import RenderHTML from 'react-native-render-html';
 import { Ionicons } from '@expo/vector-icons';
 import { MOODS } from '../data/moods';
 import { ThemeContext } from '../context/ThemeContext';
@@ -29,6 +30,7 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
   const themeContext = useContext(ThemeContext);
   const themeStyles = useThemeStyles();
   const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
+  const { width } = useWindowDimensions();
 
   // Use the authoritative primaryEmotion field from metadata
   // This field already prioritizes user-selected mood over AI detection
@@ -54,12 +56,15 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
     }).start();
   }, [opacity, translateY, index]);
 
-  const plainPreview = extractTextFromHTML(item.content || item.contentHTML || '');
-  const displayContent =
-    plainPreview ||
-    (item.captureType ? 'Tap to add more to this captured moment.' : 'No additional notes yet.');
-  const displayTitle =
-    (item.title || '').trim() || (item.captureType ? 'Quick capture' : 'Untitled entry');
+  // --- KEY CHANGE: Use content as single source of truth ---
+  // The content now includes the title as <h1>, so we render it directly
+  const htmlContent = item.content || item.contentHTML || '';
+  
+  // For capture types or empty content, show a fallback message
+  const hasContent = htmlContent.trim().length > 0;
+  const contentSource = hasContent 
+    ? { html: htmlContent }
+    : { html: `<p>${item.captureType ? 'Tap to add more to this captured moment.' : 'No additional notes yet.'}</p>` };
 
   return (
     <Animated.View
@@ -89,20 +94,47 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
             </Text>
           </View>
         ) : null}
-        <View style={styles.cardHeader}>
-          <Text style={[
-            styles.cardTitle, 
-            { color: colors.text },
-            isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
-          ]}>{displayTitle}</Text>
+        
+        {/* --- RENDER THE FULL CONTENT DIRECTLY --- */}
+        {/* RenderHTML will handle displaying the <h1> from the content */}
+        {/* We use content as the single source of truth - no separate title rendering */}
+        <View style={styles.contentContainer}>
+          <RenderHTML
+            contentWidth={width - 32} // Account for card padding (15px * 2)
+            source={contentSource}
+            tagsStyles={{
+              body: { 
+                color: colors.text, 
+                fontSize: 14,
+                fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined,
+                margin: 0,
+                padding: 0,
+              },
+              h1: { 
+                color: colors.text, 
+                fontSize: 18, 
+                fontWeight: 'bold', 
+                marginBottom: 8,
+                marginTop: 0,
+                fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined,
+              },
+              p: {
+                color: colors.text,
+                fontSize: 14,
+                marginBottom: 6,
+                marginTop: 0,
+                fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined,
+              },
+            }}
+            baseStyle={{
+              color: colors.text,
+            }}
+            // Ignore images in preview to keep it simple and fast
+            ignoredDomTags={['img']}
+            // Limit content preview by using systemTextProps
+            systemFonts={isCyberpunkTheme ? [themeStyles.fontFamily] : []}
+          />
         </View>
-        <Text style={[
-          styles.cardContent, 
-          { color: colors.text },
-          isCyberpunkTheme && { fontFamily: themeStyles.fontFamily }
-        ]} numberOfLines={2}>
-          {displayContent}
-        </Text>
         <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
           {/* Left: Weather/Location */}
           <View style={styles.footerLeft}>
@@ -175,9 +207,16 @@ const styles = StyleSheet.create({
     shadowRadius: 2.22,
     elevation: 3,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', flex: 1 },
-  cardContent: { fontSize: 14, marginBottom: 15, color: '#666' },
+  contentContainer: {
+    marginBottom: 15,
+    minHeight: 40,
+    maxHeight: 100, // Limit preview height to approximately 3-4 lines
+    overflow: 'hidden', // Hide overflow content
+  },
+  htmlParagraph: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',

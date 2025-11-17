@@ -26,6 +26,66 @@ const extractTextContent = (entry) => {
   return '';
 };
 
+// Helper function to extract plain text from HTML
+const extractTextFromHTML = (html) => {
+  if (!html) return '';
+  return html.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+};
+
+// Helper function to extract title from HTML content
+// Used for extracting title from content for display purposes
+const extractTitleFromContent = (html) => {
+  if (!html) return '';
+  
+  // Check if content starts with <h1> tag
+  const h1Match = html.match(/^<h1[^>]*>(.*?)<\/h1>/i);
+  if (h1Match) {
+    return extractTextFromHTML(h1Match[1]).trim();
+  }
+  
+  // Check if content starts with <p><strong> (common title pattern)
+  const strongMatch = html.match(/^<p[^>]*>\s*<strong[^>]*>(.*?)<\/strong>/i);
+  if (strongMatch) {
+    return extractTextFromHTML(strongMatch[1]).trim();
+  }
+  
+  // No title found in HTML, extract from first line of plain text
+  const plainText = extractTextFromHTML(html);
+  const firstLine = plainText.split(/\n+/).map(line => line.trim()).find(line => line.length > 0);
+  return firstLine ? firstLine.slice(0, 60) : '';
+};
+
+// Helper function to integrate title into content HTML
+// Used ONLY for creating new entries
+const integrateTitleIntoContent = (title, content) => {
+  const trimmedTitle = title.trim();
+  const trimmedContent = content.trim();
+  
+  if (!trimmedTitle) {
+    return trimmedContent;
+  }
+  
+  // Escape HTML in title
+  const escapedTitle = trimmedTitle
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  
+  // If content already has an h1 tag, replace it
+  if (trimmedContent.match(/^<h1[^>]*>/i)) {
+    return trimmedContent.replace(/^<h1[^>]*>.*?<\/h1>/i, `<h1>${escapedTitle}</h1>`);
+  }
+  
+  // Otherwise, prepend h1 tag
+  if (trimmedContent) {
+    return `<h1>${escapedTitle}</h1>\n${trimmedContent}`;
+  }
+  
+  return `<h1>${escapedTitle}</h1>`;
+};
+
 export const DiaryContext = createContext();
 const DIARY_STORAGE_KEY = '@MyAIDiary:diaries';
 const AI_USAGE_KEY = '@MyAIDiary:aiUsageCount';
@@ -321,53 +381,122 @@ export const DiaryProvider = ({ children }) => {
     [diaries, saveDiariesToStorage]
   );
 
-  const addDiary = async (newDiary) => {
-    const baseEntry = createDiaryEntry({
-      ...newDiary,
-      createdAt: newDiary?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    const newEntry = ensureAnalysis(baseEntry);
+  // --- THE NEW UNIFIED SAVE FUNCTION ---
+  // This function intelligently determines whether to create or update an entry
+  // and applies the correct data processing path
+  const saveDiary = async (data) => {
+    const { entryId, htmlContent, selectedMood, weather, companionIDs, themeID, createdAt } = data;
     
-    // Check for duplicates after entry is created (with generated ID)
-    const duplicateCheck = diaries.find(d => d.id === newEntry.id);
-    if (duplicateCheck) {
-      console.warn('addDiary: Duplicate entry detected, skipping:', newEntry.id);
-      return duplicateCheck;
+    let entryToProcess;
+    let updatedDiaries;
+    
+    if (entryId) {
+      // --- UPDATE PATH ---
+      console.log(`[DiaryContext] Updating entry: ${entryId}`);
+      
+      // Find the existing entry
+      const existingEntry = diaries.find(d => d.id === entryId);
+      if (!existingEntry) {
+        console.error(`[DiaryContext] Update failed: Entry ${entryId} not found`);
+        throw new Error(`Entry ${entryId} not found`);
+      }
+      
+      // For updates: Use content directly from editor (already contains title)
+      // Do NOT re-integrate title to avoid duplication
+      // Extract title from content for display purposes (for list views)
+      const extractedTitle = extractTitleFromContent(htmlContent);
+      
+      // Create updated entry
+      const baseEntry = createDiaryEntry({
+        ...existingEntry,
+        title: extractedTitle || existingEntry.title,
+        content: htmlContent, // Use content as-is from editor
+        mood: selectedMood !== undefined ? selectedMood : existingEntry.mood,
+        weather: weather !== undefined ? weather : existingEntry.weather,
+        companionIDs: companionIDs !== undefined ? companionIDs : existingEntry.companionIDs,
+        themeID: themeID !== undefined ? themeID : existingEntry.themeID,
+        updatedAt: new Date().toISOString(),
+        createdAt: existingEntry.createdAt, // Preserve original creation date
+      });
+      
+      entryToProcess = ensureAnalysis(baseEntry);
+      
+      // Update diaries array
+      updatedDiaries = diaries.map(diary => 
+        diary.id === entryId ? entryToProcess : diary
+      );
+      
+      console.log(`[DiaryContext] Entry updated (content used as-is, no title re-integration)`);
+    } else {
+      // --- CREATE PATH ---
+      console.log('[DiaryContext] Creating new entry...');
+      
+      // For creates: Extract title and integrate it into content
+      const extractedTitle = extractTitleFromContent(htmlContent);
+      const finalTitle = extractedTitle || 'Untitled';
+      const integratedContent = integrateTitleIntoContent(finalTitle, htmlContent);
+      
+      // Create new entry
+      const baseEntry = createDiaryEntry({
+        title: finalTitle,
+        content: integratedContent, // Content with title integrated
+        mood: selectedMood,
+        weather: weather,
+        companionIDs: companionIDs || [],
+        themeID: themeID || null,
+        createdAt: createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      
+      entryToProcess = ensureAnalysis(baseEntry);
+      
+      // Check for duplicates
+      const duplicateCheck = diaries.find(d => d.id === entryToProcess.id);
+      if (duplicateCheck) {
+        console.warn('[DiaryContext] Duplicate entry detected, skipping:', entryToProcess.id);
+        return duplicateCheck;
+      }
+      
+      // Add to diaries array
+      updatedDiaries = [entryToProcess, ...diaries];
+      
+      console.log('[DiaryContext] Entry created (title integrated into content)');
     }
     
-    const updatedDiaries = [newEntry, ...diaries];
+    // --- COMMON LOGIC: Update state and storage ---
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
-
+    
+    // --- Process with chapter service ---
     try {
-      await chapterService.processEntry(newEntry);
+      await chapterService.processEntry(entryToProcess);
     } catch (error) {
-      console.warn('DiaryContext: chapter classification failed (addDiary)', error);
+      console.warn('DiaryContext: chapter classification failed (saveDiary)', error);
     }
-
+    
+    // --- Process with achievement service ---
     try {
       await achievementService.evaluate({
         diaries: updatedDiaries,
-        entry: newEntry,
+        entry: entryToProcess,
         companions: [],
       });
     } catch (error) {
-      console.warn('DiaryContext: achievement evaluation failed (addDiary)', error);
+      console.warn('DiaryContext: achievement evaluation failed (saveDiary)', error);
     }
-
-    // --- PIE Integration: Process new entry with PIE service ---
+    
+    // --- PIE Integration: Process entry with PIE service ---
     try {
-      console.log('PIE: Processing new diary entry...');
+      console.log('PIE: Processing diary entry...');
       
       // Extract plain text content for PIE processing
-      const textContent = extractTextContent(newEntry);
+      const textContent = extractTextContent(entryToProcess);
       
       // Convert DiaryEntry to format expected by PIE service
       const pieEntry = {
-        id: newEntry.id,
+        id: entryToProcess.id,
         content: textContent,
-        createdAt: newEntry.createdAt,
+        createdAt: entryToProcess.createdAt,
       };
       
       // Get current user state and rich entries
@@ -375,26 +504,50 @@ export const DiaryProvider = ({ children }) => {
       
       // Process entry with PIE service
       // Pass the user-selected mood to ensure it takes priority over AI detection
+      const moodString = entryToProcess.mood && typeof entryToProcess.mood === 'object' 
+        ? entryToProcess.mood.name 
+        : entryToProcess.mood;
+      
       const { updatedState, richEntry } = pieService.processNewEntry(
         pieEntry,
         userState,
         allRichEntries,
-        newDiary.mood || null // Pass user-selected mood (e.g., "Happy", "Sad")
+        moodString || null
       );
       
       // Update user state (this will persist to AsyncStorage automatically)
       await updateUserState(updatedState);
       
-      // Add the new rich entry to the collection
+      // Add/update the rich entry in the collection
       await addRichEntry(richEntry);
       
       console.log('PIE: Entry processed and user state updated.');
     } catch (error) {
       // Don't block diary saving if PIE processing fails
-      console.warn('DiaryContext: PIE processing failed (addDiary)', error);
+      console.warn('DiaryContext: PIE processing failed (saveDiary)', error);
     }
+    
+    return entryToProcess;
+  };
 
-    return newEntry;
+  // --- Legacy functions: Keep for backward compatibility ---
+  // These now call the unified saveDiary function internally
+  const addDiary = async (newDiary) => {
+    // Extract mood string if it's an object
+    const moodString = newDiary.mood && typeof newDiary.mood === 'object' 
+      ? newDiary.mood.name 
+      : newDiary.mood;
+    
+    // Use the unified saveDiary function for new entries
+    return await saveDiary({
+      entryId: undefined, // No entryId means create
+      htmlContent: newDiary.content || newDiary.contentHTML || '',
+      selectedMood: moodString,
+      weather: newDiary.weather,
+      companionIDs: newDiary.companionIDs,
+      themeID: newDiary.themeID,
+      createdAt: newDiary.createdAt,
+    });
   };
 
   const createQuickEntry = useCallback(
@@ -529,73 +682,24 @@ export const DiaryProvider = ({ children }) => {
     };
   }, [diaries, isLoading, applyThemeEntryUpdates]);
 
-  // --- New function ---
+  // --- Legacy function: Keep for backward compatibility ---
+  // This now calls the unified saveDiary function internally
   const updateDiary = async (diaryToUpdate) => {
-    const normalizedUpdate = normalizeDiaryEntry({
-      ...diaryToUpdate,
-      updatedAt: new Date().toISOString(),
+    // Extract mood string if it's an object
+    const moodString = diaryToUpdate.mood && typeof diaryToUpdate.mood === 'object' 
+      ? diaryToUpdate.mood.name 
+      : diaryToUpdate.mood;
+    
+    // Use the unified saveDiary function for updates
+    return await saveDiary({
+      entryId: diaryToUpdate.id,
+      htmlContent: diaryToUpdate.content || diaryToUpdate.contentHTML || '',
+      selectedMood: moodString,
+      weather: diaryToUpdate.weather,
+      companionIDs: diaryToUpdate.companionIDs,
+      themeID: diaryToUpdate.themeID,
+      createdAt: diaryToUpdate.createdAt,
     });
-    const analyzedDiary = ensureAnalysis(normalizedUpdate);
-    const updatedDiaries = diaries.map(diary => 
-      diary.id === analyzedDiary.id ? analyzedDiary : diary
-    );
-    setDiaries(updatedDiaries);
-    await saveDiariesToStorage(updatedDiaries);
-    try {
-      await chapterService.processEntry(analyzedDiary);
-    } catch (error) {
-      console.warn('DiaryContext: chapter classification failed (updateDiary)', error);
-    }
-    try {
-      await achievementService.evaluate({
-        diaries: updatedDiaries,
-        entry: analyzedDiary,
-        companions: [],
-      });
-    } catch (error) {
-      console.warn('DiaryContext: achievement evaluation failed (updateDiary)', error);
-    }
-
-    // --- PIE Integration: Process updated entry with PIE service ---
-    // Note: For updates, we process it as a new entry (the aggregation will handle it correctly)
-    try {
-      console.log('PIE: Processing updated diary entry...');
-      
-      // Extract plain text content for PIE processing
-      const textContent = extractTextContent(analyzedDiary);
-      
-      // Convert DiaryEntry to format expected by PIE service
-      const pieEntry = {
-        id: analyzedDiary.id,
-        content: textContent,
-        createdAt: analyzedDiary.createdAt,
-      };
-      
-      // Get current user state and rich entries
-      const { userState, allRichEntries, updateUserState, addRichEntry } = userStateContext;
-      
-      // Process entry with PIE service (this will update existing chapters if entry already exists)
-      // Pass the user-selected mood to ensure it takes priority over AI detection
-      const { updatedState, richEntry } = pieService.processNewEntry(
-        pieEntry,
-        userState,
-        allRichEntries,
-        analyzedDiary.mood || null // Pass user-selected mood from updated diary
-      );
-      
-      // Update user state (this will persist to AsyncStorage automatically)
-      await updateUserState(updatedState);
-      
-      // Update the rich entry in the collection
-      await addRichEntry(richEntry);
-      
-      console.log('PIE: Updated entry processed and user state updated.');
-    } catch (error) {
-      // Don't block diary updating if PIE processing fails
-      console.warn('DiaryContext: PIE processing failed (updateDiary)', error);
-    }
-
-    return analyzedDiary;
   };
 
   const runThemeReanalysisBatch = useCallback(
@@ -656,6 +760,7 @@ export const DiaryProvider = ({ children }) => {
         diaries,
         addDiary,
         updateDiary,
+        saveDiary, // New unified function
         deleteDiary,
         isLoading,
         aiUsageCount,
