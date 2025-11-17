@@ -24,6 +24,8 @@ import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
 import { DiaryContext } from '../context/DiaryContext';
 import { getThemeDefinition } from '@/constants/themes';
 import { ThemedText as Text } from '../components/ThemedText';
+import { useUserState } from '../context/UserStateContext';
+import { exportService } from '../services/ExportService';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -145,6 +147,10 @@ const SettingsScreen = () => {
     const allCompanions = companionContext?.companions || [];
     const companionsLoading = companionContext?.isLoading;
     const [primaryCompanionId, setPrimaryCompanionId] = useState(null);
+    
+    // Get user state data for export
+    const { userState, allRichEntries } = useUserState();
+    const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
         let mounted = true;
@@ -219,6 +225,47 @@ const SettingsScreen = () => {
                 { text: 'Upgrade Now', onPress: upgradeToPro },
             ]
         );
+    };
+
+    const handleExportData = async () => {
+        try {
+            setIsExporting(true);
+            
+            // Show confirmation dialog
+            Alert.alert(
+                'Export Data',
+                'This will create a backup file containing all your diary entries and insights. You can share it to save it to your device or cloud storage.',
+                [
+                    { text: 'Cancel', style: 'cancel', onPress: () => setIsExporting(false) },
+                    {
+                        text: 'Export',
+                        onPress: async () => {
+                            try {
+                                await exportService.exportAndShare(userState, allRichEntries);
+                                Alert.alert(
+                                    'Export Successful',
+                                    'Your data has been exported successfully. Use the sharing dialog to save it to your device or cloud storage.',
+                                    [{ text: 'OK' }]
+                                );
+                            } catch (error) {
+                                console.error('Export error:', error);
+                                Alert.alert(
+                                    'Export Failed',
+                                    error.message || 'Failed to export your data. Please try again later.',
+                                    [{ text: 'OK' }]
+                                );
+                            } finally {
+                                setIsExporting(false);
+                            }
+                        },
+                    },
+                ]
+            );
+        } catch (error) {
+            console.error('Export setup error:', error);
+            setIsExporting(false);
+            Alert.alert('Error', 'Failed to start export process.');
+        }
     };
 
     // Render built-in avatar item
@@ -397,6 +444,31 @@ const SettingsScreen = () => {
                     </Text>
                     <Ionicons name="chevron-forward" size={20} color={colors.border} />
                 </TouchableOpacity>
+                
+                <TouchableOpacity
+                    onPress={handleExportData}
+                    disabled={isExporting}
+                    style={[
+                        styles.manageButton,
+                        { borderColor: colors.border, backgroundColor: colors.card, opacity: isExporting ? 0.6 : 1 },
+                    ]}
+                    activeOpacity={0.85}
+                >
+                    {isExporting ? (
+                        <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 10 }} />
+                    ) : (
+                        <Ionicons name="download-outline" size={22} color={colors.primary} style={{ marginRight: 10 }} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.manageButtonText, { color: colors.text }]}>
+                            {isExporting ? 'Exporting...' : 'Export All Data'}
+                        </Text>
+                        <Text style={[styles.manageButtonSubText, { color: colors.secondaryText }]}>
+                            Create a backup of your diary entries and insights
+                        </Text>
+                    </View>
+                    {!isExporting && <Ionicons name="chevron-forward" size={20} color={colors.border} />}
+                </TouchableOpacity>
             </View>
 
             {/* Guides & Legal */}
@@ -483,6 +555,7 @@ const styles = StyleSheet.create({
         borderWidth: StyleSheet.hairlineWidth,
     },
     manageButtonText: { flex: 1, fontSize: 16, fontWeight: '500' },
+    manageButtonSubText: { fontSize: 13, marginTop: 2, fontWeight: '400' },
     primaryStatus: { fontSize: 13, opacity: 0.7, marginBottom: 10, paddingLeft: 2 },
     noneOption: {
         flexDirection: 'row',

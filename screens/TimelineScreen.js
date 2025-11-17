@@ -12,6 +12,7 @@ import DiarySummaryCard from '../components/DiarySummaryCard';
 import FloatingActionButton from '../components/FloatingActionButton';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
 import { ThemedText as Text } from '../components/ThemedText';
+import OnThisDay from '../components/OnThisDay';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -250,6 +251,12 @@ const TimelineScreen = () => {
         <View style={{ flex: 1, backgroundColor: colors.background }}>
             <FlatList
                 data={filteredDiaries}
+                ListHeaderComponent={
+                    <>
+                        <OnThisDay />
+                        {renderCalendarHeader()}
+                    </>
+                }
                 renderItem={({ item, index }) => {
                     const card = (
                         <DiarySummaryCard
@@ -283,7 +290,6 @@ const TimelineScreen = () => {
                     );
                 }}
                 keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
-                ListHeaderComponent={renderCalendarHeader}
                 ListEmptyComponent={renderEmptyComponent}
                 contentContainerStyle={{ paddingBottom: 100 }}
             />

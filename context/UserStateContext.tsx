@@ -1,7 +1,7 @@
 // context/UserStateContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { InteractionManager } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { UserStateModel } from '../models/UserState';
 import { RichEntry } from '../models/RichEntry';
 
@@ -33,6 +33,10 @@ export interface UserStateContextValue {
 export const UserStateContext = createContext<UserStateContextValue | null>(null);
 
 export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // --- CRITICAL: App-wide loading state ---
+  // This prevents any components from rendering until data is fully loaded
+  const [isAppLoading, setIsAppLoading] = useState(true);
+  
   const [userState, setUserState] = useState<UserStateModel>(createEmptyUserState());
   const [allRichEntries, setAllRichEntries] = useState<Record<string, RichEntry>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -40,6 +44,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadUserState = useCallback(async () => {
     try {
       setIsLoading(true);
+      console.log('UserStateContext: Loading initial data from AsyncStorage...');
       
       // Load UserStateModel
       const storedState = await AsyncStorage.getItem(USER_STATE_STORAGE_KEY);
@@ -51,6 +56,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             parsed.companions = {};
           }
           setUserState(parsed);
+          console.log('UserStateContext: UserState loaded successfully');
         } catch (parseError) {
           console.warn('UserStateContext: failed to parse user state', parseError);
           setUserState(createEmptyUserState());
@@ -58,6 +64,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else {
         // Initialize with empty state if no stored state exists
         setUserState(createEmptyUserState());
+        console.log('UserStateContext: No stored user state found, using empty state');
       }
       
       // Load RichEntries
@@ -66,6 +73,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try {
           const parsed = JSON.parse(storedRichEntries);
           setAllRichEntries(parsed);
+          console.log('UserStateContext: RichEntries loaded successfully');
         } catch (parseError) {
           console.warn('UserStateContext: failed to parse rich entries', parseError);
           setAllRichEntries({});
@@ -73,13 +81,21 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else {
         // Initialize with empty dictionary if no stored entries exist
         setAllRichEntries({});
+        console.log('UserStateContext: No stored rich entries found, using empty dictionary');
       }
+      
+      console.log('UserStateContext: Initial data loaded successfully');
     } catch (error) {
-      console.warn('UserStateContext: failed to load user state', error);
+      console.error('UserStateContext: failed to load user state', error);
+      // Even on error, initialize with empty state so app can continue
       setUserState(createEmptyUserState());
       setAllRichEntries({});
     } finally {
+      // --- CRITICAL ---
+      // Set both loading states to false ONLY after all async operations complete
       setIsLoading(false);
+      setIsAppLoading(false);
+      console.log('UserStateContext: App loading complete');
     }
   }, []);
 
@@ -112,14 +128,15 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [allRichEntries]);
 
   const refreshUserState = useCallback(async () => {
+    // When refreshing, we don't want to show the full-screen loader
+    // Only set isAppLoading to true during initial load
     await loadUserState();
   }, [loadUserState]);
 
   useEffect(() => {
-    // Delay loading to avoid blocking startup
-    InteractionManager.runAfterInteractions(() => {
-      loadUserState();
-    });
+    // Load data immediately on mount
+    // No delay - we want to block rendering until data is ready
+    loadUserState();
   }, [loadUserState]);
 
   const value: UserStateContextValue = {
@@ -132,6 +149,17 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     refreshUserState,
   };
 
+  // --- CRITICAL: Conditional Rendering ---
+  // Show full-screen loader until all data is loaded
+  if (isAppLoading) {
+    return (
+      <View style={styles.fullScreenLoader}>
+        <ActivityIndicator size="large" color="#4a6cf7" />
+      </View>
+    );
+  }
+
+  // Only render children after data is fully loaded
   return <UserStateContext.Provider value={value}>{children}</UserStateContext.Provider>;
 };
 
@@ -142,4 +170,13 @@ export const useUserState = (): UserStateContextValue => {
   }
   return context;
 };
+
+const styles = StyleSheet.create({
+  fullScreenLoader: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#121212', // Dark background - will be replaced by theme colors once app loads
+  },
+});
 

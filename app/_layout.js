@@ -25,6 +25,7 @@ import { UserStateProvider } from '../context/UserStateContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FloatingIntentCatcher from '../components/FloatingIntentCatcher';
 import MoodQuickPickerModal from '../components/MoodQuickPickerModal';
+import TemplatePickerModal from '../components/TemplatePickerModal';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
@@ -61,6 +62,7 @@ function RootLayoutNav() {
     const themeContext = useContext(ThemeContext);
     const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
     const [needsOnboarding, setNeedsOnboarding] = useState(false);
+    const [isTemplatePickerVisible, setTemplatePickerVisible] = useState(false);
     const [isActionSheetVisible, setActionSheetVisible] = useState(false);
     const [isMoodPickerVisible, setMoodPickerVisible] = useState(false);
     const [intentText, setIntentText] = useState('');
@@ -297,8 +299,25 @@ function RootLayoutNav() {
 
     const openQuickCapture = useCallback(() => {
         resetIntent(false);
-        setActionSheetVisible(true);
+        // Show template picker first instead of directly opening ActionSheet
+        setTemplatePickerVisible(true);
     }, [resetIntent]);
+
+    const handleTemplateSelect = useCallback(
+        (templateId: string) => {
+            if (templateId === 'freestyle') {
+                // Show the standard quick capture (ActionSheet)
+                setActionSheetVisible(true);
+            } else if (templateId === 'weekly-reflection') {
+                // Navigate to weekly reflection screen
+                router.push({
+                    pathname: '/weekly-reflection',
+                    params: selectedDate ? { date: selectedDate } : {},
+                });
+            }
+        },
+        [router, selectedDate]
+    );
 
     const handleRemoveMood = useCallback(() => {
         setIntentMood(null);
@@ -445,6 +464,14 @@ function RootLayoutNav() {
                 />
                 
                 <Stack.Screen name="add-edit-diary" />
+                <Stack.Screen
+                    name="weekly-reflection"
+                    options={{
+                        title: 'Weekly Reflection',
+                        headerShown: false,
+                        presentation: 'modal',
+                    }}
+                />
                 <Stack.Screen 
                     name="privacy-policy" 
                     options={{ 
@@ -509,6 +536,12 @@ function RootLayoutNav() {
                 selectedPhoto={intentPhotoUri}
                 onRemoveMood={handleRemoveMood}
                 onRemovePhoto={handleRemovePhoto}
+                colors={colors}
+            />
+            <TemplatePickerModal
+                visible={isTemplatePickerVisible}
+                onDismiss={() => setTemplatePickerVisible(false)}
+                onSelectTemplate={handleTemplateSelect}
                 colors={colors}
             />
             <MoodQuickPickerModal

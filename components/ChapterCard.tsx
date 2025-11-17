@@ -6,8 +6,10 @@ import Svg, { Path } from 'react-native-svg';
 import { Chapter } from '../models/Chapter';
 import { DiaryContext } from '../context/DiaryContext';
 import { CompanionContext } from '../context/CompanionContext';
+import { useUserState } from '../context/UserStateContext';
 import { getEmotionGradientForChapter } from '../services/ChapterService';
 import { ThemedText as Text } from './ThemedText';
+import { EmotionType } from '../models/PIE';
 
 type ChapterCardProps = {
   chapter: Chapter;
@@ -22,6 +24,16 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 const FALLBACK_GRADIENT = ['#7f53ac', '#647dee'];
+
+// Map emotions to a numerical value for charting (Y-axis)
+const emotionToValue: Record<EmotionType, number> = {
+  excited: 5,
+  happy: 4,
+  calm: 3,
+  tired: 2,
+  sad: 1,
+  angry: 0,
+};
 
 const formatTimeSince = (isoString?: string) => {
   if (!isoString) {
@@ -59,6 +71,18 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
   const diaries = diaryContext?.diaries;
   const companionContext = useContext(CompanionContext);
   const companions = companionContext?.companions;
+  
+  // Get UserState for rich entries (contains emotion data)
+  // useUserState must be called unconditionally (React Hook rules)
+  let allRichEntries: Record<string, any> = {};
+  try {
+    const userStateContext = useUserState();
+    allRichEntries = userStateContext?.allRichEntries || {};
+  } catch (error) {
+    // UserStateProvider not available, sparkline will fallback to static line
+    // This is acceptable - the sparkline will show a flat line when no data is available
+    console.warn('ChapterCard: UserStateProvider not available, using fallback sparkline');
+  }
 
   const gradientColors = useMemo(
     () => getEmotionGradientForChapter(chapter, diaries ?? []) ?? FALLBACK_GRADIENT,
@@ -83,6 +107,55 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
     }
     return null;
   }, [chapter.sourceId, chapter.type, companions]);
+
+  // Memoized calculation for the SVG path data for sparkline chart
+  const sparklinePath = useMemo(() => {
+    if (!chapter.entryIds || chapter.entryIds.length === 0 || Object.keys(allRichEntries).length === 0) {
+      // Not enough data, return a flat line
+      return 'M 0 15 L 120 15';
+    }
+
+    // Get the last 7 entries for the trend (most recent)
+    const entryIds = chapter.entryIds.slice(-7);
+    const lastEntries = entryIds
+      .map((id) => allRichEntries[id])
+      .filter((entry) => {
+        // Filter out entries without emotion metadata
+        return entry && entry.metadata && entry.metadata.detectedEmotion;
+      })
+      .sort((a, b) => {
+        // Sort by creation date to ensure chronological order
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateA - dateB; // Oldest first
+      });
+
+    if (lastEntries.length < 2) {
+      // Not enough entries for a meaningful line, return a flat line
+      return 'M 0 15 L 120 15';
+    }
+
+    const width = 120; // ViewBox width
+    const height = 30;  // ViewBox height
+
+    // Calculate points for the sparkline
+    const points = lastEntries.map((entry, index) => {
+      const x = (index / (lastEntries.length - 1)) * width;
+      const emotion = entry.metadata.detectedEmotion.primary;
+      const emotionValue = emotionToValue[emotion] ?? 3; // Default to 'calm' if emotion not found
+      // Invert Y-axis for SVG (0 at bottom, 5 at top)
+      const y = height - (emotionValue / 5) * height;
+      return { x, y };
+    });
+
+    // Create the SVG path string
+    let path = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      path += ` L ${points[i].x} ${points[i].y}`;
+    }
+
+    return path;
+  }, [chapter.entryIds, allRichEntries]);
 
   const glowAnim = useRef(new Animated.Value(0)).current;
   const focusGlowAnim = useRef(new Animated.Value(0)).current;
@@ -226,11 +299,12 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
             <Text style={styles.sparklineLabel}>Mood Trend</Text>
             <Svg height={30} width="100%" viewBox="0 0 120 30">
               <Path
-                d="M0 22 L15 18 L30 20 L45 12 L60 16 L75 8 L90 12 L105 6 L120 10"
+                d={sparklinePath}
                 stroke="rgba(255,255,255,0.85)"
                 strokeWidth={2}
                 fill="none"
                 strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </Svg>
           </View>
