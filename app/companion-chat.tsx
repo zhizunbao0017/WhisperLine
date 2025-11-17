@@ -1,5 +1,5 @@
 // app/companion-chat.tsx
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useMemo, useState, useRef, useEffect } from 'react';
 import {
   View,
   FlatList,
@@ -7,14 +7,19 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from '../context/ThemeContext';
+import { DiaryContext } from '../context/DiaryContext';
 import { useUserState } from '../context/UserStateContext';
 import { conversationService } from '../services/PIE/ConversationService';
 import { ThemedText as Text } from '../components/ThemedText';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type CompanionChatParams = {
   chapterId?: string;
@@ -35,6 +40,13 @@ const CompanionChatScreen = () => {
   const { colors } = themeContext || {};
   const themeStyles = useThemeStyles();
   const { userState, allRichEntries } = useUserState();
+  const diaryContext = useContext(DiaryContext);
+  const { addDiary } = diaryContext || {};
+  const insets = useSafeAreaInsets();
+  
+  // State for chat input
+  const [reply, setReply] = useState('');
+  const flatListRef = useRef<FlatList>(null);
 
   const chapterId = params?.chapterId;
   const companionId = params?.companionId;
@@ -61,12 +73,12 @@ const CompanionChatScreen = () => {
     // 1. Get AI-generated prompts
     const prompts = conversationService
       .generatePrompts(chapter, allRichEntries)
-      .map((p, index) => ({ type: 'prompt' as const, content: p, id: `prompt-${index}-${Date.now()}` }));
+      .map((p, index) => ({ type: 'prompt' as const, content: p, id: `prompt-${index}` }));
 
     // 2. Get recent user entries (most recent first)
     const entryIds = chapter.entryIds || [];
     const userEntries = entryIds
-      .slice(0, 5)
+      .slice(0, 10) // Show more entries for better conversation flow
       .map((id) => ({
         type: 'entry' as const,
         entry: allRichEntries[id],
@@ -74,19 +86,43 @@ const CompanionChatScreen = () => {
       }))
       .filter((item) => item.entry); // Only include entries that exist
 
-    // 3. Combine: prompts first, then entries (inverted list will show newest at bottom)
+    // 3. Combine: prompts first, then entries (newest entries appear at bottom)
     return [...prompts, ...userEntries];
   }, [chapter, allRichEntries]);
 
-  const handlePromptPress = (promptContent: string) => {
-    // Navigate to diary editor with the prompt as initial content
-    router.push({
-      pathname: '/add-edit-diary',
-      params: {
-        prompt: promptContent,
-        companionId: companionId || '',
-      },
-    });
+  const handleSend = async () => {
+    if (!reply.trim() || !addDiary) return;
+
+    try {
+      // Create diary entry with the reply content
+      // Convert plain text to HTML format
+      const contentHtml = `<p>${reply.trim().replace(/\n/g, '</p><p>')}</p>`;
+      
+      // Extract title from first line (max 60 chars)
+      const firstLine = reply.trim().split('\n')[0];
+      const title = firstLine.length > 60 ? firstLine.substring(0, 60) + '...' : firstLine;
+
+      // Save the diary entry
+      await addDiary({
+        title: title || 'Untitled',
+        content: contentHtml,
+        mood: null, // User can add mood later if needed
+        weather: null,
+        companionIDs: companionId ? [companionId] : [],
+        themeID: null,
+      });
+
+      // Clear the input
+      setReply('');
+
+      // Scroll to bottom to show the new entry after it's added
+      // Wait for the state to update and the new entry to appear
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 300);
+    } catch (error) {
+      console.error('Failed to save diary entry:', error);
+    }
   };
 
   const extractTextFromHTML = (html: string): string => {
@@ -97,21 +133,11 @@ const CompanionChatScreen = () => {
   const renderItem = ({ item }: { item: ConversationItem }) => {
     if (item.type === 'prompt' && item.content) {
       return (
-        <TouchableOpacity
-          onPress={() => handlePromptPress(item.content!)}
-          activeOpacity={0.7}
-          style={styles.itemContainer}
-        >
-          <View style={[styles.bubble, styles.promptBubble, { backgroundColor: colors?.card || '#f5f5f5' }]}>
+        <View style={styles.itemContainer}>
+          <View style={[styles.bubble, styles.promptBubble, { backgroundColor: colors?.card || '#f5f5f5', borderColor: colors?.border || '#e3e8f0' }]}>
             <Text style={[styles.promptText, { color: colors?.text || '#111111' }]}>{item.content}</Text>
-            <View style={styles.promptHint}>
-              <Ionicons name="create-outline" size={14} color={colors?.primary || '#4a6cf7'} />
-              <Text style={[styles.promptHintText, { color: colors?.primary || '#4a6cf7' }]}>
-                Tap to write
-              </Text>
-            </View>
           </View>
-        </TouchableOpacity>
+        </View>
       );
     }
 
@@ -147,52 +173,94 @@ const CompanionChatScreen = () => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors?.background || '#ffffff' }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors?.card || '#ffffff', borderBottomColor: colors?.border || '#e3e8f0' }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors?.text || '#111111'} />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={[styles.headerTitle, { color: colors?.text || '#111111' }]}>
-            {companionName}
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: colors?.secondaryText || '#6b7280' }]}>
-            Conversation
-          </Text>
-        </View>
-        <View style={styles.backButton} /> {/* Spacer for centering */}
-      </View>
-
-      {/* Chat List */}
-      <FlatList
-        data={conversationItems}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        inverted={false} // Show prompts at top, entries below
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubbles-outline" size={64} color={colors?.border || '#e3e8f0'} />
-            <Text style={[styles.emptyText, { color: colors?.text || '#111111' }]}>
-              Start a conversation
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={[styles.container, { backgroundColor: colors?.background || '#ffffff' }]}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        {/* Header */}
+        <View style={[styles.header, { backgroundColor: colors?.card || '#ffffff', borderBottomColor: colors?.border || '#e3e8f0' }]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors?.text || '#111111'} />
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={[styles.headerTitle, { color: colors?.text || '#111111' }]}>
+              {companionName}
             </Text>
-            <Text style={[styles.emptySubtext, { color: colors?.secondaryText || '#6b7280' }]}>
-              Tap on a prompt above to begin writing
+            <Text style={[styles.headerSubtitle, { color: colors?.secondaryText || '#6b7280' }]}>
+              Conversation
             </Text>
           </View>
-        }
-      />
-    </SafeAreaView>
+          <View style={styles.backButton} /> {/* Spacer for centering */}
+        </View>
+
+        {/* Chat List */}
+        <FlatList
+          ref={flatListRef}
+          data={conversationItems}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          inverted={false} // Show prompts at top, entries below
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="chatbubbles-outline" size={64} color={colors?.border || '#e3e8f0'} />
+              <Text style={[styles.emptyText, { color: colors?.text || '#111111' }]}>
+                Start a conversation
+              </Text>
+              <Text style={[styles.emptySubtext, { color: colors?.secondaryText || '#6b7280' }]}>
+                Type your thoughts below to begin
+              </Text>
+            </View>
+          }
+        />
+
+        {/* Input Bar */}
+        <View style={[styles.inputContainer, { backgroundColor: colors?.card || '#ffffff', borderTopColor: colors?.border || '#e3e8f0', paddingBottom: insets.bottom }]}>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors?.background || '#f5f5f5', color: colors?.text || '#111111', borderColor: colors?.border || '#e3e8f0' }]}
+            value={reply}
+            onChangeText={setReply}
+            placeholder="Type your thoughts here..."
+            placeholderTextColor={colors?.secondaryText || '#6b7280'}
+            multiline
+            textAlignVertical="top"
+            maxLength={5000}
+          />
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              {
+                backgroundColor: reply.trim() ? (colors?.primary || '#4a6cf7') : (colors?.border || '#e3e8f0'),
+                opacity: reply.trim() ? 1 : 0.5,
+              },
+            ]}
+            onPress={handleSend}
+            disabled={!reply.trim()}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="send"
+              size={20}
+              color={reply.trim() ? (colors?.primaryText || '#ffffff') : (colors?.secondaryText || '#6b7280')}
+            />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  safeArea: {
     flex: 1,
   },
   loadingContainer: {
@@ -233,7 +301,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 16,
   },
   itemContainer: {
     marginBottom: 16,
@@ -246,7 +314,6 @@ const styles = StyleSheet.create({
   promptBubble: {
     alignSelf: 'flex-start',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e3e8f0',
   },
   entryBubble: {
     alignSelf: 'flex-end',
@@ -254,17 +321,6 @@ const styles = StyleSheet.create({
   promptText: {
     fontSize: 15,
     lineHeight: 22,
-    marginBottom: 8,
-  },
-  promptHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  promptHintText: {
-    fontSize: 12,
-    marginLeft: 4,
-    fontWeight: '600',
   },
   entryText: {
     fontSize: 15,
@@ -285,6 +341,33 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  input: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 120,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
   },
 });
 
