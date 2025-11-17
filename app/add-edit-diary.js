@@ -1311,8 +1311,14 @@ const AddEditDiaryScreen = () => {
                     return;
                 }
 
-                if (!storedPrimary || storedPrimary === 'null' || storedPrimary === 'undefined') {
-                    // No primary companion set, use empty array
+                // Handle "No default companion" case: 'none', null, undefined, 'null', 'undefined'
+                if (!storedPrimary || 
+                    storedPrimary === 'null' || 
+                    storedPrimary === 'undefined' || 
+                    storedPrimary === 'none') {
+                    // No primary companion set or "No default companion" selected
+                    // Use empty array and apply theme image fallback
+                    console.log('[InitializeCompanions] No primary companion or "none" selected, applying theme fallback');
                     setSelectedCompanionIDs([]);
                     applyDefaultHero();
                     setHasInitialPrimaryApplied(true);
