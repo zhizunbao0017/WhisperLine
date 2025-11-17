@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useRef } from 'react';
 import { Animated, Image, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import RenderHTML from 'react-native-render-html';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { MOODS } from '../data/moods';
 import { ThemeContext } from '../context/ThemeContext';
 import { useThemeStyles } from '../hooks/useThemeStyles';
@@ -24,7 +25,7 @@ const EMOTION_EMOJI_MAP = {
 };
 
 
-const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
+const DiarySummaryCard = ({ item, richEntry, index, onPress, onLongPress, colors }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
   const themeContext = useContext(ThemeContext);
@@ -78,7 +79,18 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
         },
       ]}
     >
-      <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
+      <TouchableOpacity 
+        activeOpacity={0.8} 
+        onPress={onPress}
+        onLongPress={() => {
+          // Provide haptic feedback for long press
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          if (onLongPress) {
+            onLongPress();
+          }
+        }}
+        delayLongPress={300}
+      >
         {item.captureType ? (
           <View
             style={[

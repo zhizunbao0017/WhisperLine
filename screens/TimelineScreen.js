@@ -297,7 +297,18 @@ const TimelineScreen = () => {
                             richEntry={richEntry}
                             index={index}
                             onPress={() =>
-                                router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })
+                                // Short press: Directly navigate to edit page
+                                router.push({ 
+                                    pathname: '/add-edit-diary', 
+                                    params: { diary: JSON.stringify(item) } 
+                                })
+                            }
+                            onLongPress={() =>
+                                // Long press: Navigate to detail page for viewing
+                                router.push({ 
+                                    pathname: '/diary-detail', 
+                                    params: { diary: JSON.stringify(item) } 
+                                })
                             }
                             colors={colors}
                         />

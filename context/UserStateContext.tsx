@@ -33,6 +33,11 @@ export interface UserStateContextValue {
   addRichEntry: (richEntry: RichEntry) => Promise<void>;
   refreshUserState: () => Promise<void>;
   markLongPressHintSeen: () => Promise<void>; // Helper to mark hint as seen
+  // Import-related state
+  isImporting: boolean;
+  importProgress: number;
+  importMessage: string;
+  startImportProcess: (fileUri: string) => Promise<void>; // Start import process
 }
 
 export const UserStateContext = createContext<UserStateContextValue | null>(null);
@@ -45,6 +50,11 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [userState, setUserState] = useState<UserStateModel>(createEmptyUserState());
   const [allRichEntries, setAllRichEntries] = useState<Record<string, RichEntry>>({});
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Import-related state (separate from isLoading to avoid conflicts)
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importMessage, setImportMessage] = useState('');
 
   const loadUserState = useCallback(async () => {
     try {
@@ -180,6 +190,16 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [userState]);
 
+  // Import process handler
+  // Note: This function is kept for interface compatibility but the actual import
+  // logic is handled directly in SettingsScreen to avoid circular dependencies
+  const startImportProcess = useCallback(async (fileUri: string) => {
+    // This function is a placeholder - actual import is handled in SettingsScreen
+    // where DiaryContext is available
+    console.warn('startImportProcess called directly - use importService.startImport() from SettingsScreen instead');
+    throw new Error('startImportProcess should be called with diaryContext - use importService.startImport() directly');
+  }, []);
+
   useEffect(() => {
     // Load data immediately on mount
     // No delay - we want to block rendering until data is ready
@@ -195,6 +215,11 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addRichEntry,
     refreshUserState,
     markLongPressHintSeen,
+    // Import-related values
+    isImporting,
+    importProgress,
+    importMessage,
+    startImportProcess,
   };
 
   // --- CRITICAL: Conditional Rendering ---

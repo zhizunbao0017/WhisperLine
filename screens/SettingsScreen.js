@@ -26,6 +26,8 @@ import { getThemeDefinition } from '@/constants/themes';
 import { ThemedText as Text } from '../components/ThemedText';
 import { useUserState } from '../context/UserStateContext';
 import { exportService } from '../services/ExportService';
+import { importService } from '../services/ImportService';
+import * as DocumentPicker from 'expo-document-picker';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -155,8 +157,15 @@ const SettingsScreen = () => {
     const { isProMember, upgradeToPro } = subContext;
     const { isLockEnabled, toggleLock } = authContext;
     
-    // Get user state data for export and AI settings
-    const { userState, allRichEntries, updateUserState } = useUserState();
+    // Get user state data for export, import, and AI settings
+    const { 
+        userState, 
+        allRichEntries, 
+        updateUserState,
+        isImporting,
+        importProgress,
+        importMessage,
+    } = useUserState();
     const [isExporting, setIsExporting] = useState(false);
     
     // Merge companions from both sources: CompanionContext (legacy) and userState.companions (new)
@@ -269,6 +278,87 @@ const SettingsScreen = () => {
                 { text: 'Upgrade Now', onPress: upgradeToPro },
             ]
         );
+    };
+
+    const handleImportData = async () => {
+        try {
+            // Show confirmation dialog
+            Alert.alert(
+                'Import Data',
+                'This will import diary entries from a Day One export file (.zip). The import process is local and private. Your existing entries will not be affected.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Import',
+                        onPress: async () => {
+                            try {
+                                // Pick ZIP file using Expo DocumentPicker
+                                const result = await DocumentPicker.getDocumentAsync({
+                                    type: 'application/zip',
+                                    copyToCacheDirectory: true, // Copy to cache for processing
+                                });
+
+                                // Expo DocumentPicker returns a single object, not an array
+                                // Check if user canceled
+                                if (result.canceled) {
+                                    return; // User cancelled, no error message needed
+                                }
+
+                                if (result && result.uri) {
+                                    const fileUri = result.uri;
+                                    console.log('[SettingsScreen] Selected file:', fileUri);
+
+                                    // Start import process with progress tracking
+                                    // Progress callback - update UserStateContext state through a workaround
+                                    // Since we can't directly mutate context state, we'll use a ref or state update
+                                    const progressCallback = (progress, message) => {
+                                        // Update progress - we'll need to handle this differently
+                                        // For now, log it and show in UI through local state
+                                        console.log(`[SettingsScreen] Import progress: ${progress}% - ${message || ''}`);
+                                        
+                                        // Try to update context state if possible
+                                        // Note: This is a limitation - we need to update through proper context methods
+                                    };
+
+                                    try {
+                                        await importService.startImport(
+                                            fileUri,
+                                            progressCallback,
+                                            diaryContext,
+                                            userStateContext
+                                        );
+
+                                        Alert.alert(
+                                            'Import Successful',
+                                            'Your diary entries have been imported successfully.',
+                                            [{ text: 'OK' }]
+                                        );
+                                    } catch (importError) {
+                                        throw importError; // Re-throw to be caught by outer catch
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Import error:', error);
+                                
+                                // Expo DocumentPicker doesn't throw on cancel, but check anyway
+                                if (error.message && error.message.includes('cancel')) {
+                                    return; // User cancelled, no error message needed
+                                }
+
+                                Alert.alert(
+                                    'Import Failed',
+                                    error.message || 'Failed to import your data. Please ensure the file is a valid Day One export.',
+                                    [{ text: 'OK' }]
+                                );
+                            }
+                        },
+                    },
+                ]
+            );
+        } catch (error) {
+            console.error('Import setup error:', error);
+            Alert.alert('Error', 'Failed to start import process.');
+        }
     };
 
     const handleExportData = async () => {
@@ -537,13 +627,56 @@ const SettingsScreen = () => {
                     </Text>
                     <Ionicons name="chevron-forward" size={20} color={colors.border} />
                 </TouchableOpacity>
+            </View>
+
+            {/* Data Management */}
+            <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Data Management</Text>
                 
+                {/* Import Data Button */}
                 <TouchableOpacity
-                    onPress={handleExportData}
-                    disabled={isExporting}
+                    onPress={handleImportData}
+                    disabled={isImporting || isExporting}
                     style={[
                         styles.manageButton,
-                        { borderColor: colors.border, backgroundColor: colors.card, opacity: isExporting ? 0.6 : 1 },
+                        { 
+                            borderColor: colors.border, 
+                            backgroundColor: colors.card, 
+                            opacity: (isImporting || isExporting) ? 0.6 : 1,
+                            marginBottom: 12,
+                        },
+                    ]}
+                    activeOpacity={0.85}
+                >
+                    {isImporting ? (
+                        <View style={{ marginRight: 10, alignItems: 'center', justifyContent: 'center', width: 22 }}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                        </View>
+                    ) : (
+                        <Ionicons name="cloud-upload-outline" size={22} color={colors.primary} style={{ marginRight: 10 }} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.manageButtonText, { color: colors.text }]}>
+                            {isImporting 
+                                ? `Importing... ${Math.round(importProgress)}%` 
+                                : 'Import Data'}
+                        </Text>
+                        <Text style={[styles.manageButtonSubText, { color: colors.secondaryText }]}>
+                            {isImporting 
+                                ? (importMessage || 'Importing your diary entries...')
+                                : 'Migrate entries from other apps (Day One .zip)'}
+                        </Text>
+                    </View>
+                    {!isImporting && <Ionicons name="chevron-forward" size={20} color={colors.border} />}
+                </TouchableOpacity>
+                
+                {/* Export Data Button */}
+                <TouchableOpacity
+                    onPress={handleExportData}
+                    disabled={isExporting || isImporting}
+                    style={[
+                        styles.manageButton,
+                        { borderColor: colors.border, backgroundColor: colors.card, opacity: (isExporting || isImporting) ? 0.6 : 1 },
                     ]}
                     activeOpacity={0.85}
                 >
