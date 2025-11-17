@@ -1504,21 +1504,24 @@ const AddEditDiaryScreen = () => {
             >
                     <View style={heroContainerStyle}>
                         {(() => {
+                            // --- BULLETPROOF renderHeaderVisual Function ---
+                            // This function handles all edge cases including "No default companion" state
+                            
                             console.log('[AddEditDiaryScreen] ====== Rendering Hero Visual ======');
                             console.log('[AddEditDiaryScreen] existingDiary:', existingDiary ? `ID: ${existingDiary.id}` : 'NULL');
                             console.log('[AddEditDiaryScreen] userState available:', !!userState);
                             console.log('[AddEditDiaryScreen] userState.companions:', userState?.companions ? Object.keys(userState.companions).length + ' companions' : 'NULL');
+                            console.log('[AddEditDiaryScreen] selectedCompanionIDs:', selectedCompanionIDs);
                             
-                            // --- PRIORITY 1: Check for associated Companion in EDIT mode ---
-                            // This is the surgical fix: directly check existingDiary.companionIDs
-                            // and render from userState.companions without waiting for state updates
+                            // --- PRIORITY 1: EDIT MODE ---
+                            // In edit mode, the diary's own companion always takes precedence
                             if (existingDiary && userState?.companions) {
                                 const companionIds = existingDiary.companionIDs || 
                                                     existingDiary.companionIds || 
                                                     existingDiary.companions || 
                                                     [];
                                 
-                                console.log('[AddEditDiaryScreen] Companion IDs from diary:', companionIds);
+                                console.log('[AddEditDiaryScreen] Edit mode - Companion IDs from diary:', companionIds);
                                 
                                 // Get the first companion ID (for single companion display)
                                 const firstCompanionId = Array.isArray(companionIds) ? companionIds[0] : companionIds;
@@ -1535,10 +1538,9 @@ const AddEditDiaryScreen = () => {
                                         console.log('[AddEditDiaryScreen] Companion avatarUri:', avatarUri || 'NONE');
                                         
                                         if (avatarUri && avatarUri.trim()) {
-                                            console.log('[AddEditDiaryScreen] ✅ Rendering companion avatar directly from existingDiary');
+                                            console.log('[AddEditDiaryScreen] ✅ Rendering companion avatar from existingDiary');
                                             try {
                                                 const resolvedSource = resolveImageSource(avatarUri);
-                                                console.log('[AddEditDiaryScreen] Resolved source:', resolvedSource);
                                                 return (
                                                     <CompanionAvatarView 
                                                         size={150} 
@@ -1550,50 +1552,80 @@ const AddEditDiaryScreen = () => {
                                                 );
                                             } catch (error) {
                                                 console.error('[AddEditDiaryScreen] Error resolving image source:', error);
+                                                // Fall through to next priority
                                             }
-                                        } else {
-                                            console.log('[AddEditDiaryScreen] ⚠️ Companion found but no avatar URI, falling back');
                                         }
-                                    } else {
-                                        console.log('[AddEditDiaryScreen] ⚠️ Companion ID not found in userState.companions, falling back');
                                     }
-                                } else {
-                                    console.log('[AddEditDiaryScreen] ⚠️ No companion IDs in diary, falling back');
                                 }
-                            } else {
-                                console.log('[AddEditDiaryScreen] ⚠️ No existingDiary or userState.companions, using state-based rendering');
                             }
                             
-                            // --- FALLBACK: Use state-based rendering (for CREATE mode or when direct check fails) ---
-                            console.log('[AddEditDiaryScreen] Using state-based heroVisual rendering');
+                            // --- PRIORITY 2: CREATE MODE with ACTIVE Primary Companion ---
+                            // Check if we're in create mode and have a valid primary companion
+                            if (!existingDiary && userState?.companions) {
+                                // Get primary companion ID from selectedCompanionIDs (set by useEffect)
+                                // This handles the case where primary companion is loaded from AsyncStorage
+                                if (selectedCompanionIDs && selectedCompanionIDs.length > 0) {
+                                    const primaryCompanionId = selectedCompanionIDs[0];
+                                    const companion = userState.companions[String(primaryCompanionId)];
+                                    
+                                    console.log('[AddEditDiaryScreen] Create mode - Checking primary companion ID:', primaryCompanionId);
+                                    
+                                    if (companion) {
+                                        const avatarUri = companion.avatarUri || companion.avatarIdentifier;
+                                        
+                                        if (avatarUri && avatarUri.trim()) {
+                                            console.log('[AddEditDiaryScreen] ✅ Rendering primary companion avatar');
+                                            try {
+                                                const resolvedSource = resolveImageSource(avatarUri);
+                                                return (
+                                                    <CompanionAvatarView 
+                                                        size={150} 
+                                                        visual={{ 
+                                                            type: 'image', 
+                                                            source: resolvedSource 
+                                                        }} 
+                                                    />
+                                                );
+                                            } catch (error) {
+                                                console.error('[AddEditDiaryScreen] Error resolving primary companion image:', error);
+                                                // Fall through to theme fallback
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // If selectedCompanionIDs is empty, it means:
+                                // 1. No primary companion is set, OR
+                                // 2. "No default companion" is selected (stored as 'none', null, or undefined)
+                                // In both cases, we should fall back to theme image
+                                console.log('[AddEditDiaryScreen] Create mode - No primary companion selected, falling back to theme');
+                            }
+                            
+                            // --- PRIORITY 3: THEME IMAGE FALLBACK ---
+                            // This path is reached when:
+                            // 1. CREATE mode with no primary companion set
+                            // 2. CREATE mode with "No default companion" selected ('none', null, undefined)
+                            // 3. EDIT mode for a diary with no companion
+                            // 4. Any error in resolving companion images
+                            
+                            console.log('[AddEditDiaryScreen] Using theme-based fallback');
                             console.log('[AddEditDiaryScreen] heroVisual state:', JSON.stringify(heroVisual, null, 2));
-                            console.log('[AddEditDiaryScreen] selectedCompanionIDs:', selectedCompanionIDs);
-                            console.log('[AddEditDiaryScreen] allCompanions count:', allCompanions.length);
+                            console.log('[AddEditDiaryScreen] currentAvatar:', JSON.stringify(currentAvatar, null, 2));
                             
-                            // --- DEFENSIVE: Ensure heroVisual is always valid ---
-                            if (!heroVisual || typeof heroVisual !== 'object') {
-                                console.error('[AddEditDiaryScreen] ❌ CRITICAL: heroVisual is invalid, using DEFAULT_HERO_IMAGE');
-                                return (
-                                    <CompanionAvatarView 
-                                        size={150} 
-                                        visual={{ type: 'image', source: DEFAULT_HERO_IMAGE }} 
-                                    />
-                                );
+                            // Use heroVisual state if it's valid (set by applyDefaultHero)
+                            if (heroVisual && typeof heroVisual === 'object' && heroVisual.source) {
+                                console.log('[AddEditDiaryScreen] ✅ Rendering heroVisual from state (theme image)');
+                                return <CompanionAvatarView size={150} visual={heroVisual} />;
                             }
                             
-                            // Ensure heroVisual has a valid source
-                            if (!heroVisual.source) {
-                                console.warn('[AddEditDiaryScreen] ⚠️ heroVisual has no source, using DEFAULT_HERO_IMAGE');
-                                return (
-                                    <CompanionAvatarView 
-                                        size={150} 
-                                        visual={{ type: 'image', source: DEFAULT_HERO_IMAGE }} 
-                                    />
-                                );
-                            }
-                            
-                            console.log('[AddEditDiaryScreen] ✅ Rendering heroVisual from state');
-                            return <CompanionAvatarView size={150} visual={heroVisual} />;
+                            // Final fallback: DEFAULT_HERO_IMAGE
+                            console.log('[AddEditDiaryScreen] ⚠️ Using DEFAULT_HERO_IMAGE as absolute fallback');
+                            return (
+                                <CompanionAvatarView 
+                                    size={150} 
+                                    visual={{ type: 'image', source: DEFAULT_HERO_IMAGE }} 
+                                />
+                            );
                         })()}
                     </View>
 
