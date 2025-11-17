@@ -62,7 +62,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ onPress, on
   const handleLongPress = () => {
     longPressTriggered.current = true;
     // Success notification haptic feedback for long press
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackStyle.Success).catch(() => {});
     
     // Visual feedback: scale down then bounce back with rotation
     scale.value = withSequence(
