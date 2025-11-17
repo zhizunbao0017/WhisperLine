@@ -1,7 +1,7 @@
 // screens/TimelineScreen.js
 import { useRouter } from 'expo-router';
 import React, { useContext, useMemo, useRef } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -262,15 +262,25 @@ const TimelineScreen = () => {
                         />
                     );
 
-                    if (item.captureType) {
-                        return (
-                            <DraftSwipeableWrapper onDelete={() => deleteDiary && deleteDiary(item.id)}>
-                                {card}
-                            </DraftSwipeableWrapper>
-                        );
-                    }
-
-                    return card;
+                    // Enable swipe-to-delete for all entries (both drafts and regular entries)
+                    return (
+                        <DraftSwipeableWrapper onDelete={() => {
+                            Alert.alert(
+                                'Delete Entry',
+                                'Are you sure you want to delete this entry? This action cannot be undone.',
+                                [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                        text: 'Delete',
+                                        style: 'destructive',
+                                        onPress: () => deleteDiary && deleteDiary(item.id)
+                                    }
+                                ]
+                            );
+                        }}>
+                            {card}
+                        </DraftSwipeableWrapper>
+                    );
                 }}
                 keyExtractor={(item, index) => (item && item.id ? item.id.toString() : index.toString())}
                 ListHeaderComponent={renderCalendarHeader}
@@ -279,7 +289,10 @@ const TimelineScreen = () => {
             />
             <FloatingActionButton
                 onPress={openQuickCapture}
-                onLongPress={() => router.push('/add-edit-diary')}
+                onLongPress={() => router.push({
+                    pathname: '/add-edit-diary',
+                    params: selectedDate ? { date: selectedDate } : {}
+                })}
             />
         </View>
     );

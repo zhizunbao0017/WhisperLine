@@ -1,8 +1,8 @@
 import React from 'react';
-import CompanionListView from '../screens/CompanionListView';
+import ManageCompanionsScreen from '../screens/ManageCompanionsScreen';
 
 const CompanionsScreen = () => {
-  return <CompanionListView />;
+  return <ManageCompanionsScreen />;
 };
 
 export default CompanionsScreen;

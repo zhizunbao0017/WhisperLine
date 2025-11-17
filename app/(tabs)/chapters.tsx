@@ -80,12 +80,24 @@ const ChaptersScreen: React.FC = () => {
 
   const handlePressChapter = useCallback(
     (chapterId: string) => {
-      router.push({
-        pathname: '/chapterDetail',
-        params: { id: chapterId },
-      });
+      // Check chapter type from userState (PIE chapters) first, fallback to local chapters
+      const pieChapter = userState?.chapters?.[chapterId];
+      const localChapter = chapters.find((c) => c.id === chapterId);
+      const chapter = pieChapter || localChapter;
+      
+      if (chapter?.type === 'companion') {
+        router.push({
+          pathname: '/companion-dashboard',
+          params: { chapterId: chapterId },
+        });
+      } else {
+        router.push({
+          pathname: '/chapterDetail',
+          params: { id: chapterId },
+        });
+      }
     },
-    [router]
+    [router, chapters, userState?.chapters]
   );
 
   const sortedFilteredChapters = useMemo(() => {

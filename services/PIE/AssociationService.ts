@@ -1,15 +1,9 @@
 // services/PIE/AssociationService.ts
+import { Companion, ThemeType } from '../../models/PIE';
 import { RichEntry } from '../../models/RichEntry';
-import { Chapter, Companion, ThemeType } from '../../models/PIE';
 import { UserStateModel } from '../../models/UserState';
 
 // --- Predefined Data (can be moved to a config file later) ---
-// A mock database of user's companions. In a real app, this would be loaded from user state.
-const MOCK_COMPANIONS: Companion[] = [
-  { id: 'comp-01', name: 'Alex' },
-  { id: 'comp-02', name: 'Dr. Evelyn Reed' },
-];
-
 const THEME_KEYWORD_BANK: Record<ThemeType, string[]> = {
   work: ['work', 'project', 'clients', 'deadline', 'meeting', 'office', 'google'],
   wellness: ['health', 'exercise', 'fitness', 'gym', 'run', 'meditation', 'yoga', 'running'],
@@ -81,9 +75,8 @@ class AssociationService {
    * @returns An object containing the IDs of associated chapters.
    */
   public processAssociation(richEntry: RichEntry, userState: UserStateModel): { companionChapterIds: string[], themeChapterIds: string[] } {
-    // In a real implementation, you'd get companions from the userState.
-    // For now, we use a mock.
-    const companions = MOCK_COMPANIONS; // Replace with: Object.values(userState.companions)
+    // Get companions from the userState instead of mock data
+    const companions = Object.values(userState.companions || {});
     
     const companionIds = this.associateCompanions(richEntry, companions);
     const themeTypes = this.classifyThemes(richEntry);

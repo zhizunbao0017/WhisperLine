@@ -71,66 +71,50 @@ class PIEService {
   
   /**
    * Rebuilds the entire UserStateModel from all diary entries.
-   * This is a heavy operation and should be triggered manually by the user.
+   * This is a heavy operation designed to fix data inconsistencies and apply new logic to old data.
+   * This will act as a data migration and cleanup tool. After running, any old, inconsistent
+   * chapter data will be purged, and the app's state will be perfectly synchronized.
    * @param allEntries An array of all DiaryEntry objects.
-   * @returns The newly built UserStateModel.
+   * @returns An object containing the newly built UserStateModel and all RichEntry objects.
    */
-  public rebuildAll(allEntries: DiaryEntry[]): UserStateModel {
-      console.log("Rebuilding all chapters from scratch...");
-      let freshState: UserStateModel = {
-          lastUpdatedAt: '',
-          chapters: {},
-          storylines: [],
-          focus: { currentFocusChapters: [] },
-          // Initialize other state properties...
-      };
+  public rebuildAll(allEntries: DiaryEntry[]): { newState: UserStateModel; newRichEntries: Record<string, RichEntry> } {
+    console.log("--- STARTING FULL REBUILD ---");
+    console.log(`Processing ${allEntries.length} total entries...`);
 
-      // Build a dictionary of all rich entries as we process them
-      const allRichEntries: Record<string, RichEntry> = {};
+    // 1. --- CRITICAL --- Start with a completely fresh, empty state.
+    // This purges all old/ghost chapters and ensures data integrity.
+    let freshState: UserStateModel = {
+      lastUpdatedAt: '',
+      chapters: {},
+      storylines: [],
+      focus: { currentFocusChapters: [] },
+      // Make sure all UserStateModel properties are initialized
+    };
+    
+    // Create a dictionary for all new rich entries that will be created
+    let allRichEntries: Record<string, RichEntry> = {};
 
-      // Sort entries chronologically by createdAt
-      const sortedEntries = [...allEntries].sort((a, b) => {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      });
+    // 2. Sort entries by creation date to process them in chronological order.
+    const sortedEntries = [...allEntries].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
 
-      for(const entry of sortedEntries) {
-          // Layer 1: Enrich the entry
-          const richEntry = atomizationService.enrichEntry(entry);
+    // 3. Process each entry one by one, building up the fresh state.
+    for (const entry of sortedEntries) {
+      // NOTE: We pass the incrementally built `allRichEntries` dictionary
+      // even though it's a full rebuild, to satisfy the function signature.
+      const { updatedState, richEntry } = this.processNewEntry(entry, freshState, allRichEntries);
+      freshState = updatedState;
+      allRichEntries[richEntry.id] = richEntry;
+    }
 
-          // Layer 2: Find associations
-          const associations = associationService.processAssociation(richEntry, freshState);
+    // 4. After all entries are processed, run the final full aggregation step.
+    // This calculates all metrics, storylines, and focus chapters based on the complete data.
+    console.log("All entries processed. Running final aggregation...");
+    freshState = aggregationService.runFullAggregation(freshState, allRichEntries);
 
-          // Update chapters
-          const allChapterIds = [...associations.companionChapterIds, ...associations.themeChapterIds];
-          
-          // Attach chapterIds to the rich entry for efficient lookups
-          const finalRichEntry: RichEntry = {
-            ...richEntry,
-            chapterIds: allChapterIds,
-          };
-          
-          allRichEntries[finalRichEntry.id] = finalRichEntry;
-          
-          for (const chapterId of allChapterIds) {
-            if (freshState.chapters[chapterId]) {
-              // Chapter exists, prepend the new entry ID
-              freshState.chapters[chapterId] = {
-                ...freshState.chapters[chapterId],
-                entryIds: [entry.id, ...freshState.chapters[chapterId].entryIds],
-                lastUpdated: new Date().toISOString(),
-              };
-            } else {
-              // Chapter doesn't exist, create it
-              freshState.chapters[chapterId] = this.createChapter(chapterId, entry.id, freshState);
-            }
-          }
-      }
-      
-      // After processing all entries, run a full aggregation
-      freshState = aggregationService.runFullAggregation(freshState, allRichEntries);
-
-      console.log("Rebuild complete.");
-      return freshState;
+    console.log("--- FULL REBUILD COMPLETE ---");
+    return { newState: freshState, newRichEntries: allRichEntries };
   }
 
   /**

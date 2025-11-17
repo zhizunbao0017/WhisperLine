@@ -12,6 +12,7 @@ const createEmptyUserState = (): UserStateModel => {
   return {
     lastUpdatedAt: new Date().toISOString(),
     chapters: {},
+    companions: {},
     storylines: [],
     focus: {
       currentFocusChapters: [],
@@ -45,6 +46,10 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (storedState) {
         try {
           const parsed = JSON.parse(storedState);
+          // Ensure companions field exists for backward compatibility
+          if (!parsed.companions) {
+            parsed.companions = {};
+          }
           setUserState(parsed);
         } catch (parseError) {
           console.warn('UserStateContext: failed to parse user state', parseError);

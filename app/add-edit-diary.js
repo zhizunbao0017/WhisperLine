@@ -50,6 +50,69 @@ const extractTextFromHTML = (html) => {
     return html.replace(/<[^>]*>?/gm, '');
 };
 
+// Helper function to extract title from content HTML (if title is integrated)
+// Returns { title: string, content: string }
+const extractTitleFromContent = (html) => {
+    if (!html) return { title: '', content: '' };
+    
+    // Check if content starts with <h1> tag
+    const h1Match = html.match(/^<h1[^>]*>(.*?)<\/h1>/i);
+    if (h1Match) {
+        const title = extractTextFromHTML(h1Match[1]).trim();
+        const content = html.replace(/^<h1[^>]*>.*?<\/h1>\s*/i, '').trim();
+        return { title, content };
+    }
+    
+    // Check if content starts with <p><strong> (common title pattern)
+    const strongMatch = html.match(/^<p[^>]*>\s*<strong[^>]*>(.*?)<\/strong>/i);
+    if (strongMatch) {
+        const title = extractTextFromHTML(strongMatch[1]).trim();
+        const content = html.replace(/^<p[^>]*>\s*<strong[^>]*>.*?<\/strong>\s*(.*?)<\/p>/i, '$1').trim();
+        // If the paragraph only contained the title, remove it
+        if (!content || content === '') {
+            const contentWithoutTitle = html.replace(/^<p[^>]*>\s*<strong[^>]*>.*?<\/strong>\s*<\/p>\s*/i, '').trim();
+            return { title, content: contentWithoutTitle };
+        }
+    }
+    
+    // No title found in HTML, extract from first line of plain text
+    const plainText = extractTextFromHTML(html);
+    const firstLine = plainText.split(/\n+/).map(line => line.trim()).find(line => line.length > 0);
+    const title = firstLine ? firstLine.slice(0, 60) : '';
+    
+    return { title, content: html };
+};
+
+// Helper function to integrate title into content HTML
+const integrateTitleIntoContent = (title, content) => {
+    const trimmedTitle = title.trim();
+    const trimmedContent = content.trim();
+    
+    if (!trimmedTitle) {
+        return trimmedContent;
+    }
+    
+    // Escape HTML in title
+    const escapedTitle = trimmedTitle
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    
+    // If content already has an h1 tag, replace it
+    if (trimmedContent.match(/^<h1[^>]*>/i)) {
+        return trimmedContent.replace(/^<h1[^>]*>.*?<\/h1>/i, `<h1>${escapedTitle}</h1>`);
+    }
+    
+    // Otherwise, prepend h1 tag
+    if (trimmedContent) {
+        return `<h1>${escapedTitle}</h1>\n${trimmedContent}`;
+    }
+    
+    return `<h1>${escapedTitle}</h1>`;
+};
+
 const decodeHtmlAttribute = (value) => {
     if (!value) return value;
     return value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
@@ -302,13 +365,6 @@ const AddEditDiaryScreen = () => {
     const editorRef = useRef(null); // Create ref for rich text editor
     const scrollViewRef = useRef(null);
 
-    // --- State ---
-    const [isEditMode, setIsEditMode] = useState(!!existingDiary);
-    const [title, setTitle] = useState(
-        existingDiary?.title ||
-            (intentDraft?.text ? intentDraft.text.split('\n')[0].slice(0, 60) : '')
-    );
- 
     // Process initial content: convert local file URI to WebView-accessible format
     const processContentForEditor = (html) => {
         if (!html) return '';
@@ -338,13 +394,40 @@ const AddEditDiaryScreen = () => {
     };
     
     // Load content: prioritize content, fallback to contentHTML for backward compatibility
-    const initialContent = existingDiary
-        ? (existingDiary.content || existingDiary.contentHTML || '')
-        : intentDraft?.contentHtml || '';
+    const initialContent = useMemo(() => {
+        return existingDiary
+            ? (existingDiary.content || existingDiary.contentHTML || '')
+            : intentDraft?.contentHtml || '';
+    }, [existingDiary, intentDraft]);
+
+    // Extract title from content if title is integrated
+    const initialTitleAndContent = useMemo(() => {
+        if (!initialContent) {
+            // For new entries, use existing diary title or intent draft title
+            const existingTitle = existingDiary?.title || 
+                (intentDraft?.text ? intentDraft.text.split('\n')[0].slice(0, 60) : '');
+            return { title: existingTitle, content: '' };
+        }
+        // Try to extract title from content HTML
+        const extracted = extractTitleFromContent(initialContent);
+        // If no title found in content, use existing diary title
+        if (!extracted.title && existingDiary?.title) {
+            return { title: existingDiary.title, content: initialContent };
+        }
+        return extracted;
+    }, [initialContent, existingDiary, intentDraft]);
 
     const processedInitialContent = useMemo(() => (
-        initialContent ? processContentForEditor(initialContent) : ''
-    ), [initialContent]);
+        initialTitleAndContent.content ? processContentForEditor(initialTitleAndContent.content) : ''
+    ), [initialTitleAndContent.content]);
+
+    // --- State ---
+    const [isEditMode, setIsEditMode] = useState(!!existingDiary);
+    const [title, setTitle] = useState(
+        initialTitleAndContent.title ||
+            existingDiary?.title ||
+            (intentDraft?.text ? intentDraft.text.split('\n')[0].slice(0, 60) : '')
+    );
 
     const [contentHtml, setContentHtml] = useState(processedInitialContent);
     const initialContentRef = useRef(processedInitialContent);
@@ -382,12 +465,17 @@ const AddEditDiaryScreen = () => {
             .find((line) => line.length > 0);
         return firstLine ? firstLine.slice(0, 60) : '';
     }, []);
+    
+    // Extract title from content HTML if integrated, otherwise use title state
     const effectiveTitle = useMemo(() => {
-        if (isChildTheme || isCyberpunkTheme) {
-            return deriveTitleFromText(plainTextContent);
+        // Try to extract title from content HTML first (for all templates)
+        const extracted = extractTitleFromContent(contentHtml);
+        if (extracted.title) {
+            return extracted.title;
         }
-        return title.trim();
-    }, [isChildTheme, isCyberpunkTheme, deriveTitleFromText, plainTextContent, title]);
+        // Fallback: derive title from plain text content for all themes
+        return deriveTitleFromText(plainTextContent) || title.trim() || '';
+    }, [contentHtml, deriveTitleFromText, plainTextContent, title]);
 
     const resolveImageSource = useCallback((identifier) => {
         if (!identifier) {
@@ -418,20 +506,26 @@ const AddEditDiaryScreen = () => {
         }
     }, [currentAvatar, resolveImageSource]);
 
-    const baselineSnapshot = useMemo(() => JSON.stringify({
-        title: isChildTheme
-            ? deriveTitleFromText(processedInitialPlainText)
-            : (existingDiary?.title || '').trim(),
-        content: processedInitialContent || '',
-        mood: existingDiary?.mood || null,
-        weather: normalizeWeather(existingDiary?.weather),
-        companionIDs: existingCompanionIds,
-        themeID: existingDiary?.themeID ?? existingDiary?.themeId ?? null,
-    }), [
+    const baselineSnapshot = useMemo(() => {
+        // Extract title from content for all themes
+        const extractedTitle = initialTitleAndContent.title || 
+            (existingDiary ? extractTitleFromContent(existingDiary.content || existingDiary.contentHTML || '').title : '') ||
+            deriveTitleFromText(processedInitialPlainText) ||
+            (existingDiary?.title || '').trim();
+        
+        return JSON.stringify({
+            title: extractedTitle,
+            content: processedInitialContent || '',
+            mood: existingDiary?.mood || null,
+            weather: normalizeWeather(existingDiary?.weather),
+            companionIDs: existingCompanionIds,
+            themeID: existingDiary?.themeID ?? existingDiary?.themeId ?? null,
+        });
+    }, [
         deriveTitleFromText,
         existingDiary,
         existingCompanionIds,
-        isChildTheme,
+        initialTitleAndContent.title,
         processedInitialContent,
         processedInitialPlainText,
     ]);
@@ -458,10 +552,8 @@ const AddEditDiaryScreen = () => {
         if (!selectedMood || !hasContent) {
             return false;
         }
-        // Child and Cyberpunk themes don't require title
-        if (!isChildTheme && !isCyberpunkTheme && !title.trim()) {
-            return false;
-        }
+        // All themes now integrate title into content, so we don't require separate title input
+        // Title will be extracted from content or auto-generated
         return true;
     }, [isChildTheme, isCyberpunkTheme, plainTextContent, selectedMood, title]);
     const saveEnabled = canSubmit && hasUnsavedChanges;
@@ -823,14 +915,9 @@ const AddEditDiaryScreen = () => {
             });
 
             if (!canSubmit) {
-                const missingTitle = !isChildTheme && !isCyberpunkTheme && !title.trim();
                 const missingContent = plainTextContent.trim().length === 0;
                 let message = 'Please select a mood and add your entry.';
-                if (missingTitle && missingContent) {
-                    message = 'Please select a mood, add a title, and write your entry.';
-                } else if (missingTitle) {
-                    message = 'Please select a mood and add a title.';
-                } else if (missingContent) {
+                if (missingContent) {
                     message = 'Please select a mood and write your entry.';
                 }
                 Alert.alert('Incomplete Entry', message);
@@ -863,17 +950,21 @@ const AddEditDiaryScreen = () => {
                 return updated;
             });
             
-            console.log('Saving content with file URIs (production-ready format)', {
-                title: effectiveTitle,
-                contentLength: contentToSave.length,
+            // Integrate title into content HTML for all templates
+            const finalTitle = effectiveTitle || title.trim();
+            const integratedContent = integrateTitleIntoContent(finalTitle, contentToSave);
+            
+            console.log('Saving content with integrated title (production-ready format)', {
+                title: finalTitle,
+                contentLength: integratedContent.length,
                 mood: selectedMood,
                 companionIDs: selectedCompanionIDs,
                 themeID: selectedThemeId,
             });
 
             const diaryData = {
-                title: effectiveTitle,
-                content: contentToSave, // Use processed content with file URIs
+                title: finalTitle,
+                content: integratedContent, // Content with title integrated as <h1>
                 mood: selectedMood,
                 weather,
                 companionIDs: selectedCompanionIDs,
@@ -890,8 +981,31 @@ const AddEditDiaryScreen = () => {
                 );
                 console.log('Diary entry updated successfully');
             } else {
-                const createdAtOverride = entryDateParam ? new Date(entryDateParam).toISOString() : undefined;
-                console.log('Adding new diary entry', { createdAtOverride });
+                // Handle date parameter: if provided, use it to set createdAt
+                // entryDateParam should be in YYYY-MM-DD format
+                let createdAtOverride = undefined;
+                if (entryDateParam) {
+                    try {
+                        // Parse the date string (YYYY-MM-DD) and set time to noon to avoid timezone issues
+                        const dateParts = entryDateParam.split('-');
+                        if (dateParts.length === 3) {
+                            const year = parseInt(dateParts[0], 10);
+                            const month = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
+                            const day = parseInt(dateParts[2], 10);
+                            // Create date at noon local time to avoid timezone conversion issues
+                            const date = new Date(year, month, day, 12, 0, 0, 0);
+                            createdAtOverride = date.toISOString();
+                        } else {
+                            // Fallback: try parsing as-is
+                            createdAtOverride = new Date(entryDateParam).toISOString();
+                        }
+                    } catch (error) {
+                        console.warn('Failed to parse entryDateParam:', entryDateParam, error);
+                        // Fallback to current time if parsing fails
+                        createdAtOverride = undefined;
+                    }
+                }
+                console.log('Adding new diary entry', { entryDateParam, createdAtOverride });
                 const createdEntry = await addDiary({ ...diaryData, ...(createdAtOverride && { createdAt: createdAtOverride }) });
                 console.log('Diary entry created:', createdEntry?.id);
                 if (createdEntry?.id) {
@@ -1203,36 +1317,18 @@ const AddEditDiaryScreen = () => {
                         moodLabelStyle={{ fontFamily: bodyFontFamily }}
                         containerStyle={isChildTheme ? { marginBottom: 28 } : null}
                     />
-                    {!isChildTheme && !isCyberpunkTheme && (
-                        <TextInput
-                            ref={titleInputRef}
-                            style={[
-                                styles.input,
-                                styles.titleInputStandalone,
-                                {
-                                    backgroundColor: themeStyles.card,
-                                    color: themeStyles.text,
-                                    borderColor: themeStyles.border,
-                                    borderRadius: isCyberpunkTheme ? 0 : themeStyles.inputRadius, // Cyberpunk: square corners
-                                    fontFamily: headingFontFamily,
-                                },
-                            ]}
-                            value={title}
-                            onChangeText={setTitle}
-                            placeholder="Title"
-                            placeholderTextColor={themeStyles.inputPlaceholder}
-                            onFocus={() => {
-                                setEmojiTarget('title');
-                                const cursor = title.length;
-                                setTitleSelection({ start: cursor, end: cursor });
-                            }}
-                            onSelectionChange={(event) => setTitleSelection(event.nativeEvent.selection)}
-                        />
-                    )}
+                    {/* Title input removed: all themes now integrate title into content */}
                     <RichEditor
                             ref={editorRef}
                         initialContentHTML={contentHtml}
-                            onChange={setContentHtml}
+                            onChange={(html) => {
+                                setContentHtml(html);
+                                // Sync title from content if h1 tag exists
+                                const extracted = extractTitleFromContent(html);
+                                if (extracted.title && extracted.title !== title.trim()) {
+                                    setTitle(extracted.title);
+                                }
+                            }}
                         onFocus={() => setEmojiTarget('content')}
                         onMessage={handleEditorMessage}
                         style={[
@@ -1257,8 +1353,16 @@ const AddEditDiaryScreen = () => {
                                 min-height: 400px;
                                 height: auto;
                             `,
-                            // Add CSS to ensure images display correctly
+                            // Add CSS to ensure images and title display correctly
                             cssText: `
+                                h1 {
+                                    font-size: 24px;
+                                    font-weight: bold;
+                                    margin-top: 0;
+                                    margin-bottom: 16px;
+                                    padding-bottom: 8px;
+                                    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+                                }
                                 img {
                                     max-width: 100%;
                                     height: auto;
@@ -1457,7 +1561,7 @@ const AddEditDiaryScreen = () => {
                         borderTopColor: themeStyles.border,
                         paddingTop: 12,
                         paddingBottom: Math.max(insets.bottom, 16),
-                        paddingHorizontal: 16,
+                        paddingHorizontal: 20,
                         width: '100%',
                         alignSelf: 'stretch',
                     }
@@ -1483,7 +1587,7 @@ const AddEditDiaryScreen = () => {
                             insertEmoji={handleInsertEmoji}
                             iconTint={isCyberpunkTheme ? '#00FFFF' : themeStyles.text}
                             selectedIconTint={themeStyles.primary}
-                            iconGap={0}
+                            iconGap={20}
                             unselectedButtonStyle={isCyberpunkTheme ? {
                                 backgroundColor: 'transparent',
                             } : undefined}
@@ -1491,29 +1595,31 @@ const AddEditDiaryScreen = () => {
                                 backgroundColor: 'transparent',
                             } : undefined}
                             itemStyle={isCyberpunkTheme ? (cyberpunkToolbarItemStyle || {
-                                flex: 1,
+                                flex: 0,
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 minWidth: 44,
                                 height: 44,
                                 backgroundColor: 'transparent',
+                                marginHorizontal: 8,
                             }) : {
-                                flex: 1,
-                                minWidth: 0,
+                                flex: 0,
+                                minWidth: 44,
                                 height: 50,
                                 minHeight: 50,
                                 maxHeight: 50,
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 paddingVertical: 0,
-                                paddingHorizontal: 0,
-                                marginHorizontal: 0,
+                                paddingHorizontal: 12,
+                                marginHorizontal: 8,
                                 marginVertical: 0,
                             }}
                             flatContainerStyle={isCyberpunkTheme ? {
                                 flexDirection: 'row',
                                 minHeight: 50,
-                                paddingHorizontal: 0,
+                                paddingLeft: 16,
+                                paddingRight: 24,
                                 paddingVertical: 0,
                                 backgroundColor: 'transparent',
                             } : {
@@ -1521,7 +1627,8 @@ const AddEditDiaryScreen = () => {
                                 height: 50,
                                 minHeight: 50,
                                 maxHeight: 50,
-                                paddingHorizontal: 0,
+                                paddingLeft: 16,
+                                paddingRight: 24,
                                 marginHorizontal: 0,
                                 paddingVertical: 0,
                                 marginVertical: 0,
@@ -1781,6 +1888,10 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         minHeight: 50,
         backgroundColor: 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingLeft: 4,
+        paddingRight: 8,
     },
     saveButton: {
         width: '100%',
