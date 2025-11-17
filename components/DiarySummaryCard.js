@@ -5,19 +5,39 @@ import { MOODS } from '../data/moods';
 import { ThemeContext } from '../context/ThemeContext';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { ThemedText as Text } from './ThemedText';
+import { EmotionType } from '../models/PIE';
 
 const extractTextFromHTML = (html) => {
   if (!html) return '';
   return html.replace(/<[^>]*>?/gm, '').trim();
 };
 
-const DiarySummaryCard = ({ item, index, onPress, colors }) => {
+// Map EmotionType to emoji for display
+const EMOTION_EMOJI_MAP = {
+  excited: '🤩',
+  happy: '😊',
+  calm: '😌',
+  tired: '😴',
+  sad: '😢',
+  angry: '😠',
+};
+
+
+const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
   const themeContext = useContext(ThemeContext);
   const themeStyles = useThemeStyles();
   const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
+  // Get emotion from RichEntry metadata, fallback to user-selected mood
+  const detectedEmotion = richEntry?.metadata?.detectedEmotion?.primary;
+  // Convert item.mood (e.g., 'Happy') to lowercase emotion type (e.g., 'happy')
+  const moodToEmotionType = item.mood ? item.mood.toLowerCase() : null;
+  const emotionType = detectedEmotion || moodToEmotionType;
+  const emotionEmoji = emotionType && EMOTION_EMOJI_MAP[emotionType] ? EMOTION_EMOJI_MAP[emotionType] : null;
+  
+  // Fallback to mood icon if no emoji available
   const moodData = MOODS.find((m) => m.name === item.mood);
 
   useEffect(() => {
@@ -85,18 +105,8 @@ const DiarySummaryCard = ({ item, index, onPress, colors }) => {
           {displayContent}
         </Text>
         <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
+          {/* Left: Weather/Location */}
           <View style={styles.footerLeft}>
-            {/* Mood icon displayed next to weather */}
-            {moodData && moodData.image && (
-              <View
-                style={[
-                  styles.moodBadge,
-                  { backgroundColor: colors.background, borderColor: colors.border },
-                ]}
-              >
-                <Image source={moodData.image} style={styles.moodIcon} />
-              </View>
-            )}
             {item.weather ? (
               <View
                 style={[
@@ -128,8 +138,21 @@ const DiarySummaryCard = ({ item, index, onPress, colors }) => {
                   </Text>
                 </View>
               </View>
+            ) : (
+              <View style={styles.weatherPlaceholder} />
+            )}
+          </View>
+
+          {/* Center: Emotion Indicator */}
+          <View style={styles.emotionContainer}>
+            {emotionEmoji ? (
+              <Text style={styles.emotionEmoji}>{emotionEmoji}</Text>
+            ) : moodData && moodData.image ? (
+              <Image source={moodData.image} style={styles.emotionIcon} />
             ) : null}
           </View>
+
+          {/* Right: Date */}
           <Text style={[styles.footerText, { color: colors.text }]}>
             {new Date(item.createdAt).toLocaleDateString()}
           </Text>
@@ -162,18 +185,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: 10,
   },
-  footerLeft: { flexDirection: 'row', alignItems: 'center' },
-  footerText: { fontSize: 12 },
-  moodBadge: {
-    flexDirection: 'row',
+  footerLeft: { 
+    flexDirection: 'row', 
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginRight: 8,
-    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
   },
-  moodIcon: { width: 24, height: 24 },
+  weatherPlaceholder: {
+    flex: 1,
+  },
   weatherBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -181,6 +200,24 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  emotionContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    minWidth: 40,
+  },
+  emotionEmoji: {
+    fontSize: 22,
+  },
+  emotionIcon: {
+    width: 24,
+    height: 24,
+  },
+  footerText: { 
+    fontSize: 12,
+    flex: 1,
+    textAlign: 'right',
   },
   weatherIcon: { width: 28, height: 28, marginRight: 6 },
   weatherText: { fontSize: 12, fontWeight: '600' },

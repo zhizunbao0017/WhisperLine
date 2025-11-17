@@ -258,9 +258,12 @@ const TimelineScreen = () => {
                     </>
                 }
                 renderItem={({ item, index }) => {
+                    // Get RichEntry data for emotion metadata
+                    const richEntry = allRichEntries[item.id];
                     const card = (
                         <DiarySummaryCard
                             item={item}
+                            richEntry={richEntry}
                             index={index}
                             onPress={() =>
                                 router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })
