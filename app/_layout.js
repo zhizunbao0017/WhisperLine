@@ -511,6 +511,13 @@ function RootLayoutNav() {
                     }} 
                 />
                 <Stack.Screen 
+                    name="companion-chat" 
+                    options={{ 
+                        headerShown: false,
+                        presentation: 'modal',
+                    }} 
+                />
+                <Stack.Screen 
                     name="theme-settings" 
                     options={{ 
                         title: 'Appearance',

@@ -245,6 +245,11 @@ const AddEditDiaryScreen = () => {
         if (!raw) return undefined;
         return Array.isArray(raw) ? raw[0] : raw;
     }, [params]);
+    const promptParam = useMemo(() => {
+        const raw = params?.prompt;
+        if (!raw) return undefined;
+        return Array.isArray(raw) ? raw[0] : raw;
+    }, [params]);
     const existingDiary = useMemo(() => {
         return params.diary ? JSON.parse(params.diary) : null;
     }, [params.diary]);
@@ -402,11 +407,17 @@ const AddEditDiaryScreen = () => {
     };
     
     // Load content: prioritize content, fallback to contentHTML for backward compatibility
+    // If prompt is provided, use it as initial content
     const initialContent = useMemo(() => {
-        return existingDiary
-            ? (existingDiary.content || existingDiary.contentHTML || '')
-            : intentDraft?.contentHtml || '';
-    }, [existingDiary, intentDraft]);
+        if (existingDiary) {
+            return existingDiary.content || existingDiary.contentHTML || '';
+        }
+        // If prompt is provided, use it as initial content
+        if (promptParam) {
+            return `<p>${promptParam}</p>`;
+        }
+        return intentDraft?.contentHtml || '';
+    }, [existingDiary, intentDraft, promptParam]);
 
     // Extract title from content if title is integrated
     const initialTitleAndContent = useMemo(() => {

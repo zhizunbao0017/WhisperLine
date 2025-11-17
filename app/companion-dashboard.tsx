@@ -546,13 +546,10 @@ const CompanionDashboardScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.chatButton}
               onPress={() => {
-                // Navigate to CompanionChat screen when it's implemented
-                // For now, we'll just log or show an alert
-                console.log('Navigate to CompanionChat for companion:', chapter?.sourceId);
-                // router.push({
-                //   pathname: '/companion-chat',
-                //   params: { chapterId: chapter?.id, companionId: chapter?.sourceId },
-                // });
+                router.push({
+                  pathname: '/companion-chat',
+                  params: { chapterId: chapter?.id, companionId: chapter?.sourceId },
+                });
               }}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
