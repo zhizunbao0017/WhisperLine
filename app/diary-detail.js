@@ -59,7 +59,12 @@ const DiaryDetailScreen = () => {
     return (
         <ScrollView style={[styles.container, { backgroundColor: colors.background }]}> 
             <View style={styles.header}> 
-                <TouchableOpacity onPress={handleEdit} style={styles.editButton}> 
+                <TouchableOpacity 
+                    onPress={handleEdit} 
+                    style={styles.editButton}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                > 
                     <Ionicons name="create-outline" size={28} color={colors.primary} /> 
                 </TouchableOpacity> 
             </View>
