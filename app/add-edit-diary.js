@@ -341,6 +341,7 @@ const AddEditDiaryScreen = () => {
     // UserStateProvider should always be available as it wraps the entire app
     // If it's not available, there's a provider setup issue that needs to be fixed
     const userStateContext = useUserState();
+    const userState = userStateContext?.userState;
     const themeContext = useContext(ThemeContext);
     const themeStyles = useThemeStyles();
     const currentAvatar = themeContext?.currentAvatar;
@@ -1503,8 +1504,56 @@ const AddEditDiaryScreen = () => {
             >
                     <View style={heroContainerStyle}>
                         {(() => {
-                            console.log('[AddEditDiaryScreen] Rendering header visual, heroVisual:', JSON.stringify(heroVisual, null, 2));
-                            console.log('[AddEditDiaryScreen] heroContainerStyle:', heroContainerStyle);
+                            console.log('[AddEditDiaryScreen] Rendering header visual...');
+                            console.log('[AddEditDiaryScreen] existingDiary:', existingDiary ? `ID: ${existingDiary.id}` : 'NULL');
+                            console.log('[AddEditDiaryScreen] userState available:', !!userState);
+                            
+                            // --- PRIORITY 1: Check for associated Companion in EDIT mode ---
+                            // This is the surgical fix: directly check existingDiary.companionIDs
+                            // and render from userState.companions without waiting for state updates
+                            if (existingDiary && userState?.companions) {
+                                const companionIds = existingDiary.companionIDs || 
+                                                    existingDiary.companionIds || 
+                                                    existingDiary.companions || 
+                                                    [];
+                                
+                                // Get the first companion ID (for single companion display)
+                                const firstCompanionId = Array.isArray(companionIds) ? companionIds[0] : companionIds;
+                                
+                                if (firstCompanionId) {
+                                    const companionIdStr = String(firstCompanionId);
+                                    const companion = userState.companions[companionIdStr];
+                                    
+                                    console.log('[AddEditDiaryScreen] Found companion ID:', companionIdStr);
+                                    console.log('[AddEditDiaryScreen] Companion data:', companion ? `Name: ${companion.name}, Avatar: ${companion.avatarUri || 'NONE'}` : 'NOT FOUND');
+                                    
+                                    if (companion) {
+                                        const avatarUri = companion.avatarUri || companion.avatarIdentifier;
+                                        
+                                        if (avatarUri && avatarUri.trim()) {
+                                            console.log('[AddEditDiaryScreen] Rendering companion avatar directly from existingDiary');
+                                            const resolvedSource = resolveImageSource(avatarUri);
+                                            return (
+                                                <CompanionAvatarView 
+                                                    size={150} 
+                                                    visual={{ 
+                                                        type: 'image', 
+                                                        source: resolvedSource 
+                                                    }} 
+                                                />
+                                            );
+                                        } else {
+                                            console.log('[AddEditDiaryScreen] Companion found but no avatar URI, falling back to state-based rendering');
+                                        }
+                                    } else {
+                                        console.log('[AddEditDiaryScreen] Companion ID not found in userState.companions, falling back to state-based rendering');
+                                    }
+                                }
+                            }
+                            
+                            // --- FALLBACK: Use state-based rendering (for CREATE mode or when direct check fails) ---
+                            console.log('[AddEditDiaryScreen] Using state-based heroVisual rendering');
+                            console.log('[AddEditDiaryScreen] heroVisual:', JSON.stringify(heroVisual, null, 2));
                             
                             // --- DEFENSIVE: Ensure heroVisual is always valid ---
                             if (!heroVisual || typeof heroVisual !== 'object') {
