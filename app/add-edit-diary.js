@@ -451,6 +451,7 @@ const AddEditDiaryScreen = () => {
     const [contentHtml, setContentHtml] = useState(processedInitialContent);
     const initialContentRef = useRef(processedInitialContent);
     const hasRemappedInitialHtml = useRef(false);
+    const [isSaving, setIsSaving] = useState(false); // Prevent duplicate saves
     const [selectedMood, setSelectedMood] = useState(
         existingDiary?.mood || intentDraft?.mood || null
     );
@@ -954,7 +955,14 @@ const AddEditDiaryScreen = () => {
 
     // --- Save logic ---
     const handleSave = useCallback(async () => {
+        // Prevent duplicate saves
+        if (isSaving) {
+            console.log('handleSave: Already saving, ignoring duplicate call');
+            return;
+        }
+
         try {
+            setIsSaving(true);
             console.log('handleSave called', {
                 canSubmit,
                 hasUnsavedChanges,
@@ -972,6 +980,7 @@ const AddEditDiaryScreen = () => {
                     message = 'Please select a mood and write your entry.';
                 }
                 Alert.alert('Incomplete Entry', message);
+                setIsSaving(false);
                 return;
             }
 
@@ -1067,13 +1076,19 @@ const AddEditDiaryScreen = () => {
                     );
                 }
             }
+            // Update state before navigation to prevent usePreventRemove from triggering
             setInitialSnapshot(currentSnapshot);
             setPreventRemove(false);
             console.log('Save completed, navigating back');
-            router.back(); // Return directly after saving
+            // Use setTimeout to ensure state updates are processed before navigation
+            setTimeout(() => {
+              router.back(); // Return directly after saving
+            }, 0);
         } catch (error) {
             console.error('Error saving diary:', error);
             Alert.alert('Error', `Failed to save diary: ${error.message || 'Unknown error'}`);
+        } finally {
+            setIsSaving(false);
         }
     }, [
         addDiary,
@@ -1086,6 +1101,7 @@ const AddEditDiaryScreen = () => {
         isChildTheme,
         isCyberpunkTheme,
         isEditMode,
+        isSaving,
         plainTextContent,
         router,
         selectedCompanionIDs,
@@ -1260,7 +1276,7 @@ const AddEditDiaryScreen = () => {
             headerRight: () => (
                 <TouchableOpacity
                     onPress={handleSave}
-                    disabled={!saveEnabled}
+                    disabled={!saveEnabled || isSaving}
                     style={[
                         styles.headerSaveButton,
                         isChildTheme && {
@@ -1270,7 +1286,7 @@ const AddEditDiaryScreen = () => {
                             paddingVertical: 6,
                             borderWidth: 1,
                             borderColor: '#E8CDAF',
-                            opacity: saveEnabled ? 1 : 0.55,
+                            opacity: (saveEnabled && !isSaving) ? 1 : 0.55,
                         },
                     ]}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1286,11 +1302,11 @@ const AddEditDiaryScreen = () => {
                                 }
                                 : {
                                     color: themeStyles.primary,
-                                    opacity: saveEnabled ? 1 : 0.4,
+                                    opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
                                 },
                         ]}
                     >
-                        {isEditMode ? 'Save' : 'Done'}
+                        {isSaving ? 'Saving...' : (isEditMode ? 'Save' : 'Done')}
                     </Text>
                 </TouchableOpacity>
             ),
@@ -1710,7 +1726,7 @@ const AddEditDiaryScreen = () => {
                         style={styles.saveButton}
                         onPress={handleSave}
                         activeOpacity={0.8}
-                        disabled={!saveEnabled}
+                        disabled={!saveEnabled || isSaving}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         {isChildTheme ? (
@@ -1721,7 +1737,7 @@ const AddEditDiaryScreen = () => {
                                 style={[
                                     styles.saveButtonGradient,
                                     {
-                                        opacity: saveEnabled ? 1 : 0.4,
+                                        opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
                                     },
                                 ]}
                             >
@@ -1735,7 +1751,7 @@ const AddEditDiaryScreen = () => {
                                         },
                                     ]}
                                 >
-                                    {isEditMode ? "Save Changes" : "Save Diary"}
+                                    {isSaving ? "Saving..." : (isEditMode ? "Save Changes" : "Save Diary")}
                                 </Text>
                             </LinearGradient>
                         ) : isCyberpunkTheme ? (
@@ -1747,7 +1763,7 @@ const AddEditDiaryScreen = () => {
                                         borderRadius: 0, // Cyberpunk style: square corners
                                         borderWidth: 2,
                                         borderColor: '#FF00FF',
-                                        opacity: saveEnabled ? 1 : 0.4,
+                                        opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
                                     },
                                 ]}
                             >
@@ -1761,7 +1777,7 @@ const AddEditDiaryScreen = () => {
                                         },
                                     ]}
                                 >
-                                    {isEditMode ? "Save Changes" : "Save Diary"}
+                                    {isSaving ? "Saving..." : (isEditMode ? "Save Changes" : "Save Diary")}
                                 </Text>
                             </View>
                         ) : (
@@ -1771,7 +1787,7 @@ const AddEditDiaryScreen = () => {
                                     {
                                         backgroundColor: themeStyles.primary,
                                         borderRadius: isCyberpunkTheme ? 0 : themeStyles.buttonRadius, // Cyberpunk: square corners
-                                        opacity: saveEnabled ? 1 : 0.4,
+                                        opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
                                     },
                                 ]}
                             >
@@ -1784,7 +1800,7 @@ const AddEditDiaryScreen = () => {
                                         },
                                     ]}
                                 >
-                                    {isEditMode ? "Save Changes" : "Save Diary"}
+                                    {isSaving ? "Saving..." : (isEditMode ? "Save Changes" : "Save Diary")}
                                 </Text>
                             </View>
                         )}

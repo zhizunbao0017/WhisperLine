@@ -10,6 +10,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +47,7 @@ const CompanionChatScreen = () => {
   
   // State for chat input
   const [reply, setReply] = useState('');
+  const [isSending, setIsSending] = useState(false); // Prevent duplicate sends
   const flatListRef = useRef<FlatList>(null);
 
   const chapterId = params?.chapterId;
@@ -91,9 +93,11 @@ const CompanionChatScreen = () => {
   }, [chapter, allRichEntries]);
 
   const handleSend = async () => {
-    if (!reply.trim() || !addDiary) return;
+    // Prevent duplicate sends
+    if (isSending || !reply.trim() || !addDiary) return;
 
     try {
+      setIsSending(true);
       // Create diary entry with the reply content
       // Convert plain text to HTML format
       const contentHtml = `<p>${reply.trim().replace(/\n/g, '</p><p>')}</p>`;
@@ -122,6 +126,10 @@ const CompanionChatScreen = () => {
       }, 300);
     } catch (error) {
       console.error('Failed to save diary entry:', error);
+      // Show error to user
+      Alert.alert('Error', 'Failed to save diary entry. Please try again.');
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -236,19 +244,23 @@ const CompanionChatScreen = () => {
             style={[
               styles.sendButton,
               {
-                backgroundColor: reply.trim() ? (colors?.primary || '#4a6cf7') : (colors?.border || '#e3e8f0'),
-                opacity: reply.trim() ? 1 : 0.5,
+                backgroundColor: (reply.trim() && !isSending) ? (colors?.primary || '#4a6cf7') : (colors?.border || '#e3e8f0'),
+                opacity: (reply.trim() && !isSending) ? 1 : 0.5,
               },
             ]}
             onPress={handleSend}
-            disabled={!reply.trim()}
+            disabled={!reply.trim() || isSending}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name="send"
-              size={20}
-              color={reply.trim() ? (colors?.primaryText || '#ffffff') : (colors?.secondaryText || '#6b7280')}
-            />
+            {isSending ? (
+              <ActivityIndicator size="small" color={colors?.primaryText || '#ffffff'} />
+            ) : (
+              <Ionicons
+                name="send"
+                size={20}
+                color={(reply.trim() && !isSending) ? (colors?.primaryText || '#ffffff') : (colors?.secondaryText || '#6b7280')}
+              />
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>

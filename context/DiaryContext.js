@@ -328,6 +328,14 @@ export const DiaryProvider = ({ children }) => {
       updatedAt: new Date().toISOString(),
     });
     const newEntry = ensureAnalysis(baseEntry);
+    
+    // Check for duplicates after entry is created (with generated ID)
+    const duplicateCheck = diaries.find(d => d.id === newEntry.id);
+    if (duplicateCheck) {
+      console.warn('addDiary: Duplicate entry detected, skipping:', newEntry.id);
+      return duplicateCheck;
+    }
+    
     const updatedDiaries = [newEntry, ...diaries];
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
