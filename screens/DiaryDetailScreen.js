@@ -90,21 +90,34 @@ const DiaryDetailScreen = () => {
 
     // Function to navigate to edit page
     const handleEdit = () => {
-        console.log('Edit button pressed, diary:', diary);
-        // Use object format for navigation, path format consistent with _layout.js
-        router.push({
-            pathname: '/add-edit-diary',
-            params: { 
-                diary: JSON.stringify(diary) 
-            }
-        });
+        console.log('[DiaryDetailScreen] Edit button clicked, navigating to editor...');
+        console.log('[DiaryDetailScreen] Diary ID:', diary?.id);
+        console.log('[DiaryDetailScreen] Diary companionIDs:', diary?.companionIDs);
+        
+        // Ensure immediate navigation without delay
+        try {
+            router.push({
+                pathname: '/add-edit-diary',
+                params: { 
+                    diary: JSON.stringify(diary) 
+                }
+            });
+            console.log('[DiaryDetailScreen] Navigation triggered successfully');
+        } catch (error) {
+            console.error('[DiaryDetailScreen] Navigation error:', error);
+        }
     };
 
     return (
         <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
             {/* --- Top bar with edit button --- */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={handleEdit} style={styles.editButton}>
+                <TouchableOpacity 
+                    onPress={handleEdit} 
+                    style={styles.editButton}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                     <Ionicons name="create-outline" size={28} color={colors.primary} />
                 </TouchableOpacity>
             </View>

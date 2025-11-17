@@ -40,10 +40,20 @@ const DiaryDetailScreen = () => {
     };
 
     const handleEdit = () => {
-        router.push({
-            pathname: '/add-edit-diary',
-            params: { diary: JSON.stringify(diary) },
-        });
+        console.log('[DiaryDetail] Edit button clicked, navigating to editor...');
+        console.log('[DiaryDetail] Diary ID:', diary?.id);
+        console.log('[DiaryDetail] Diary companionIDs:', diary?.companionIDs);
+        
+        // Ensure immediate navigation without delay
+        try {
+            router.push({
+                pathname: '/add-edit-diary',
+                params: { diary: JSON.stringify(diary) },
+            });
+            console.log('[DiaryDetail] Navigation triggered successfully');
+        } catch (error) {
+            console.error('[DiaryDetail] Navigation error:', error);
+        }
     };
 
     return (
