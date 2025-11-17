@@ -139,24 +139,25 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
                   </Text>
                 </View>
               </View>
-            ) : (
-              <View style={styles.weatherPlaceholder} />
-            )}
-          </View>
-
-          {/* Center: Emotion Indicator */}
-          <View style={styles.emotionContainer}>
-            {emotionEmoji ? (
-              <Text style={styles.emotionEmoji}>{emotionEmoji}</Text>
-            ) : moodData && moodData.image ? (
-              <Image source={moodData.image} style={styles.emotionIcon} />
             ) : null}
           </View>
 
-          {/* Right: Date */}
-          <Text style={[styles.footerText, { color: colors.text }]}>
-            {new Date(item.createdAt).toLocaleDateString()}
-          </Text>
+          {/* Right: Emotion Indicator + Date */}
+          <View style={styles.footerRight}>
+            {/* Emotion Indicator */}
+            <View style={styles.emotionContainer}>
+              {emotionEmoji ? (
+                <Text style={styles.emotionEmoji}>{emotionEmoji}</Text>
+              ) : moodData && moodData.image ? (
+                <Image source={moodData.image} style={styles.emotionIcon} />
+              ) : null}
+            </View>
+
+            {/* Date */}
+            <Text style={[styles.footerText, { color: colors.text }]}>
+              {new Date(item.createdAt).toLocaleDateString()}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -194,8 +195,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-start',
   },
-  weatherPlaceholder: {
-    flex: 1,
+  footerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
   },
   weatherBadge: {
     flexDirection: 'row',
@@ -209,26 +213,23 @@ const styles = StyleSheet.create({
   emotionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    minWidth: 44,
-    height: 44,
+    marginRight: 10,
+    minWidth: 32,
+    height: 32,
     flexShrink: 0,
   },
   emotionEmoji: {
-    fontSize: 24,
-    lineHeight: 24,
+    fontSize: 22,
+    lineHeight: 22,
     textAlign: 'center',
   },
   emotionIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
   },
   footerText: { 
     fontSize: 12,
-    flex: 1,
-    textAlign: 'right',
-    alignSelf: 'center',
-    paddingLeft: 8,
+    flexShrink: 0,
   },
   weatherIcon: { width: 28, height: 28, marginRight: 6 },
   weatherText: { fontSize: 12, fontWeight: '600' },
