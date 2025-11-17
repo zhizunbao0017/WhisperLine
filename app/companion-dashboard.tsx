@@ -253,29 +253,9 @@ const CompanionDashboardScreen: React.FC = () => {
 
   const fallbackColor = useMemo(() => getFallbackColor(companion?.name), [companion?.name]);
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.text }]}>Loading companion...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error || !chapter) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.text }]}>{error || 'An unexpected error occurred.'}</Text>
-      </SafeAreaView>
-    );
-  }
-
-  const metrics = chapter.metrics;
-  const emotionDistribution = metrics?.emotionDistribution ?? {};
-  const companionName = companion?.name || chapter.title;
-
   // Check if AI interaction is enabled for this companion
   // Only show chat if both global and individual settings are enabled
+  // CRITICAL: This useMemo must be called BEFORE any conditional returns to follow React Hooks rules
   const isChatEnabled = useMemo(() => {
     if (!chapter || !userState) {
       return false;
@@ -298,6 +278,27 @@ const CompanionDashboardScreen: React.FC = () => {
     
     return globalEnabled && individualEnabled;
   }, [chapter, userState]);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Loading companion...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !chapter) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Text style={[styles.errorText, { color: colors.text }]}>{error || 'An unexpected error occurred.'}</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const metrics = chapter.metrics;
+  const emotionDistribution = metrics?.emotionDistribution ?? {};
+  const companionName = companion?.name || chapter.title;
 
   // Render stacked bar chart for emotion distribution
   const renderEmotionSpectrum = () => {

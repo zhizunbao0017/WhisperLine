@@ -463,7 +463,14 @@ function RootLayoutNav() {
                     }}
                 />
                 
-                <Stack.Screen name="add-edit-diary" />
+                <Stack.Screen 
+                    name="add-edit-diary" 
+                    options={{
+                        headerShown: true,
+                        headerBackTitleVisible: false,
+                        presentation: 'card',
+                    }}
+                />
                 <Stack.Screen
                     name="weekly-reflection"
                     options={{

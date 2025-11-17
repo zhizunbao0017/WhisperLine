@@ -73,6 +73,7 @@ const DiaryDetailScreen = () => {
                         contentWidth={width - 40}
                         source={{ html: diary.content }}
                         renderers={renderers}
+                        ignoredDomTags={['ms-cmark-node']}
                         tagsStyles={{
                             h1: {
                                 fontSize: 26,

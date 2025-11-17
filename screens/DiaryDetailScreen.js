@@ -143,6 +143,7 @@ const DiaryDetailScreen = () => {
                     <RenderHTML
                         contentWidth={width - 40} // Use useWindowDimensions width
                         source={{ html: diary.content || diary.contentHTML || '' }}
+                        ignoredDomTags={['ms-cmark-node']}
                         tagsStyles={{
                             ...renderHTMLConfig.tagsStyles,
                             h1: {

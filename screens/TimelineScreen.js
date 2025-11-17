@@ -297,11 +297,11 @@ const TimelineScreen = () => {
                 contentContainerStyle={{ paddingBottom: 100 }}
             />
             <FloatingActionButton
-                onPress={openQuickCapture}
-                onLongPress={() => router.push({
+                onPress={() => router.push({
                     pathname: '/add-edit-diary',
                     params: selectedDate ? { date: selectedDate } : {}
                 })}
+                onLongPress={openQuickCapture}
             />
         </View>
     );

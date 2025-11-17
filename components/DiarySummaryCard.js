@@ -129,8 +129,8 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, colors }) => {
             baseStyle={{
               color: colors.text,
             }}
-            // Ignore images in preview to keep it simple and fast
-            ignoredDomTags={['img']}
+            // Ignore images and ms-cmark-node tags in preview to keep it simple and fast
+            ignoredDomTags={['img', 'ms-cmark-node']}
             // Limit content preview by using systemTextProps
             systemFonts={isCyberpunkTheme ? [themeStyles.fontFamily] : []}
           />

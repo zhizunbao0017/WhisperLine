@@ -63,8 +63,16 @@ const ManageCompanionsScreen = () => {
       id: newId,
       name: name.trim(),
       isInteractionEnabled: false, // Default to disabled
-      avatarUri: editingAvatarUri || undefined, // Use picked avatar if available
+      avatarUri: editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined, // Use picked avatar if available and non-empty
     };
+    
+    // Debug: Log new companion creation
+    console.log('[ManageCompanionsScreen] Creating new companion:', {
+      id: newId,
+      name: name.trim(),
+      editingAvatarUri,
+      finalAvatarUri: newCompanion.avatarUri,
+    });
 
     const updatedCompanions = {
       ...(userState.companions || {}),
@@ -109,10 +117,20 @@ const ManageCompanionsScreen = () => {
         name: editingName.trim(),
         // Preserve isInteractionEnabled if it exists, otherwise default to false
         isInteractionEnabled: userState.companions[editingId]?.isInteractionEnabled !== false,
-        // Preserve or update avatarUri (use editingAvatarUri if set, otherwise keep existing or undefined)
-        avatarUri: editingAvatarUri !== null ? (editingAvatarUri || undefined) : userState.companions[editingId]?.avatarUri,
+        // Preserve or update avatarUri (use editingAvatarUri if set and non-empty, otherwise keep existing or undefined)
+        avatarUri: editingAvatarUri !== null 
+          ? (editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined)
+          : userState.companions[editingId]?.avatarUri,
       },
     };
+    
+    // Debug: Log avatar URI update
+    console.log('[ManageCompanionsScreen] Saving companion:', {
+      id: editingId,
+      name: editingName.trim(),
+      editingAvatarUri,
+      finalAvatarUri: updatedCompanions[editingId].avatarUri,
+    });
 
     const updatedState = {
       ...userState,

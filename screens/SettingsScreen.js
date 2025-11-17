@@ -84,7 +84,17 @@ const CustomAvatarButton = ({
             accessibilityLabel="Set custom avatar"
         >
             {customUri ? (
-                <Image source={{ uri: customUri }} style={styles.avatarImage} />
+                <View style={styles.avatarImage}>
+                    <Image 
+                        source={{ uri: customUri }} 
+                        style={{ 
+                            width: 70, 
+                            height: 70,
+                            backgroundColor: 'transparent', // Ensure no background covers the image
+                        }}
+                        resizeMode="cover"
+                    />
+                </View>
             ) : (
                 <View style={[styles.plusAvatarCircle, { backgroundColor: colors.background }]}>
                     <Text style={[styles.plusText, { color: colors.primary }]}>+</Text>
@@ -156,7 +166,7 @@ const SettingsScreen = () => {
     const formattedUserCompanions = userCreatedCompanions.map(comp => ({
         id: comp.id,
         name: comp.name,
-        avatarIdentifier: comp.avatarUri || '',
+        avatarIdentifier: comp.avatarUri && comp.avatarUri.trim() ? comp.avatarUri.trim() : '', // Ensure non-empty string
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     }));
@@ -210,6 +220,18 @@ const SettingsScreen = () => {
     }, [allCompanions, companionsLoading, primaryCompanionId]);
 
     const primaryCompanion = allCompanions.find((companion) => String(companion.id) === String(primaryCompanionId)) || null;
+    
+    // Debug: Log primary companion data
+    useEffect(() => {
+        if (primaryCompanion) {
+            console.log('[SettingsScreen] Primary companion found:', {
+                id: primaryCompanion.id,
+                name: primaryCompanion.name,
+                avatarIdentifier: primaryCompanion.avatarIdentifier,
+                hasAvatar: !!(primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim()),
+            });
+        }
+    }, [primaryCompanion]);
 
     const handleSetNoPrimary = async () => {
         if (primaryCompanionId === null) {
@@ -445,9 +467,31 @@ const SettingsScreen = () => {
 
             <View style={styles.sectionContainer}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Primary Companion</Text>
-                <Text style={[styles.primaryStatus, { color: colors.text }]}>
-                    {primaryCompanion ? `Current: ${primaryCompanion.name}` : 'Current: None'}
-                </Text>
+                <View style={styles.primaryStatusContainer}>
+                    <Text style={[styles.primaryStatus, { color: colors.text }]}>
+                        {primaryCompanion ? `Current: ${primaryCompanion.name}` : 'Current: None'}
+                    </Text>
+                    {primaryCompanion && (
+                        primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim() ? (
+                            <View style={styles.primaryAvatarContainer}>
+                                <Image 
+                                    source={{ uri: primaryCompanion.avatarIdentifier }} 
+                                    style={styles.primaryAvatarImage}
+                                    resizeMode="cover"
+                                    onError={(error) => {
+                                        console.warn('Failed to load primary companion avatar:', error.nativeEvent.error);
+                                    }}
+                                />
+                            </View>
+                        ) : (
+                            <View style={[styles.primaryAvatarFallback, { backgroundColor: colors.primary + '40' }]}>
+                                <Text style={[styles.primaryAvatarInitials, { color: colors.primary }]}>
+                                    {primaryCompanion.name ? primaryCompanion.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() : '?'}
+                                </Text>
+                            </View>
+                        )
+                    )}
+                </View>
                 <TouchableOpacity
                     style={[
                         styles.noneOption,
@@ -559,7 +603,15 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     avatarLottie: { width: 70, height: 70, marginBottom: 4 },
-    avatarImage: { width: 70, height: 70, borderRadius: 35, marginBottom: 4 }, // Used for custom avatar
+    avatarImage: { 
+        width: 70, 
+        height: 70, 
+        borderRadius: 35, 
+        marginBottom: 4,
+        overflow: 'hidden', // Ensure image stays within circular bounds
+        backgroundColor: 'transparent', // Transparent background to avoid covering image
+        zIndex: 1, // Ensure image is above any theme overlays
+    }, // Used for custom avatar
     avatarLabel: { textAlign: 'center', fontWeight: '500', fontSize: 13 },
     plusAvatarCircle: {
         width: 70,
@@ -605,7 +657,42 @@ const styles = StyleSheet.create({
     },
     manageButtonText: { flex: 1, fontSize: 16, fontWeight: '500' },
     manageButtonSubText: { fontSize: 13, marginTop: 2, fontWeight: '400' },
-    primaryStatus: { fontSize: 13, opacity: 0.7, marginBottom: 10, paddingLeft: 2 },
+    primaryStatusContainer: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        marginBottom: 10, 
+        paddingLeft: 2,
+        gap: 10,
+    },
+    primaryStatus: { fontSize: 13, opacity: 0.7, flex: 1 },
+    primaryAvatarContainer: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.1)',
+        overflow: 'hidden', // Ensure image stays within circular bounds
+        backgroundColor: 'transparent', // Transparent background to avoid covering image
+        zIndex: 1, // Ensure image is above any theme overlays
+    },
+    primaryAvatarImage: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: 'transparent', // Ensure no background covers the image
+    },
+    primaryAvatarFallback: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.1)',
+    },
+    primaryAvatarInitials: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
     noneOption: {
         flexDirection: 'row',
         alignItems: 'center',

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState, useContext } from 'react';
+import React, { useCallback, useMemo, useState, useContext } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,11 +10,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import ChapterCard from '../../components/ChapterCard';
-import chapterService from '../../services/ChapterService';
-import { Chapter } from '../../models/Chapter';
+import { Chapter } from '../../models/PIE';
 import { ThemeContext } from '../../context/ThemeContext';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import QuickCaptureContextValue from '../../context/QuickCaptureContext';
@@ -36,56 +35,49 @@ const ChaptersScreen: React.FC = () => {
   const router = useRouter();
   const { colors } = useContext(ThemeContext);
   const { openQuickCapture } = useContext(QuickCaptureContextValue);
-  const { userState } = useUserState();
-  const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { userState, isLoading: isUserStateLoading, refreshUserState } = useUserState();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [isControlSheetVisible, setControlSheetVisible] = useState(false);
+
+  // --- CRITICAL: Derive chapters directly from userState ---
+  // This GUARANTEES that whenever userState changes, this list will be re-calculated.
+  const chapters = useMemo(() => {
+    if (!userState || !userState.chapters) {
+      return []; // Handle the case where state is not ready
+    }
+    // Convert the chapters dictionary to an array
+    return Object.values(userState.chapters);
+  }, [userState]); // The dependency array ensures this runs when userState updates.
 
   // Extract focus chapter IDs for quick lookup
   const focusChapterIds = useMemo(() => {
     return new Set(userState?.focus?.currentFocusChapters?.map(fc => fc.chapterId) || []);
   }, [userState?.focus?.currentFocusChapters]);
 
-  const loadChapters = useCallback(async () => {
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
     try {
-      const data = await chapterService.getChapters();
-      setChapters(data);
+      await refreshUserState();
     } catch (error) {
-      console.warn('ChaptersScreen: failed to load chapters', error);
-      setChapters([]);
+      console.warn('ChaptersScreen: failed to refresh user state', error);
     } finally {
-      setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      setIsLoading(true);
-      loadChapters();
-    }, [loadChapters])
-  );
-
-  useEffect(() => {
-    loadChapters();
-  }, [loadChapters]);
-
-  const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    loadChapters();
-  }, [loadChapters]);
+  }, [refreshUserState]);
 
   const handlePressChapter = useCallback(
     (chapterId: string) => {
-      // Check chapter type from userState (PIE chapters) first, fallback to local chapters
-      const pieChapter = userState?.chapters?.[chapterId];
-      const localChapter = chapters.find((c) => c.id === chapterId);
-      const chapter = pieChapter || localChapter;
+      // Get chapter directly from userState (single source of truth)
+      const chapter = userState?.chapters?.[chapterId];
       
-      if (chapter?.type === 'companion') {
+      if (!chapter) {
+        console.warn(`ChaptersScreen: Chapter ${chapterId} not found in userState`);
+        return;
+      }
+      
+      if (chapter.type === 'companion') {
         router.push({
           pathname: '/companion-dashboard',
           params: { chapterId: chapterId },
@@ -97,7 +89,7 @@ const ChaptersScreen: React.FC = () => {
         });
       }
     },
-    [router, chapters, userState?.chapters]
+    [router, userState?.chapters]
   );
 
   const sortedFilteredChapters = useMemo(() => {
@@ -192,7 +184,8 @@ const ChaptersScreen: React.FC = () => {
     }
   }, [sortMode]);
 
-  if (isLoading) {
+  // Show loading state if userState is not yet loaded
+  if (isUserStateLoading || !userState) {
     return (
       <SafeAreaView style={[styles.loaderContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />

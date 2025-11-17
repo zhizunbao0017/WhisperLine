@@ -55,7 +55,17 @@ const CompanionAvatarItem = ({ companion, isSelected, onPress }) => {
         ]}
       >
         {companion?.avatarIdentifier ? (
-          <Image source={{ uri: companion.avatarIdentifier }} style={styles.avatarImage} />
+          <View style={styles.avatarImage}>
+            <Image 
+              source={{ uri: companion.avatarIdentifier }} 
+              style={{ 
+                width: 56, 
+                height: 56,
+                backgroundColor: 'transparent', // Ensure no background covers the image
+              }}
+              resizeMode="cover"
+            />
+          </View>
         ) : (
           <View style={[styles.avatarFallback, { backgroundColor: fallbackColor }]}>
             <Text style={styles.avatarInitials}>{initials}</Text>
@@ -106,6 +116,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
+    overflow: 'hidden', // Ensure image stays within circular bounds
+    backgroundColor: 'transparent', // Transparent background to avoid covering image
+    zIndex: 1, // Ensure image is above any theme overlays
   },
   avatarFallback: {
     width: 56,
