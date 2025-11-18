@@ -1891,7 +1891,7 @@ const AddEditDiaryScreen = () => {
                                 height: 50,
                                 minHeight: 50,
                                 maxHeight: 50,
-                                paddingLeft: 16,
+                                paddingLeft: 8, // 左移图标以对齐（基础模版和儿童模版）
                                 paddingRight: 24,
                                 marginHorizontal: 0,
                                 paddingVertical: 0,

@@ -487,7 +487,7 @@ const SettingsScreen = () => {
                 {/* Enable AI Companion Interaction */}
                 <SettingRow
                     title="Enable AI Companion Interaction"
-                    subtitle="Allow AI to interact with your companions"
+                    subtitle="Enable on-device AI for interactive journaling."
                     colors={colors}
                     rightElement={
                         <Switch
@@ -513,7 +513,7 @@ const SettingsScreen = () => {
                 {/* Manage Companions */}
                 <SettingRow
                     title="Manage Companions"
-                    subtitle="Create and manage your companions"
+                    subtitle="Your circle of companions."
                     icon="people-outline"
                     iconColor={colors.primary}
                     colors={colors}
@@ -529,7 +529,7 @@ const SettingsScreen = () => {
                     </Text>
                     <View style={styles.primaryStatusContainer}>
                         <Text style={[styles.primaryStatus, { color: colors.text }]}>
-                            {primaryCompanion ? `Current: ${primaryCompanion.name}` : 'Current: None'}
+                            {primaryCompanion ? `Default reflection partner: ${primaryCompanion.name}` : 'Default reflection partner: None'}
                         </Text>
                         {primaryCompanion && (
                             primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim() ? (
@@ -684,7 +684,7 @@ const SettingsScreen = () => {
                         <Text style={[styles.manageButtonSubText, { color: colors.secondaryText }]}>
                             {isImporting 
                                 ? (importMessage || 'Importing your diary entries...')
-                                : 'Migrate entries from other apps (Day One .zip)'}
+                                : 'Import entries from other journal apps.'}
                         </Text>
                     </View>
                     {!isImporting && <Ionicons name="chevron-forward" size={20} color={colors.border} />}
@@ -710,7 +710,7 @@ const SettingsScreen = () => {
                             {isExporting ? 'Exporting...' : 'Export All Data'}
                         </Text>
                         <Text style={[styles.manageButtonSubText, { color: colors.secondaryText }]}>
-                            Create a backup of your diary entries and insights
+                            Export a full backup of your journal.
                         </Text>
                     </View>
                     {!isExporting && <Ionicons name="chevron-forward" size={20} color={colors.border} />}
