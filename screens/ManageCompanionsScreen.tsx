@@ -17,11 +17,11 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useUserState } from '../context/UserStateContext';
 import { Companion } from '../models/PIE';
 import { ThemeContext } from '../context/ThemeContext';
 import { ThemedText } from '../components/ThemedText';
+import MediaService from '../services/MediaService';
 
 const ManageCompanionsScreen = () => {
   const router = useRouter();
@@ -59,11 +59,87 @@ const ManageCompanionsScreen = () => {
     }
 
     const newId = `comp-${Date.now()}`;
+    
+    // If there's a temporary avatar URI, we need to move it to the final companion ID
+    let finalAvatar: Companion['avatar'] = undefined;
+    let finalAvatarUri = editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined;
+    
+    // CRITICAL: Check if path is temporary (ImagePicker cache) and copy to permanent storage
+    if (finalAvatarUri) {
+      // Check if it's a temporary path (ImagePicker cache or temp directory)
+      const isTemporary = finalAvatarUri.includes('Caches/ImagePicker') || 
+                         finalAvatarUri.includes('cache/ImagePicker') ||
+                         finalAvatarUri.includes('ImagePicker') ||
+                         finalAvatarUri.includes('temp-');
+      
+      if (isTemporary) {
+        console.warn('[ManageCompanionsScreen] ⚠️ CRITICAL: Found temporary path in editingAvatarUri, copying to permanent storage:', finalAvatarUri);
+        try {
+          // Use MediaService to copy the temporary image to the final companion location
+          const fileInfo = await MediaService.getMediaAssetInfo(finalAvatarUri);
+          if (fileInfo.exists) {
+            const mediaAsset = await MediaService.importExternalImage(
+              finalAvatarUri,
+              'companion',
+              newId
+            );
+            finalAvatarUri = mediaAsset.localPath;
+            
+            // Verify the new path is permanent
+            if (finalAvatarUri.includes('Caches/ImagePicker') || finalAvatarUri.includes('ImagePicker')) {
+              throw new Error('Failed to copy to permanent storage - path still temporary');
+            }
+            
+            console.log('[ManageCompanionsScreen] ✅ Successfully copied to permanent path:', finalAvatarUri);
+            
+            // Delete the temporary file
+            try {
+              await MediaService.deleteMediaAsset(editingAvatarUri);
+            } catch (error) {
+              console.warn('[ManageCompanionsScreen] Failed to delete temporary avatar:', error);
+            }
+          } else {
+            console.error('[ManageCompanionsScreen] Temporary file does not exist:', finalAvatarUri);
+            finalAvatarUri = undefined; // Don't use non-existent file
+          }
+        } catch (error) {
+          console.error('[ManageCompanionsScreen] ⚠️ CRITICAL: Failed to copy temporary avatar to permanent storage:', error);
+          // Don't save with temporary path - it will cause infinite loops
+          finalAvatarUri = undefined;
+          Alert.alert('Error', 'Failed to save avatar. Please try selecting the image again.');
+        }
+      } else {
+        // Path is already permanent, verify it exists
+        try {
+          const fileInfo = await MediaService.getMediaAssetInfo(finalAvatarUri);
+          if (!fileInfo.exists) {
+            console.warn('[ManageCompanionsScreen] Permanent path does not exist:', finalAvatarUri);
+            finalAvatarUri = undefined;
+          }
+        } catch (error) {
+          console.warn('[ManageCompanionsScreen] Failed to verify permanent path:', error);
+          finalAvatarUri = undefined;
+        }
+      }
+    }
+    
+    // Convert avatarUri to new avatar format (only if we have a valid permanent path)
+    if (finalAvatarUri && !finalAvatarUri.includes('Caches/ImagePicker') && !finalAvatarUri.includes('ImagePicker')) {
+      finalAvatar = {
+        type: 'image',
+        source: finalAvatarUri,
+      };
+    } else if (finalAvatarUri) {
+      // Path is still temporary - don't save it
+      console.error('[ManageCompanionsScreen] ⚠️ CRITICAL: Refusing to save temporary path to companion:', finalAvatarUri);
+      finalAvatar = undefined;
+    }
+    
     const newCompanion: Companion = {
       id: newId,
       name: name.trim(),
       isInteractionEnabled: false, // Default to disabled
-      avatarUri: editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined, // Use picked avatar if available and non-empty
+      avatar: finalAvatar,
     };
     
     // Debug: Log new companion creation
@@ -71,7 +147,7 @@ const ManageCompanionsScreen = () => {
       id: newId,
       name: name.trim(),
       editingAvatarUri,
-      finalAvatarUri: newCompanion.avatarUri,
+      finalAvatar: newCompanion.avatar,
     });
 
     const updatedCompanions = {
@@ -93,7 +169,9 @@ const ManageCompanionsScreen = () => {
   const handleStartEdit = (companion: Companion) => {
     setEditingId(companion.id);
     setEditingName(companion.name);
-    setEditingAvatarUri(companion.avatarUri || null);
+    // Extract source from avatar object, or fallback to legacy avatarUri
+    const avatarSource = companion.avatar?.source || companion.avatarUri || null;
+    setEditingAvatarUri(avatarSource);
   };
 
   const handleSaveEdit = async () => {
@@ -110,6 +188,48 @@ const ManageCompanionsScreen = () => {
       return;
     }
 
+    // Handle avatar update: if editingAvatarUri changed, delete old avatar
+    const oldCompanion = userState.companions[editingId];
+    const oldAvatarSource = oldCompanion?.avatar?.source || oldCompanion?.avatarUri;
+    let newAvatarSource = editingAvatarUri !== null 
+      ? (editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined)
+      : oldAvatarSource;
+    
+    // CRITICAL: Validate that new avatar source is NOT a temporary path
+    if (newAvatarSource) {
+      const isTemporary = newAvatarSource.includes('Caches/ImagePicker') || 
+                         newAvatarSource.includes('cache/ImagePicker') ||
+                         newAvatarSource.includes('ImagePicker');
+      
+      if (isTemporary) {
+        console.error('[ManageCompanionsScreen] ⚠️ CRITICAL: Attempted to save temporary path! This should never happen.');
+        console.error('[ManageCompanionsScreen] Temporary path:', newAvatarSource);
+        Alert.alert('Error', 'Invalid avatar path. Please select the image again.');
+        return; // Don't save with temporary path
+      }
+    }
+    
+    // If avatar changed, delete the old one
+    if (oldAvatarSource && oldAvatarSource !== newAvatarSource && oldAvatarSource.startsWith('file://')) {
+      // Only delete if old path is permanent (not temporary)
+      const oldIsTemporary = oldAvatarSource.includes('Caches/ImagePicker') || oldAvatarSource.includes('ImagePicker');
+      if (!oldIsTemporary) {
+        try {
+          await MediaService.deleteMediaAsset(oldAvatarSource);
+        } catch (error) {
+          console.warn('[ManageCompanionsScreen] Failed to delete old avatar:', error);
+          // Continue with update even if deletion fails
+        }
+      }
+    }
+    
+    // Convert to new avatar format (only if we have a valid permanent path)
+    const newAvatar: Companion['avatar'] = newAvatarSource && 
+                                           !newAvatarSource.includes('Caches/ImagePicker') && 
+                                           !newAvatarSource.includes('ImagePicker')
+      ? { type: 'image', source: newAvatarSource }
+      : undefined;
+    
     const updatedCompanions = {
       ...(userState.companions || {}),
       [editingId]: {
@@ -117,10 +237,8 @@ const ManageCompanionsScreen = () => {
         name: editingName.trim(),
         // Preserve isInteractionEnabled if it exists, otherwise default to false
         isInteractionEnabled: userState.companions[editingId]?.isInteractionEnabled !== false,
-        // Preserve or update avatarUri (use editingAvatarUri if set and non-empty, otherwise keep existing or undefined)
-        avatarUri: editingAvatarUri !== null 
-          ? (editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined)
-          : userState.companions[editingId]?.avatarUri,
+        // Update avatar with new format
+        avatar: newAvatar,
       },
     };
     
@@ -152,85 +270,107 @@ const ManageCompanionsScreen = () => {
 
   const handlePickAvatar = async (companionId: string | null) => {
     try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant photo library access to add an avatar.');
+      setPickingAvatarForId(companionId);
+      
+      // Use MediaService to handle image selection and storage
+      // If companionId is null, we're adding a new companion, so use a temporary ID
+      const tempId = companionId || `temp-${Date.now()}`;
+      const avatar = await MediaService.assignCompanionImage(tempId);
+      
+      if (!avatar) {
+        // User cancelled
         return;
       }
 
-      // Launch image picker
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        const uri = result.assets[0].uri;
-        
-        if (companionId === null) {
-          // Adding new companion - store temporarily
-          setEditingAvatarUri(uri);
+      // MediaService now returns { type: 'image', source: 'file://...' }
+      // Store the avatar object temporarily in state (as string for compatibility)
+      const avatarUri = avatar.source; // For temporary storage, we use source
+      
+      if (companionId === null) {
+        // Adding new companion - store temporarily in state
+        setEditingAvatarUri(avatarUri);
+      } else {
+        // Updating existing companion
+        if (editingId === companionId) {
+          // Update editing state
+          setEditingAvatarUri(avatarUri);
         } else {
-          // Updating existing companion
-          if (editingId === companionId) {
-            setEditingAvatarUri(uri);
-          } else {
-            // Update directly
-            const updatedCompanion = {
-              ...userState.companions[companionId],
-              avatarUri: uri,
-            };
-            const updatedCompanions = {
-              ...userState.companions,
-              [companionId]: updatedCompanion,
-            };
-            const updatedState = {
-              ...userState,
-              companions: updatedCompanions,
-              lastUpdatedAt: new Date().toISOString(),
-            };
-            await updateUserState(updatedState);
-          }
+          // Update directly in userState with new avatar format
+          const updatedCompanion = {
+            ...userState.companions[companionId],
+            avatar: avatar, // Use new avatar format
+          };
+          const updatedCompanions = {
+            ...userState.companions,
+            [companionId]: updatedCompanion,
+          };
+          const updatedState = {
+            ...userState,
+            companions: updatedCompanions,
+            lastUpdatedAt: new Date().toISOString(),
+          };
+          await updateUserState(updatedState);
         }
       }
     } catch (error) {
-      console.error('Failed to pick avatar:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      console.error('[ManageCompanionsScreen] Failed to pick avatar:', error);
+      Alert.alert(
+        'Error',
+        error.message === 'Permission to access media library was denied'
+          ? 'Please grant photo library access to add an avatar.'
+          : 'Failed to pick image. Please try again.'
+      );
     } finally {
       setPickingAvatarForId(null);
     }
   };
 
   const handleRemoveAvatar = async (companionId: string) => {
-    if (editingId === companionId) {
-      setEditingAvatarUri(null);
-    } else {
-      const updatedCompanion = {
-        ...userState.companions[companionId],
-        avatarUri: undefined,
-      };
-      const updatedCompanions = {
-        ...userState.companions,
-        [companionId]: updatedCompanion,
-      };
-      const updatedState = {
-        ...userState,
-        companions: updatedCompanions,
-        lastUpdatedAt: new Date().toISOString(),
-      };
-      await updateUserState(updatedState);
+    try {
+      const companion = userState.companions[companionId];
+      const avatarUri = companion?.avatarUri;
+
+      // Delete the media asset from storage if it exists
+      if (avatarUri && avatarUri.startsWith('file://')) {
+        try {
+          await MediaService.deleteMediaAsset(avatarUri);
+        } catch (error) {
+          console.warn('[ManageCompanionsScreen] Failed to delete media asset:', error);
+          // Continue with removing from state even if file deletion fails
+        }
+      }
+
+      if (editingId === companionId) {
+        setEditingAvatarUri(null);
+      } else {
+        const updatedCompanion = {
+          ...userState.companions[companionId],
+          avatarUri: undefined,
+        };
+        const updatedCompanions = {
+          ...userState.companions,
+          [companionId]: updatedCompanion,
+        };
+        const updatedState = {
+          ...userState,
+          companions: updatedCompanions,
+          lastUpdatedAt: new Date().toISOString(),
+        };
+        await updateUserState(updatedState);
+      }
+    } catch (error) {
+      console.error('[ManageCompanionsScreen] Failed to remove avatar:', error);
+      Alert.alert('Error', 'Failed to remove avatar. Please try again.');
     }
   };
 
-  // Helper to get avatar URI for display
+  // Helper to get avatar source for display
   const getAvatarUri = (companion: Companion, isEditing: boolean): string | null => {
     if (isEditing && editingAvatarUri !== null) {
       return editingAvatarUri;
     }
-    return companion.avatarUri || null;
+    // Get from new avatar format or legacy format
+    return companion.avatar?.source || companion.avatarUri || null;
   };
 
   // Helper to get initials for fallback avatar
@@ -266,16 +406,32 @@ const ManageCompanionsScreen = () => {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            const updatedCompanions = { ...(userState.companions || {}) };
-            delete updatedCompanions[companion.id];
+            try {
+              // Delete companion's avatar from storage if it exists (only for image type)
+              const avatarSource = companion.avatar?.source || companion.avatarUri;
+              if (avatarSource && avatarSource.startsWith('file://') && companion.avatar?.type === 'image') {
+                try {
+                  await MediaService.deleteMediaAsset(avatarSource);
+                } catch (error) {
+                  console.warn('[ManageCompanionsScreen] Failed to delete companion avatar:', error);
+                  // Continue with companion deletion even if avatar deletion fails
+                }
+              }
 
-            const updatedState = {
-              ...userState,
-              companions: updatedCompanions,
-              lastUpdatedAt: new Date().toISOString(),
-            };
+              const updatedCompanions = { ...(userState.companions || {}) };
+              delete updatedCompanions[companion.id];
 
-            await updateUserState(updatedState);
+              const updatedState = {
+                ...userState,
+                companions: updatedCompanions,
+                lastUpdatedAt: new Date().toISOString(),
+              };
+
+              await updateUserState(updatedState);
+            } catch (error) {
+              console.error('[ManageCompanionsScreen] Failed to delete companion:', error);
+              Alert.alert('Error', 'Failed to delete companion. Please try again.');
+            }
           },
         },
       ]

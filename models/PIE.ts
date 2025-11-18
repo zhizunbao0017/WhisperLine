@@ -12,11 +12,21 @@ export interface NamedEntity {
   type: 'PERSON' | 'LOCATION' | 'ORGANIZATION' | 'UNKNOWN';
 }
 
+/**
+ * Avatar configuration for Companion
+ */
+export interface CompanionAvatar {
+  type: 'lottie' | 'image'; // Avatar type: lottie for animated avatars, image for static images
+  source: string; // For 'lottie': Lottie file identifier/name; For 'image': MediaService-managed file path
+}
+
 export interface Companion {
   id: string;
   name: string;
   isInteractionEnabled: boolean; // User preference for AI interaction with this companion
-  avatarUri?: string; // Optional URI to companion's avatar image
+  avatar?: CompanionAvatar; // Optional avatar configuration
+  // Legacy field for backward compatibility (will be migrated to avatar)
+  avatarUri?: string; // @deprecated Use avatar instead
 }
 
 // --- Aggregated Data Structures for Dashboards ---

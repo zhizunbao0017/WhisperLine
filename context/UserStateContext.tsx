@@ -81,20 +81,103 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (typeof parsed.settings.hasSeenLongPressHint === 'undefined') {
             parsed.settings.hasSeenLongPressHint = false;
           }
-          // Ensure isInteractionEnabled and avatarUri exist for each companion (backward compatibility)
+          // Ensure isInteractionEnabled and migrate avatar fields (backward compatibility)
+          // CRITICAL: Track if state was modified during cleanup to persist sanitized data
+          let stateWasModified = false;
+          
           if (parsed.companions) {
             Object.keys(parsed.companions).forEach((companionId) => {
               if (parsed.companions[companionId]) {
-                if (typeof parsed.companions[companionId].isInteractionEnabled === 'undefined') {
-                  parsed.companions[companionId].isInteractionEnabled = false;
+                const companion = parsed.companions[companionId];
+                
+                // Ensure isInteractionEnabled exists
+                if (typeof companion.isInteractionEnabled === 'undefined') {
+                  companion.isInteractionEnabled = false;
                 }
-                // Migrate avatarIdentifier to avatarUri if needed
-                if (parsed.companions[companionId].avatarIdentifier && !parsed.companions[companionId].avatarUri) {
-                  parsed.companions[companionId].avatarUri = parsed.companions[companionId].avatarIdentifier;
+                
+                // Migrate legacy avatar fields to new avatar format
+                // Priority: avatarIdentifier > avatarUri > avatar (if exists)
+                if (!companion.avatar) {
+                  const legacyAvatarUri = companion.avatarIdentifier || companion.avatarUri;
+                  if (legacyAvatarUri && legacyAvatarUri.trim()) {
+                    // CRITICAL: Check if legacy path is temporary (ImagePicker cache)
+                    const isTemporary = legacyAvatarUri.includes('Caches/ImagePicker') || 
+                                       legacyAvatarUri.includes('cache/ImagePicker') ||
+                                       legacyAvatarUri.includes('ImagePicker');
+                    
+                    if (isTemporary) {
+                      console.error(`[UserStateContext] ⚠️ CRITICAL: Found temporary ImagePicker cache path in companion ${companionId}!`);
+                      console.error(`[UserStateContext] Temporary path: ${legacyAvatarUri}`);
+                      console.error(`[UserStateContext] This companion's avatar will be cleared to prevent infinite loops.`);
+                      // Don't migrate temporary paths - clear them instead
+                      companion.avatar = undefined;
+                      companion.avatarUri = undefined;
+                      companion.avatarIdentifier = undefined;
+                      // Mark state as modified so we can persist the cleaned data
+                      stateWasModified = true;
+                    } else {
+                      // Determine if it's a lottie identifier or an image path
+                      if (legacyAvatarUri.startsWith('file://') || legacyAvatarUri.startsWith('/')) {
+                        // It's an image file path
+                        companion.avatar = {
+                          type: 'image',
+                          source: legacyAvatarUri.trim(),
+                        };
+                      } else if (legacyAvatarUri.match(/^[1-8]$/)) {
+                        // It's a lottie avatar ID (1-8)
+                        companion.avatar = {
+                          type: 'lottie',
+                          source: legacyAvatarUri,
+                        };
+                      } else {
+                        // Default to image if unclear
+                        companion.avatar = {
+                          type: 'image',
+                          source: legacyAvatarUri.trim(),
+                        };
+                      }
+                      console.log(`[UserStateContext] Migrated companion ${companionId} avatar:`, companion.avatar);
+                    }
+                  }
+                } else {
+                  // Avatar already exists in new format - validate it's not temporary
+                  const avatarSource = companion.avatar.source;
+                  if (avatarSource) {
+                    const isTemporary = avatarSource.includes('Caches/ImagePicker') || 
+                                       avatarSource.includes('cache/ImagePicker') ||
+                                       avatarSource.includes('ImagePicker');
+                    if (isTemporary) {
+                      console.error(`[UserStateContext] ⚠️ CRITICAL: Found temporary path in companion ${companionId} avatar.source!`);
+                      console.error(`[UserStateContext] Temporary path: ${avatarSource}`);
+                      console.error(`[UserStateContext] Clearing avatar to prevent infinite loops.`);
+                      companion.avatar = undefined;
+                      // Mark state as modified so we can persist the cleaned data
+                      stateWasModified = true;
+                    }
+                  }
                 }
+                
+                // Clean up legacy fields (keep for now for safety, but mark as deprecated)
+                // We'll remove these in a future version
               }
             });
           }
+          
+          // CRITICAL: If state was modified during cleanup, persist the sanitized data
+          if (stateWasModified) {
+            console.log('[UserStateContext] ⚠️ Corrupted data was found and cleaned. Persisting the sanitized state now...');
+            // Update lastUpdatedAt to reflect the data migration
+            parsed.lastUpdatedAt = new Date().toISOString();
+            try {
+              await AsyncStorage.setItem(USER_STATE_STORAGE_KEY, JSON.stringify(parsed));
+              console.log('[UserStateContext] ✅ Sanitized state has been successfully saved to persistent storage.');
+              console.log('[UserStateContext] This was a one-time migration. Future app launches will load clean data.');
+            } catch (saveError) {
+              console.error('[UserStateContext] ⚠️ Failed to persist sanitized state:', saveError);
+              // Continue anyway - at least the in-memory state is clean
+            }
+          }
+          
           setUserState(parsed);
           console.log('UserStateContext: UserState loaded successfully');
         } catch (parseError) {
@@ -203,7 +286,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     // Load data immediately on mount
     // No delay - we want to block rendering until data is ready
-    loadUserState();
+      loadUserState();
   }, [loadUserState]);
 
   const value: UserStateContextValue = {

@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect, useNavigation, usePreventRemove } from '@react-navigation/native';
 import LottieView from 'lottie-react-native';
-import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -174,27 +174,19 @@ const normalizeWeather = (value) => {
 };
 
 // Companion avatar component
-const CompanionAvatarView = ({ size = 80, visual }) => {
-    // --- DEBUGGING: Log visual prop ---
-    console.log('[CompanionAvatarView] Rendering with visual:', JSON.stringify(visual, null, 2));
-    
+const CompanionAvatarView = memo(({ size = 80, visual }) => {
     // --- DEFENSIVE: Ensure config always has valid structure ---
     const config = visual || { type: 'image', source: DEFAULT_HERO_IMAGE };
     
     // --- DEFENSIVE: Validate config structure ---
     if (!config || typeof config !== 'object') {
-        console.error('[CompanionAvatarView] CRITICAL: Invalid config, using fallback');
+        // Removed expensive console.error - only log in development if needed
         return (
             <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center' }]}>
                 <Image source={DEFAULT_HERO_IMAGE} style={{ width: size, height: size }} resizeMode="cover" />
             </View>
         );
     }
-    
-    console.log('[CompanionAvatarView] Config type:', config.type, 'Source:', config.source);
-    
-    // Determine if this is a companion avatar by checking if source has URI
-    const isCompanionAvatar = config.type === 'image' && config.source && typeof config.source === 'object' && config.source.uri;
 
     if (config.type === 'stacked') {
         const primary = config.primary ?? { type: 'image', source: DEFAULT_HERO_IMAGE };
@@ -240,12 +232,10 @@ const CompanionAvatarView = ({ size = 80, visual }) => {
     }
 
     if (config.type === 'image' && config.source) {
-        console.log('[CompanionAvatarView] Rendering image type, source:', config.source);
         // Check if this is a companion avatar (has URI) vs theme placeholder
         const isCompanionAvatar = config.source && typeof config.source === 'object' && config.source.uri;
         
         if (isCompanionAvatar) {
-            console.log('[CompanionAvatarView] Rendering companion avatar (circular)');
             // Companion avatar: circular, no theme styling, high zIndex
             return (
                 <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center', zIndex: 10 }]}>
@@ -260,7 +250,6 @@ const CompanionAvatarView = ({ size = 80, visual }) => {
             );
         }
         
-        console.log('[CompanionAvatarView] Rendering theme placeholder (square)');
         // Theme placeholder: apply theme-specific styling (Cyberpunk square style)
         return (
             <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center', zIndex: 1 }]}>
@@ -276,22 +265,18 @@ const CompanionAvatarView = ({ size = 80, visual }) => {
     }
 
     // --- DEFENSIVE: Always return a fallback instead of null ---
-    console.warn('[CompanionAvatarView] No valid visual config, rendering fallback');
     return (
         <View style={[styles.avatarWrapper, { width: size, height: size, alignItems: 'center', justifyContent: 'center' }]}>
             <Image source={DEFAULT_HERO_IMAGE} style={{ width: size, height: size }} resizeMode="cover" />
         </View>
     );
-};
+});
 
 const AddEditDiaryScreen = () => {
-    console.log('[AddEditDiaryScreen] Component rendering...');
-    
     const router = useRouter();
     const navigation = useNavigation();
     const params = useLocalSearchParams();
     
-    console.log('[AddEditDiaryScreen] Navigation params:', JSON.stringify(params, null, 2));
     const entryDateParam = useMemo(() => {
         const raw = params?.date;
         if (!raw) return undefined;
@@ -303,9 +288,7 @@ const AddEditDiaryScreen = () => {
         return Array.isArray(raw) ? raw[0] : raw;
     }, [params]);
     const existingDiary = useMemo(() => {
-        console.log('[AddEditDiaryScreen] Parsing existingDiary from params.diary:', params.diary ? 'EXISTS' : 'NULL');
         const diary = params.diary ? JSON.parse(params.diary) : null;
-        console.log('[AddEditDiaryScreen] Parsed existingDiary:', diary ? `ID: ${diary.id}, companionIDs: ${JSON.stringify(diary.companionIDs)}` : 'NULL');
         return diary;
     }, [params.diary]);
     const intentDraft = useMemo(() => {
@@ -429,7 +412,7 @@ const AddEditDiaryScreen = () => {
     const insets = useSafeAreaInsets(); // Get safe area insets
     const editorRef = useRef(null); // Create ref for rich text editor
     const scrollViewRef = useRef(null);
-
+ 
     // Process initial content: convert local file URI to WebView-accessible format
     const processContentForEditor = (html) => {
         if (!html) return '';
@@ -517,12 +500,13 @@ const AddEditDiaryScreen = () => {
     const [allCompanions, setAllCompanions] = useState([]);
     // Removed manual companion selection - will auto-use primary companion or existing diary companions
     const [selectedCompanionIDs, setSelectedCompanionIDs] = useState(existingCompanionIds);
+    // Track previous companions hash to detect changes
+    const prevCompanionsHashRef = useRef('');
     const [selectedThemeId, setSelectedThemeId] = useState(
         existingDiary?.themeID ?? existingDiary?.themeId ?? null
     );
     const [heroVisual, setHeroVisual] = useState(() => {
         const initialVisual = { type: 'image', source: DEFAULT_HERO_IMAGE };
-        console.log('[AddEditDiaryScreen] Initializing heroVisual state:', JSON.stringify(initialVisual, null, 2));
         return initialVisual;
     });
     const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
@@ -567,24 +551,18 @@ const AddEditDiaryScreen = () => {
     }, []);
 
     const applyDefaultHero = useCallback(() => {
-        console.log('[applyDefaultHero] Called with currentAvatar:', JSON.stringify(currentAvatar, null, 2));
-        
         if (currentAvatar?.type === 'custom' && currentAvatar.image) {
-            console.log('[applyDefaultHero] Using custom avatar from settings');
             const resolvedSource = resolveImageSource(currentAvatar.image);
-            console.log('[applyDefaultHero] Resolved source:', resolvedSource);
             setHeroVisual({
                 type: 'image',
                 source: resolvedSource,
             });
         } else if (currentAvatar?.type === 'system' && currentAvatar.source) {
-            console.log('[applyDefaultHero] Using system Lottie avatar from settings');
             setHeroVisual({
                 type: 'lottie',
                 source: currentAvatar.source,
             });
         } else {
-            console.log('[applyDefaultHero] Using DEFAULT_HERO_IMAGE fallback');
             setHeroVisual({ type: 'image', source: DEFAULT_HERO_IMAGE });
         }
     }, [currentAvatar, resolveImageSource]);
@@ -598,11 +576,11 @@ const AddEditDiaryScreen = () => {
         
         return JSON.stringify({
             title: extractedTitle,
-            content: processedInitialContent || '',
-            mood: existingDiary?.mood || null,
-            weather: normalizeWeather(existingDiary?.weather),
-            companionIDs: existingCompanionIds,
-            themeID: existingDiary?.themeID ?? existingDiary?.themeId ?? null,
+        content: processedInitialContent || '',
+        mood: existingDiary?.mood || null,
+        weather: normalizeWeather(existingDiary?.weather),
+        companionIDs: existingCompanionIds,
+        themeID: existingDiary?.themeID ?? existingDiary?.themeId ?? null,
         });
     }, [
         deriveTitleFromText,
@@ -678,7 +656,7 @@ const AddEditDiaryScreen = () => {
         legacyCompanions.forEach(legacy => {
             if (!merged.find(c => String(c.id) === String(legacy.id))) {
                 merged.push(legacy);
-            }
+        }
         });
         setAllCompanions(merged);
     }, [companionContext?.companions, userStateContext?.userState?.companions]);
@@ -686,75 +664,72 @@ const AddEditDiaryScreen = () => {
     // --- CRITICAL: Update hero visual based on selected companions ---
     // Priority: Companion avatar > Theme visual > Default placeholder
     // This useEffect has highest priority and runs whenever companions or allCompanions change
+    // IMPORTANT: Also check userState.companions directly to get the latest avatar updates
     useEffect(() => {
-        console.log('[HeroVisual useEffect] Starting update...');
-        console.log('[HeroVisual useEffect] selectedCompanionIDs:', selectedCompanionIDs);
-        console.log('[HeroVisual useEffect] allCompanions count:', allCompanions.length);
-        
         // Priority 1: Check for associated companions FIRST
+        // CRITICAL: Check both allCompanions (for legacy) and userState.companions (for latest updates)
         const selectedCompanionsData = selectedCompanionIDs
             .map((id) => {
+                // First try to find in userState.companions (most up-to-date)
+                const userStateCompanion = userState?.companions?.[String(id)];
+                if (userStateCompanion) {
+                    // Extract avatar source from new format or legacy format
+                    const avatarSource = userStateCompanion.avatar?.source || userStateCompanion.avatarUri || '';
+                    return {
+                        id: userStateCompanion.id,
+                        name: userStateCompanion.name,
+                        avatarIdentifier: avatarSource,
+                        avatarUri: avatarSource,
+                        avatar: userStateCompanion.avatar, // Include new avatar format
+                    };
+                }
+                // Fallback to allCompanions (for legacy companions)
                 const found = allCompanions.find((item) => String(item.id) === String(id));
-                console.log(`[HeroVisual useEffect] Looking for companion ID ${id}, found:`, found ? found.name : 'NOT FOUND');
                 return found;
             })
             .filter(Boolean);
 
-        console.log('[HeroVisual useEffect] selectedCompanionsData count:', selectedCompanionsData.length);
-
         if (selectedCompanionsData.length > 0) {
             // At least one companion is selected - prioritize companion avatar
-            if (selectedCompanionsData.length === 1) {
-                const companion = selectedCompanionsData[0];
-                const avatarUri = companion?.avatarIdentifier || companion?.avatarUri;
-                console.log('[HeroVisual useEffect] Single companion found:', companion.name, 'avatarUri:', avatarUri);
+        if (selectedCompanionsData.length === 1) {
+            const companion = selectedCompanionsData[0];
+                const avatarUri = companion?.avatarUri || companion?.avatarIdentifier;
                 
                 if (avatarUri && avatarUri.trim()) {
                     // Companion has avatar - use it (highest priority)
                     const resolvedSource = resolveImageSource(avatarUri);
-                    console.log('[HeroVisual useEffect] Setting companion avatar, resolved source:', resolvedSource);
-                    setHeroVisual({
-                        type: 'image',
+                setHeroVisual({
+                    type: 'image',
                         source: resolvedSource,
-                    });
+                });
                     return; // Exit early to prevent theme override
-                } else {
-                    console.warn('[HeroVisual useEffect] Companion has no avatar URI, falling back to theme');
-                }
-            } else if (selectedCompanionsData.length > 1) {
+            }
+        } else if (selectedCompanionsData.length > 1) {
                 // Multiple companions - use stacked view
-                const primaryCompanion = selectedCompanionsData[0];
-                const secondaryCompanion = selectedCompanionsData[1] || selectedCompanionsData[0];
+            const primaryCompanion = selectedCompanionsData[0];
+            const secondaryCompanion = selectedCompanionsData[1] || selectedCompanionsData[0];
 
-                const primaryUri = primaryCompanion?.avatarIdentifier || primaryCompanion?.avatarUri;
-                const secondaryUri = secondaryCompanion?.avatarIdentifier || secondaryCompanion?.avatarUri;
-
-                console.log('[HeroVisual useEffect] Multiple companions, primaryUri:', primaryUri, 'secondaryUri:', secondaryUri);
+                const primaryUri = primaryCompanion?.avatarUri || primaryCompanion?.avatarIdentifier;
+                const secondaryUri = secondaryCompanion?.avatarUri || secondaryCompanion?.avatarIdentifier;
 
                 if (primaryUri || secondaryUri) {
                     const primarySource = resolveImageSource(primaryUri);
                     const secondarySource = resolveImageSource(secondaryUri);
 
-                    console.log('[HeroVisual useEffect] Setting stacked avatars');
-                    setHeroVisual({
-                        type: 'stacked',
-                        primary: { source: primarySource },
-                        secondary: { source: secondarySource },
-                    });
+            setHeroVisual({
+                type: 'stacked',
+                primary: { source: primarySource },
+                secondary: { source: secondarySource },
+            });
                     return; // Exit early to prevent theme override
-                } else {
-                    console.warn('[HeroVisual useEffect] Multiple companions but no avatars, falling back to theme');
                 }
             }
-        } else {
-            console.log('[HeroVisual useEffect] No companions selected');
         }
 
         // Priority 2: No companion or companion has no avatar - use theme visual
         // This will only execute if no companion is selected or companion has no avatar
-        console.log('[HeroVisual useEffect] Applying default hero (theme visual)');
         applyDefaultHero();
-    }, [allCompanions, selectedCompanionIDs, applyDefaultHero, resolveImageSource, companionsLoading, isEditMode, existingDiary?.companionIDs]);
+    }, [allCompanions, selectedCompanionIDs, applyDefaultHero, resolveImageSource, companionsLoading, isEditMode, existingDiary?.companionIDs, userState?.companions]);
 
     // Sync hero visual when currentAvatar changes (from Settings)
     // Only update if no companions are selected (companion takes priority)
@@ -1199,7 +1174,7 @@ const AddEditDiaryScreen = () => {
             console.log('Save completed, navigating back');
             // Use setTimeout to ensure state updates are processed before navigation
             setTimeout(() => {
-              router.back(); // Return directly after saving
+            router.back(); // Return directly after saving
             }, 0);
         } catch (error) {
             console.error('Error saving diary:', error);
@@ -1298,8 +1273,29 @@ const AddEditDiaryScreen = () => {
             return;
         }
 
-        if (hasInitialPrimaryApplied) {
+        // CRITICAL: Detect if companions have changed to allow re-initialization
+        // Create a hash of companion IDs and avatar URIs to detect changes
+        const companionsHash = JSON.stringify(
+            Object.values(userState?.companions || {}).map(c => ({
+                id: c.id,
+                avatarUri: c.avatarUri
+            }))
+        );
+        
+        // If companions haven't changed and we've already applied, skip re-initialization
+        // BUT: Always allow re-initialization if companions have changed (avatar updated)
+        const companionsChanged = prevCompanionsHashRef.current !== companionsHash;
+        
+        if (hasInitialPrimaryApplied && !companionsChanged) {
             return;
+        }
+        
+        // Update the ref with current companions hash
+        prevCompanionsHashRef.current = companionsHash;
+        
+        // Reset hasInitialPrimaryApplied if companions changed (to allow re-initialization)
+        if (companionsChanged && hasInitialPrimaryApplied) {
+            setHasInitialPrimaryApplied(false);
         }
 
         let isMounted = true;
@@ -1318,16 +1314,32 @@ const AddEditDiaryScreen = () => {
                     storedPrimary === 'none') {
                     // No primary companion set or "No default companion" selected
                     // Use empty array and apply theme image fallback
-                    console.log('[InitializeCompanions] No primary companion or "none" selected, applying theme fallback');
                     setSelectedCompanionIDs([]);
                     applyDefaultHero();
                     setHasInitialPrimaryApplied(true);
                     return;
                 }
 
-                const matched = allCompanions.find(
+                // CRITICAL: Check userState.companions first (most up-to-date)
+                const userStateCompanion = userState?.companions?.[String(storedPrimary)];
+                let matched = null;
+                
+                if (userStateCompanion) {
+                    // Use companion from userState (has latest avatar)
+                    const avatarSource = userStateCompanion.avatar?.source || userStateCompanion.avatarUri || '';
+                    matched = {
+                        id: userStateCompanion.id,
+                        name: userStateCompanion.name,
+                        avatarIdentifier: avatarSource,
+                        avatarUri: avatarSource,
+                        avatar: userStateCompanion.avatar, // Include new avatar format
+                    };
+                } else {
+                    // Fallback to allCompanions (for legacy companions)
+                    matched = allCompanions.find(
                     (item) => String(item.id) === String(storedPrimary)
                 );
+                }
 
                 if (matched) {
                     // Set primary companion as selected
@@ -1361,6 +1373,7 @@ const AddEditDiaryScreen = () => {
         existingCompanionIds,
         hasInitialPrimaryApplied,
         isEditMode,
+        userState?.companions, // CRITICAL: Re-initialize when companions are updated in settings
     ]);
 
     useLayoutEffect(() => {
@@ -1372,18 +1385,18 @@ const AddEditDiaryScreen = () => {
                 ? '#39FF14' 
                 : (isChildTheme ? '#7090AC' : (themeContext?.colors?.text || themeStyles.text));
             return (
-                <TouchableOpacity
-                    onPress={() => navigation.goBack()}
-                    style={styles.childHeaderBack}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
+            <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={styles.childHeaderBack}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
                     <Ionicons 
                         name="chevron-back" 
                         size={20} 
                         color={backButtonColor} 
                     />
-                </TouchableOpacity>
-            );
+            </TouchableOpacity>
+        );
         };
 
         navigation.setOptions({
@@ -1513,12 +1526,6 @@ const AddEditDiaryScreen = () => {
                             // --- BULLETPROOF renderHeaderVisual Function ---
                             // This function handles all edge cases including "No default companion" state
                             
-                            console.log('[AddEditDiaryScreen] ====== Rendering Hero Visual ======');
-                            console.log('[AddEditDiaryScreen] existingDiary:', existingDiary ? `ID: ${existingDiary.id}` : 'NULL');
-                            console.log('[AddEditDiaryScreen] userState available:', !!userState);
-                            console.log('[AddEditDiaryScreen] userState.companions:', userState?.companions ? Object.keys(userState.companions).length + ' companions' : 'NULL');
-                            console.log('[AddEditDiaryScreen] selectedCompanionIDs:', selectedCompanionIDs);
-                            
                             // --- PRIORITY 1: EDIT MODE ---
                             // In edit mode, the diary's own companion always takes precedence
                             if (existingDiary && userState?.companions) {
@@ -1527,8 +1534,6 @@ const AddEditDiaryScreen = () => {
                                                     existingDiary.companions || 
                                                     [];
                                 
-                                console.log('[AddEditDiaryScreen] Edit mode - Companion IDs from diary:', companionIds);
-                                
                                 // Get the first companion ID (for single companion display)
                                 const firstCompanionId = Array.isArray(companionIds) ? companionIds[0] : companionIds;
                                 
@@ -1536,17 +1541,25 @@ const AddEditDiaryScreen = () => {
                                     const companionIdStr = String(firstCompanionId);
                                     const companion = userState.companions[companionIdStr];
                                     
-                                    console.log('[AddEditDiaryScreen] Looking for companion ID:', companionIdStr);
-                                    console.log('[AddEditDiaryScreen] Companion found:', companion ? `Name: ${companion.name}` : 'NOT FOUND');
-                                    
                                     if (companion) {
-                                        const avatarUri = companion.avatarUri || companion.avatarIdentifier;
-                                        console.log('[AddEditDiaryScreen] Companion avatarUri:', avatarUri || 'NONE');
+                                        // Get avatar source from new format or legacy format
+                                        const avatarSource = companion.avatar?.source || companion.avatarUri || companion.avatarIdentifier;
+                                        const avatarType = companion.avatar?.type || 'image'; // Default to image for legacy
                                         
-                                        if (avatarUri && avatarUri.trim()) {
-                                            console.log('[AddEditDiaryScreen] ✅ Rendering companion avatar from existingDiary');
+                                        // CRITICAL: Validate that the path is NOT a temporary ImagePicker cache path
+                                        if (avatarSource && avatarSource.includes('Caches/ImagePicker')) {
+                                            console.error('[AddEditDiaryScreen] ⚠️ CRITICAL: Found temporary ImagePicker cache path in companion avatar! This should never happen.');
+                                            // Don't render with temporary path - it will cause infinite loops
+                                        } else if (avatarSource && avatarSource.trim()) {
                                             try {
-                                                const resolvedSource = resolveImageSource(avatarUri);
+                                                // Handle lottie type avatars
+                                                if (avatarType === 'lottie') {
+                                                    // For lottie, source should be the avatar ID (1-8)
+                                                    // We'll need to map it to the actual Lottie file
+                                                    // For now, fall through to image handling
+                                                }
+                                                
+                                                const resolvedSource = resolveImageSource(avatarSource);
                                                 return (
                                                     <CompanionAvatarView 
                                                         size={150} 
@@ -1567,22 +1580,34 @@ const AddEditDiaryScreen = () => {
                             
                             // --- PRIORITY 2: CREATE MODE with ACTIVE Primary Companion ---
                             // Check if we're in create mode and have a valid primary companion
+                            // CRITICAL: Always check userState.companions directly for latest avatar updates
                             if (!existingDiary && userState?.companions) {
                                 // Get primary companion ID from selectedCompanionIDs (set by useEffect)
                                 // This handles the case where primary companion is loaded from AsyncStorage
                                 if (selectedCompanionIDs && selectedCompanionIDs.length > 0) {
                                     const primaryCompanionId = selectedCompanionIDs[0];
+                                    // CRITICAL: Always get from userState.companions for latest data
                                     const companion = userState.companions[String(primaryCompanionId)];
                                     
-                                    console.log('[AddEditDiaryScreen] Create mode - Checking primary companion ID:', primaryCompanionId);
-                                    
                                     if (companion) {
-                                        const avatarUri = companion.avatarUri || companion.avatarIdentifier;
+                                        // CRITICAL: Use avatar from new format (most up-to-date and permanent path)
+                                        const avatarSource = companion.avatar?.source;
+                                        const avatarType = companion.avatar?.type;
                                         
-                                        if (avatarUri && avatarUri.trim()) {
-                                            console.log('[AddEditDiaryScreen] ✅ Rendering primary companion avatar');
+                                        // CRITICAL: Validate that the path is NOT a temporary ImagePicker cache path
+                                        if (avatarSource && avatarSource.includes('Caches/ImagePicker')) {
+                                            console.error('[AddEditDiaryScreen] ⚠️ CRITICAL: Found temporary ImagePicker cache path in companion avatar! This should never happen.');
+                                            // Don't render with temporary path - it will cause infinite loops
+                                        } else if (avatarSource && avatarSource.trim()) {
                                             try {
-                                                const resolvedSource = resolveImageSource(avatarUri);
+                                                // Handle lottie type avatars
+                                                if (avatarType === 'lottie') {
+                                                    // For lottie, source should be the avatar ID (1-8)
+                                                    // We'll need to map it to the actual Lottie file
+                                                    // For now, fall through to image handling
+                                                }
+                                                
+                                                const resolvedSource = resolveImageSource(avatarSource);
                                                 return (
                                                     <CompanionAvatarView 
                                                         size={150} 
@@ -1604,7 +1629,6 @@ const AddEditDiaryScreen = () => {
                                 // 1. No primary companion is set, OR
                                 // 2. "No default companion" is selected (stored as 'none', null, or undefined)
                                 // In both cases, we should fall back to theme image
-                                console.log('[AddEditDiaryScreen] Create mode - No primary companion selected, falling back to theme');
                             }
                             
                             // --- PRIORITY 3: THEME IMAGE FALLBACK ---
@@ -1614,18 +1638,12 @@ const AddEditDiaryScreen = () => {
                             // 3. EDIT mode for a diary with no companion
                             // 4. Any error in resolving companion images
                             
-                            console.log('[AddEditDiaryScreen] Using theme-based fallback');
-                            console.log('[AddEditDiaryScreen] heroVisual state:', JSON.stringify(heroVisual, null, 2));
-                            console.log('[AddEditDiaryScreen] currentAvatar:', JSON.stringify(currentAvatar, null, 2));
-                            
                             // Use heroVisual state if it's valid (set by applyDefaultHero)
                             if (heroVisual && typeof heroVisual === 'object' && heroVisual.source) {
-                                console.log('[AddEditDiaryScreen] ✅ Rendering heroVisual from state (theme image)');
                                 return <CompanionAvatarView size={150} visual={heroVisual} />;
                             }
                             
                             // Final fallback: DEFAULT_HERO_IMAGE
-                            console.log('[AddEditDiaryScreen] ⚠️ Using DEFAULT_HERO_IMAGE as absolute fallback');
                             return (
                                 <CompanionAvatarView 
                                     size={150} 

@@ -172,13 +172,17 @@ const SettingsScreen = () => {
     const legacyCompanions = companionContext?.companions || [];
     const userCreatedCompanions = Object.values(userState?.companions || {});
     // Convert userState companions to format compatible with CompanionSelectorCarousel
-    const formattedUserCompanions = userCreatedCompanions.map(comp => ({
-        id: comp.id,
-        name: comp.name,
-        avatarIdentifier: comp.avatarUri && comp.avatarUri.trim() ? comp.avatarUri.trim() : '', // Ensure non-empty string
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    }));
+    const formattedUserCompanions = userCreatedCompanions.map(comp => {
+        // Extract avatar source from new format or legacy format
+        const avatarSource = comp.avatar?.source || comp.avatarUri || '';
+        return {
+            id: comp.id,
+            name: comp.name,
+            avatarIdentifier: avatarSource && avatarSource.trim() ? avatarSource.trim() : '', // Ensure non-empty string
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+    });
     // Merge both sources, prioritizing user-created companions
     const allCompanions = useMemo(() => {
         const merged = [...formattedUserCompanions];
