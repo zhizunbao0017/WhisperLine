@@ -505,11 +505,10 @@ const AddEditDiaryScreen = () => {
     const [selectedThemeId, setSelectedThemeId] = useState(
         existingDiary?.themeID ?? existingDiary?.themeId ?? null
     );
-    const [heroVisual, setHeroVisual] = useState(() => {
-        const initialVisual = { type: 'image', source: DEFAULT_HERO_IMAGE };
-        return initialVisual;
-    });
+    // CRITICAL: Removed heroVisual state - will derive from live context data on every render
     const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
+    // CRITICAL: Track primary companion ID from AsyncStorage for new entries
+    const [primaryCompanionId, setPrimaryCompanionId] = useState(null);
     const processedInitialPlainText = useMemo(
         () => extractTextFromHTML(processedInitialContent || ''),
         [processedInitialContent]
@@ -550,22 +549,7 @@ const AddEditDiaryScreen = () => {
         return { uri: identifier };
     }, []);
 
-    const applyDefaultHero = useCallback(() => {
-        if (currentAvatar?.type === 'custom' && currentAvatar.image) {
-            const resolvedSource = resolveImageSource(currentAvatar.image);
-            setHeroVisual({
-                type: 'image',
-                source: resolvedSource,
-            });
-        } else if (currentAvatar?.type === 'system' && currentAvatar.source) {
-            setHeroVisual({
-                type: 'lottie',
-                source: currentAvatar.source,
-            });
-        } else {
-            setHeroVisual({ type: 'image', source: DEFAULT_HERO_IMAGE });
-        }
-    }, [currentAvatar, resolveImageSource]);
+    // CRITICAL: Removed applyDefaultHero - visual is now derived on every render from live context
 
     const baselineSnapshot = useMemo(() => {
         // Extract title from content for all themes
@@ -661,85 +645,7 @@ const AddEditDiaryScreen = () => {
         setAllCompanions(merged);
     }, [companionContext?.companions, userStateContext?.userState?.companions]);
 
-    // --- CRITICAL: Update hero visual based on selected companions ---
-    // Priority: Companion avatar > Theme visual > Default placeholder
-    // This useEffect has highest priority and runs whenever companions or allCompanions change
-    // IMPORTANT: Also check userState.companions directly to get the latest avatar updates
-    useEffect(() => {
-        // Priority 1: Check for associated companions FIRST
-        // CRITICAL: Check both allCompanions (for legacy) and userState.companions (for latest updates)
-        const selectedCompanionsData = selectedCompanionIDs
-            .map((id) => {
-                // First try to find in userState.companions (most up-to-date)
-                const userStateCompanion = userState?.companions?.[String(id)];
-                if (userStateCompanion) {
-                    // Extract avatar source from new format or legacy format
-                    const avatarSource = userStateCompanion.avatar?.source || userStateCompanion.avatarUri || '';
-                    return {
-                        id: userStateCompanion.id,
-                        name: userStateCompanion.name,
-                        avatarIdentifier: avatarSource,
-                        avatarUri: avatarSource,
-                        avatar: userStateCompanion.avatar, // Include new avatar format
-                    };
-                }
-                // Fallback to allCompanions (for legacy companions)
-                const found = allCompanions.find((item) => String(item.id) === String(id));
-                return found;
-            })
-            .filter(Boolean);
-
-        if (selectedCompanionsData.length > 0) {
-            // At least one companion is selected - prioritize companion avatar
-        if (selectedCompanionsData.length === 1) {
-            const companion = selectedCompanionsData[0];
-                const avatarUri = companion?.avatarUri || companion?.avatarIdentifier;
-                
-                if (avatarUri && avatarUri.trim()) {
-                    // Companion has avatar - use it (highest priority)
-                    const resolvedSource = resolveImageSource(avatarUri);
-                setHeroVisual({
-                    type: 'image',
-                        source: resolvedSource,
-                });
-                    return; // Exit early to prevent theme override
-            }
-        } else if (selectedCompanionsData.length > 1) {
-                // Multiple companions - use stacked view
-            const primaryCompanion = selectedCompanionsData[0];
-            const secondaryCompanion = selectedCompanionsData[1] || selectedCompanionsData[0];
-
-                const primaryUri = primaryCompanion?.avatarUri || primaryCompanion?.avatarIdentifier;
-                const secondaryUri = secondaryCompanion?.avatarUri || secondaryCompanion?.avatarIdentifier;
-
-                if (primaryUri || secondaryUri) {
-                    const primarySource = resolveImageSource(primaryUri);
-                    const secondarySource = resolveImageSource(secondaryUri);
-
-            setHeroVisual({
-                type: 'stacked',
-                primary: { source: primarySource },
-                secondary: { source: secondarySource },
-            });
-                    return; // Exit early to prevent theme override
-                }
-            }
-        }
-
-        // Priority 2: No companion or companion has no avatar - use theme visual
-        // This will only execute if no companion is selected or companion has no avatar
-        applyDefaultHero();
-    }, [allCompanions, selectedCompanionIDs, applyDefaultHero, resolveImageSource, companionsLoading, isEditMode, existingDiary?.companionIDs, userState?.companions]);
-
-    // Sync hero visual when currentAvatar changes (from Settings)
-    // Only update if no companions are selected (companion takes priority)
-    useEffect(() => {
-        // Only apply theme visual if no companions are selected
-        // Companion avatar has highest priority and should not be overridden
-        if (selectedCompanionIDs.length === 0 && hasInitialPrimaryApplied) {
-            applyDefaultHero();
-        }
-    }, [currentAvatar, selectedCompanionIDs.length, hasInitialPrimaryApplied, applyDefaultHero]);
+    // CRITICAL: Removed heroVisual useEffect - visual is now derived on every render from live context
 
     useEffect(() => {
         setContentHtml(processedInitialContent);
@@ -1313,47 +1219,47 @@ const AddEditDiaryScreen = () => {
                     storedPrimary === 'undefined' || 
                     storedPrimary === 'none') {
                     // No primary companion set or "No default companion" selected
-                    // Use empty array and apply theme image fallback
+                    setPrimaryCompanionId(null);
                     setSelectedCompanionIDs([]);
-                    applyDefaultHero();
                     setHasInitialPrimaryApplied(true);
                     return;
                 }
 
+                // CRITICAL: Store the primary companion ID for use in render
+                // The visual will be derived from live context data on every render
+                setPrimaryCompanionId(String(storedPrimary));
+                
                 // CRITICAL: Check userState.companions first (most up-to-date)
                 const userStateCompanion = userState?.companions?.[String(storedPrimary)];
-                let matched = null;
                 
                 if (userStateCompanion) {
-                    // Use companion from userState (has latest avatar)
-                    const avatarSource = userStateCompanion.avatar?.source || userStateCompanion.avatarUri || '';
-                    matched = {
+                    // Set primary companion as selected
+                    setSelectedCompanionIDs([String(userStateCompanion.id)]);
+                    console.log('[AddEditDiaryScreen] ✅ Loaded primary companion from userState:', {
                         id: userStateCompanion.id,
                         name: userStateCompanion.name,
-                        avatarIdentifier: avatarSource,
-                        avatarUri: avatarSource,
-                        avatar: userStateCompanion.avatar, // Include new avatar format
-                    };
+                        hasAvatar: !!(userStateCompanion.avatar?.source || userStateCompanion.avatarUri),
+                    });
                 } else {
                     // Fallback to allCompanions (for legacy companions)
-                    matched = allCompanions.find(
-                    (item) => String(item.id) === String(storedPrimary)
-                );
-                }
-
-                if (matched) {
-                    // Set primary companion as selected
-                    setSelectedCompanionIDs([String(matched.id)]);
-                } else {
-                    // Primary companion not found, clear it
-                    setSelectedCompanionIDs([]);
-                    await AsyncStorage.removeItem('primaryCompanionID');
-                    applyDefaultHero();
+                    const matched = allCompanions.find(
+                        (item) => String(item.id) === String(storedPrimary)
+                    );
+                    if (matched) {
+                        setSelectedCompanionIDs([String(matched.id)]);
+                        console.log('[AddEditDiaryScreen] ⚠️ Using legacy companion (not in userState):', matched.id);
+                    } else {
+                        // Primary companion not found, clear it
+                        console.warn('[AddEditDiaryScreen] ⚠️ Primary companion not found, clearing selection');
+                        setPrimaryCompanionId(null);
+                        setSelectedCompanionIDs([]);
+                        await AsyncStorage.removeItem('primaryCompanionID');
+                    }
                 }
             } catch (error) {
-                console.warn('Failed to load primary companion for editor', error);
+                console.warn('[AddEditDiaryScreen] Failed to load primary companion for editor', error);
+                setPrimaryCompanionId(null);
                 setSelectedCompanionIDs([]);
-                applyDefaultHero();
             } finally {
                 if (isMounted) {
                     setHasInitialPrimaryApplied(true);
@@ -1361,14 +1267,19 @@ const AddEditDiaryScreen = () => {
             }
         };
 
-        initializePrimaryCompanion();
+        // Only initialize for new entries (not edit mode)
+        if (!isEditMode) {
+            initializePrimaryCompanion();
+        } else {
+            // For edit mode, use existing companions from diary
+            setHasInitialPrimaryApplied(true);
+        }
 
         return () => {
             isMounted = false;
         };
     }, [
         allCompanions,
-        applyDefaultHero,
         companionsLoading,
         existingCompanionIds,
         hasInitialPrimaryApplied,
@@ -1523,127 +1434,122 @@ const AddEditDiaryScreen = () => {
             >
                     <View style={heroContainerStyle}>
                         {(() => {
-                            // --- BULLETPROOF renderHeaderVisual Function ---
-                            // This function handles all edge cases including "No default companion" state
+                            // --- CRITICAL: Derive hero visual from live context data on every render ---
+                            // This ensures the visual always reflects the current state from UserStateContext
                             
-                            // --- PRIORITY 1: EDIT MODE ---
-                            // In edit mode, the diary's own companion always takes precedence
+                            // Determine the primary companion object from the live state
+                            // Priority: Edit mode companion > Primary companion > None
+                            let primaryCompanion = null;
+                            
                             if (existingDiary && userState?.companions) {
+                                // EDIT MODE: Use companion from diary
                                 const companionIds = existingDiary.companionIDs || 
                                                     existingDiary.companionIds || 
                                                     existingDiary.companions || 
                                                     [];
-                                
-                                // Get the first companion ID (for single companion display)
                                 const firstCompanionId = Array.isArray(companionIds) ? companionIds[0] : companionIds;
-                                
                                 if (firstCompanionId) {
-                                    const companionIdStr = String(firstCompanionId);
-                                    const companion = userState.companions[companionIdStr];
-                                    
-                                    if (companion) {
-                                        // Get avatar source from new format or legacy format
-                                        const avatarSource = companion.avatar?.source || companion.avatarUri || companion.avatarIdentifier;
-                                        const avatarType = companion.avatar?.type || 'image'; // Default to image for legacy
-                                        
-                                        // CRITICAL: Validate that the path is NOT a temporary ImagePicker cache path
-                                        if (avatarSource && avatarSource.includes('Caches/ImagePicker')) {
-                                            console.error('[AddEditDiaryScreen] ⚠️ CRITICAL: Found temporary ImagePicker cache path in companion avatar! This should never happen.');
-                                            // Don't render with temporary path - it will cause infinite loops
-                                        } else if (avatarSource && avatarSource.trim()) {
-                                            try {
-                                                // Handle lottie type avatars
-                                                if (avatarType === 'lottie') {
-                                                    // For lottie, source should be the avatar ID (1-8)
-                                                    // We'll need to map it to the actual Lottie file
-                                                    // For now, fall through to image handling
-                                                }
-                                                
-                                                const resolvedSource = resolveImageSource(avatarSource);
-                                                return (
-                                                    <CompanionAvatarView 
-                                                        size={150} 
-                                                        visual={{ 
-                                                            type: 'image', 
-                                                            source: resolvedSource 
-                                                        }} 
-                                                    />
-                                                );
-                                            } catch (error) {
-                                                console.error('[AddEditDiaryScreen] Error resolving image source:', error);
-                                                // Fall through to next priority
-                                            }
-                                        }
-                                    }
+                                    primaryCompanion = userState.companions[String(firstCompanionId)];
                                 }
+                            } else if (!existingDiary && primaryCompanionId && userState?.companions) {
+                                // CREATE MODE: Use primary companion from settings
+                                primaryCompanion = userState.companions[String(primaryCompanionId)];
                             }
                             
-                            // --- PRIORITY 2: CREATE MODE with ACTIVE Primary Companion ---
-                            // Check if we're in create mode and have a valid primary companion
-                            // CRITICAL: Always check userState.companions directly for latest avatar updates
-                            if (!existingDiary && userState?.companions) {
-                                // Get primary companion ID from selectedCompanionIDs (set by useEffect)
-                                // This handles the case where primary companion is loaded from AsyncStorage
-                                if (selectedCompanionIDs && selectedCompanionIDs.length > 0) {
-                                    const primaryCompanionId = selectedCompanionIDs[0];
-                                    // CRITICAL: Always get from userState.companions for latest data
-                                    const companion = userState.companions[String(primaryCompanionId)];
-                                    
-                                    if (companion) {
-                                        // CRITICAL: Use avatar from new format (most up-to-date and permanent path)
-                                        const avatarSource = companion.avatar?.source;
-                                        const avatarType = companion.avatar?.type;
-                                        
-                                        // CRITICAL: Validate that the path is NOT a temporary ImagePicker cache path
-                                        if (avatarSource && avatarSource.includes('Caches/ImagePicker')) {
-                                            console.error('[AddEditDiaryScreen] ⚠️ CRITICAL: Found temporary ImagePicker cache path in companion avatar! This should never happen.');
-                                            // Don't render with temporary path - it will cause infinite loops
-                                        } else if (avatarSource && avatarSource.trim()) {
-                                            try {
-                                                // Handle lottie type avatars
-                                                if (avatarType === 'lottie') {
-                                                    // For lottie, source should be the avatar ID (1-8)
-                                                    // We'll need to map it to the actual Lottie file
-                                                    // For now, fall through to image handling
-                                                }
-                                                
-                                                const resolvedSource = resolveImageSource(avatarSource);
-                                                return (
-                                                    <CompanionAvatarView 
-                                                        size={150} 
-                                                        visual={{ 
-                                                            type: 'image', 
-                                                            source: resolvedSource 
-                                                        }} 
-                                                    />
-                                                );
-                                            } catch (error) {
-                                                console.error('[AddEditDiaryScreen] Error resolving primary companion image:', error);
-                                                // Fall through to theme fallback
-                                            }
-                                        }
-                                    }
-                                }
+                            // Derive hero visual source based on priority
+                            let heroVisualSource;
+                            
+                            if (primaryCompanion && primaryCompanion.avatar?.type === 'image' && primaryCompanion.avatar?.source) {
+                                // Case 1: Primary companion exists and has a custom image avatar
+                                const avatarSource = primaryCompanion.avatar.source;
                                 
-                                // If selectedCompanionIDs is empty, it means:
-                                // 1. No primary companion is set, OR
-                                // 2. "No default companion" is selected (stored as 'none', null, or undefined)
-                                // In both cases, we should fall back to theme image
+                                // CRITICAL: Validate that the path is NOT a temporary ImagePicker cache path
+                                if (avatarSource.includes('Caches/ImagePicker')) {
+                                    console.error('[AddEditDiaryScreen] ⚠️ CRITICAL: Found temporary ImagePicker cache path!');
+                                    // Fall through to theme fallback
+                                } else {
+                                    try {
+                                        heroVisualSource = resolveImageSource(avatarSource);
+                                        console.log('[AddEditDiaryScreen] ✅ Using primary companion image avatar:', avatarSource);
+                                        return (
+                                            <CompanionAvatarView 
+                                                size={150} 
+                                                visual={{ 
+                                                    type: 'image', 
+                                                    source: heroVisualSource 
+                                                }} 
+                                            />
+                                        );
+                                    } catch (error) {
+                                        console.error('[AddEditDiaryScreen] Error resolving companion image:', error);
+                                        // Fall through to theme fallback
+                                    }
+                                }
+                            } else if (primaryCompanion && primaryCompanion.avatar?.type === 'lottie' && primaryCompanion.avatar?.source) {
+                                // Case 2: Primary companion exists and has a default Lottie avatar
+                                heroVisualSource = primaryCompanion.avatar.source;
+                                console.log('[AddEditDiaryScreen] ✅ Using primary companion Lottie avatar:', heroVisualSource);
+                                return (
+                                    <CompanionAvatarView 
+                                        size={150} 
+                                        visual={{ 
+                                            type: 'lottie', 
+                                            source: heroVisualSource 
+                                        }} 
+                                    />
+                                );
+                            } else if (primaryCompanion && (primaryCompanion.avatarUri || primaryCompanion.avatarIdentifier)) {
+                                // Case 2b: Legacy format - companion has avatarUri or avatarIdentifier
+                                const avatarSource = primaryCompanion.avatarUri || primaryCompanion.avatarIdentifier;
+                                if (avatarSource && avatarSource.trim() && !avatarSource.includes('Caches/ImagePicker')) {
+                                    try {
+                                        heroVisualSource = resolveImageSource(avatarSource);
+                                        console.log('[AddEditDiaryScreen] ✅ Using primary companion legacy avatar:', avatarSource);
+                                        return (
+                                            <CompanionAvatarView 
+                                                size={150} 
+                                                visual={{ 
+                                                    type: 'image', 
+                                                    source: heroVisualSource 
+                                                }} 
+                                            />
+                                        );
+                                    } catch (error) {
+                                        console.error('[AddEditDiaryScreen] Error resolving legacy avatar:', error);
+                                        // Fall through to theme fallback
+                                    }
+                                }
                             }
                             
-                            // --- PRIORITY 3: THEME IMAGE FALLBACK ---
-                            // This path is reached when:
-                            // 1. CREATE mode with no primary companion set
-                            // 2. CREATE mode with "No default companion" selected ('none', null, undefined)
-                            // 3. EDIT mode for a diary with no companion
-                            // 4. Any error in resolving companion images
-                            
-                            // Use heroVisual state if it's valid (set by applyDefaultHero)
-                            if (heroVisual && typeof heroVisual === 'object' && heroVisual.source) {
-                                return <CompanionAvatarView size={150} visual={heroVisual} />;
+                            // Case 3 (Fallback): No primary companion or no avatar - use theme's default avatar
+                            if (currentAvatar?.type === 'custom' && currentAvatar.image) {
+                                heroVisualSource = resolveImageSource(currentAvatar.image);
+                                console.log('[AddEditDiaryScreen] ✅ Using theme custom avatar');
+                                return (
+                                    <CompanionAvatarView 
+                                        size={150} 
+                                        visual={{ 
+                                            type: 'image', 
+                                            source: heroVisualSource 
+                                        }} 
+                                    />
+                                );
+                            } else if (currentAvatar?.type === 'system' && currentAvatar.source) {
+                                heroVisualSource = currentAvatar.source;
+                                console.log('[AddEditDiaryScreen] ✅ Using theme system avatar');
+                                return (
+                                    <CompanionAvatarView 
+                                        size={150} 
+                                        visual={{ 
+                                            type: 'lottie', 
+                                            source: heroVisualSource 
+                                        }} 
+                                    />
+                                );
                             }
                             
                             // Final fallback: DEFAULT_HERO_IMAGE
+                            console.log('[AddEditDiaryScreen] ✅ Using default hero image');
                             return (
                                 <CompanionAvatarView 
                                     size={150} 

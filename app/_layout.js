@@ -32,6 +32,7 @@ import * as FileSystem from 'expo-file-system';
 import QuickCaptureContextValue from '../context/QuickCaptureContext';
 import { useFonts } from 'expo-font';
 import { ThemedText as Text } from '../components/ThemedText';
+import MediaService from '../services/MediaService';
 
 const FALLBACK_THEME_COLORS = {
     background: '#ffffff',
@@ -126,6 +127,16 @@ function RootLayoutNav() {
                 toastTimeoutRef.current = null;
             }
         };
+    }, []);
+
+    // CRITICAL: Initialize MediaService singleton on app startup
+    // This is the ONLY place where MediaService.initialize() should be called
+    // The singleton pattern ensures all imports receive the same instance
+    useEffect(() => {
+        MediaService.initialize().catch((error) => {
+            console.error('[App] Failed to initialize MediaService:', error);
+            // Don't block app startup - continue even if MediaService initialization fails
+        });
     }, []);
 
     const ensureDirectoryAsync = useCallback(async (dirUri) => {

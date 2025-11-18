@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,62 +12,102 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { CompanionContext } from '../context/CompanionContext';
+import { useUserState } from '../context/UserStateContext';
+import MediaService from '../services/MediaService';
 import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
 import { useTheme } from '@react-navigation/native';
 
 const OnboardingScreen = () => {
   const router = useRouter();
-  const { companions, addCompanion, isLoading } = useContext(CompanionContext);
   const { colors } = useTheme();
+  
+  // Get global state management functions
+  const { 
+    userState, 
+    addCompanion, // Use authoritative factory function
+    updateCompanion, 
+    setPrimaryCompanion,
+    isLoading 
+  } = useUserState();
 
-  const [selectedCompanionIDs, setSelectedCompanionIDs] = useState([]);
+  // Get companions from global state
+  const companions = useMemo(() => {
+    return Object.values(userState?.companions || {});
+  }, [userState?.companions]);
+
+  // Local UI state only
+  const [selectedCompanionId, setSelectedCompanionId] = useState(null);
   const [isCreateModalVisible, setCreateModalVisible] = useState(false);
   const [newCompanionName, setNewCompanionName] = useState('');
-  const [newCompanionAvatar, setNewCompanionAvatar] = useState(null);
+  const [isCreatingCompanion, setIsCreatingCompanion] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
 
+  // Load existing primary companion on mount
   useEffect(() => {
     (async () => {
-      const storedPrimary = await AsyncStorage.getItem('primaryCompanionID');
-      if (storedPrimary && storedPrimary !== 'null' && storedPrimary !== 'undefined') {
-        setSelectedCompanionIDs([String(storedPrimary)]);
+      try {
+        const storedPrimary = await AsyncStorage.getItem('primaryCompanionID');
+        if (storedPrimary && storedPrimary !== 'null' && storedPrimary !== 'undefined') {
+          setSelectedCompanionId(String(storedPrimary));
+        }
+      } catch (error) {
+        console.warn('Failed to load primary companion:', error);
       }
     })();
   }, []);
 
   const handleCompanionSelectionChange = (selectedCompanions = []) => {
     if (!selectedCompanions.length) {
-      setSelectedCompanionIDs([]);
+      setSelectedCompanionId(null);
       return;
     }
     const primary = selectedCompanions[selectedCompanions.length - 1];
-    setSelectedCompanionIDs([String(primary.id)]);
+    setSelectedCompanionId(String(primary.id));
   };
 
-  const handleOpenImagePicker = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Allow photo access to choose an avatar.');
-      return;
-    }
+  const handleAvatarPick = async (companionId) => {
+    try {
+      // CRITICAL: Validate companion exists
+      if (!companionId) {
+        console.warn('[OnboardingScreen] ⚠️ Cannot change avatar: companionId is null');
+        Alert.alert('Error', 'Please create the companion first before adding an avatar.');
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1,
-      allowsEditing: true,
-      aspect: [1, 1],
-    });
+      // Get the current companion from global state
+      const currentCompanion = userState?.companions?.[companionId];
+      if (!currentCompanion) {
+        Alert.alert('Error', 'Companion not found.');
+        return;
+      }
 
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setNewCompanionAvatar(result.assets[0].uri);
+      // CRITICAL: Use standard update flow - same as ManageCompanionsScreen
+      // MediaService handles image selection and storage, returns complete updated companion
+      const updatedCompanion = await MediaService.assignCompanionImage(
+        companionId,
+        null, // sourceUri = null means we want to pick from library
+        currentCompanion
+      );
+
+      if (updatedCompanion) {
+        // Immediately update global state with the new companion object
+        await updateCompanion(updatedCompanion);
+        console.log('[OnboardingScreen] ✅ Avatar updated successfully:', {
+          id: updatedCompanion.id,
+          name: updatedCompanion.name,
+          hasAvatar: !!updatedCompanion.avatar,
+        });
+      } else {
+        console.log('[OnboardingScreen] Avatar selection cancelled or failed');
+      }
+    } catch (error) {
+      console.error('[OnboardingScreen] ❌ Failed to update avatar:', error);
+      Alert.alert('Error', 'Failed to update avatar. Please try again.');
     }
   };
 
   const resetCreateModal = () => {
     setNewCompanionName('');
-    setNewCompanionAvatar(null);
   };
 
   const handleCreateCompanion = async () => {
@@ -76,37 +116,50 @@ const OnboardingScreen = () => {
       return;
     }
 
+    setIsCreatingCompanion(true);
     try {
-      const created = await addCompanion({
-        name: newCompanionName.trim(),
-        avatarIdentifier: newCompanionAvatar || '',
+      // CRITICAL: Use authoritative addCompanion factory function
+      // This creates the companion atomically with a default avatar
+      const newCompanion = await addCompanion(newCompanionName.trim());
+      
+      console.log('[OnboardingScreen] ✅ Created companion:', {
+        id: newCompanion.id,
+        name: newCompanion.name,
+        hasDefaultAvatar: !!newCompanion.avatar,
       });
-      setSelectedCompanionIDs([String(created.id)]);
+      
+      // Automatically select the newly created companion
+      setSelectedCompanionId(newCompanion.id);
+      
       setCreateModalVisible(false);
       resetCreateModal();
     } catch (error) {
-      console.error('Failed to create companion', error);
+      console.error('[OnboardingScreen] ❌ Failed to create companion:', error);
       Alert.alert('Error', 'Unable to create companion. Please try again.');
+    } finally {
+      setIsCreatingCompanion(false);
     }
   };
 
   const companionsData = useMemo(() => companions || [], [companions]);
 
   const handleCompleteOnboarding = async () => {
-    if (!selectedCompanionIDs.length) {
+    if (!selectedCompanionId) {
       Alert.alert('Select a companion', 'Please select your primary companion to continue.');
       return;
     }
     setIsCompleting(true);
     try {
-      const primaryId = String(selectedCompanionIDs[0]);
-      await AsyncStorage.multiSet([
-        ['primaryCompanionID', primaryId],
-        ['hasCompletedOnboarding', 'true'],
-      ]);
+      // Set primary companion using global service
+      await setPrimaryCompanion(selectedCompanionId);
+      
+      // Mark onboarding as complete
+      await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+      
+      // Navigate to main app
       router.replace('/(tabs)');
     } catch (error) {
-      console.error('Failed to complete onboarding', error);
+      console.error('[OnboardingScreen] Failed to complete onboarding:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompleting(false);
@@ -119,11 +172,16 @@ const OnboardingScreen = () => {
     }
     setIsCompleting(true);
     try {
-      await AsyncStorage.removeItem('primaryCompanionID');
+      // Clear primary companion using global service
+      await setPrimaryCompanion(null);
+      
+      // Mark onboarding as complete
       await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+      
+      // Navigate to main app
       router.replace('/(tabs)');
     } catch (error) {
-      console.error('Failed to skip onboarding', error);
+      console.error('[OnboardingScreen] Failed to skip onboarding:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompleting(false);
@@ -180,7 +238,7 @@ const OnboardingScreen = () => {
           ) : (
             <CompanionSelectorCarousel
               allCompanions={companionsData}
-              selectedIDs={selectedCompanionIDs}
+              selectedIDs={selectedCompanionId ? [selectedCompanionId] : []}
               onSelectionChange={handleCompanionSelectionChange}
             />
           )}
@@ -202,13 +260,13 @@ const OnboardingScreen = () => {
             style={[
               styles.primaryButton,
               {
-                backgroundColor: selectedCompanionIDs.length ? colors.primary : colors.border,
+                backgroundColor: selectedCompanionId ? colors.primary : colors.border,
               },
             ]}
-            disabled={!selectedCompanionIDs.length || isCompleting}
+            disabled={!selectedCompanionId || isCompleting}
             onPress={handleCompleteOnboarding}
           >
-            {isCompleting && selectedCompanionIDs.length ? (
+            {isCompleting && selectedCompanionId ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryButtonText}>Continue</Text>
@@ -236,14 +294,9 @@ const OnboardingScreen = () => {
               placeholderTextColor={colors.border}
               style={[styles.modalInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
             />
-            <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: colors.primary }]}
-              onPress={handleOpenImagePicker}
-            >
-              <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
-                {newCompanionAvatar ? 'Change Avatar' : 'Pick Optional Avatar'}
-              </Text>
-            </TouchableOpacity>
+            <Text style={[styles.modalHint, { color: colors.text }]}>
+              You can set an avatar after creating the companion by tapping on it.
+            </Text>
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.secondaryButton, { borderColor: colors.border }]}
@@ -257,8 +310,13 @@ const OnboardingScreen = () => {
               <TouchableOpacity
                 style={[styles.primaryButton, { backgroundColor: colors.primary }]}
                 onPress={handleCreateCompanion}
+                disabled={isCreatingCompanion}
               >
-                <Text style={styles.primaryButtonText}>Save</Text>
+                {isCreatingCompanion ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Save</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -385,6 +443,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     marginBottom: 16,
+  },
+  modalHint: {
+    fontSize: 14,
+    marginBottom: 16,
+    textAlign: 'center',
+    opacity: 0.7,
   },
   secondaryButton: {
     paddingVertical: 12,

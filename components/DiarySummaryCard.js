@@ -234,9 +234,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    paddingTop: 10,
+    paddingTop: 12, // 增加上边距，确保表情图标不被遮挡
     paddingHorizontal: 0,
-    minHeight: 40,
+    minHeight: 44, // 增加最小高度，为表情图标提供更多空间
   },
   footerLeft: { 
     flexDirection: 'row', 
@@ -264,13 +264,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
     minWidth: 32,
-    height: 32,
+    height: 36, // 增加容器高度，确保表情图标有足够空间
+    paddingTop: 2, // 添加顶部内边距，使表情图标稍微下移
     flexShrink: 0,
   },
   emotionEmoji: {
     fontSize: 22,
-    lineHeight: 22,
+    lineHeight: 28, // 增加行高，确保表情图标完整显示
     textAlign: 'center',
+    includeFontPadding: false, // 移除字体内边距，避免额外空间
   },
   emotionIcon: {
     width: 22,

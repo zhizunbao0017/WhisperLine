@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to get the current weather for your diary entry.",
         "NSFaceIDUsageDescription": "WhisperLine uses Face ID to securely lock and protect your entries.",
-        "NSPhotoLibraryUsageDescription": "To let you choose a custom companion avatar from your photos.",
+        "NSPhotoLibraryUsageDescription": "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
+        "NSCameraUsageDescription": "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.xietian.whisperline",
@@ -28,7 +29,12 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.xietian.whisperline"
+      "package": "com.xietian.whisperline",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "output": "static",
@@ -37,6 +43,13 @@
     "plugins": [
       "expo-router",
       "expo-dev-client",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
+          "cameraPermission": "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
+        }
+      ],
       [
         "expo-splash-screen",
         {

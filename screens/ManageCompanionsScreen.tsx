@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useUserState } from '../context/UserStateContext';
 import { Companion } from '../models/PIE';
 import { ThemeContext } from '../context/ThemeContext';
@@ -25,7 +26,8 @@ import MediaService from '../services/MediaService';
 
 const ManageCompanionsScreen = () => {
   const router = useRouter();
-  const { userState, updateUserState } = useUserState();
+  // CRITICAL: Single source of truth - get companions directly from context
+  const { userState, addCompanion, updateCompanion, deleteCompanion, isLoading } = useUserState();
   const themeContext = React.useContext(ThemeContext);
   const colors = themeContext?.colors ?? {
     background: '#ffffff',
@@ -41,146 +43,103 @@ const ManageCompanionsScreen = () => {
   const [editingAvatarUri, setEditingAvatarUri] = useState<string | null>(null);
   const [pickingAvatarForId, setPickingAvatarForId] = useState<string | null>(null);
 
-  const companions = useMemo(() => {
-    return Object.values(userState.companions || {});
-  }, [userState.companions]);
-
-  const handleAddCompanion = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Please enter a companion name');
-      return;
-    }
-
-    // Check for duplicate names
-    const existingNames = companions.map((c) => c.name.toLowerCase().trim());
-    if (existingNames.includes(name.toLowerCase().trim())) {
-      Alert.alert('Error', 'A companion with this name already exists');
-      return;
-    }
-
-    const newId = `comp-${Date.now()}`;
-    
-    // If there's a temporary avatar URI, we need to move it to the final companion ID
-    let finalAvatar: Companion['avatar'] = undefined;
-    let finalAvatarUri = editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined;
-    
-    // CRITICAL: Check if path is temporary (ImagePicker cache) and copy to permanent storage
-    if (finalAvatarUri) {
-      // Check if it's a temporary path (ImagePicker cache or temp directory)
-      const isTemporary = finalAvatarUri.includes('Caches/ImagePicker') || 
-                         finalAvatarUri.includes('cache/ImagePicker') ||
-                         finalAvatarUri.includes('ImagePicker') ||
-                         finalAvatarUri.includes('temp-');
-      
-      if (isTemporary) {
-        console.warn('[ManageCompanionsScreen] ⚠️ CRITICAL: Found temporary path in editingAvatarUri, copying to permanent storage:', finalAvatarUri);
-        try {
-          // Use MediaService to copy the temporary image to the final companion location
-          const fileInfo = await MediaService.getMediaAssetInfo(finalAvatarUri);
-          if (fileInfo.exists) {
-            const mediaAsset = await MediaService.importExternalImage(
-              finalAvatarUri,
-              'companion',
-              newId
-            );
-            finalAvatarUri = mediaAsset.localPath;
-            
-            // Verify the new path is permanent
-            if (finalAvatarUri.includes('Caches/ImagePicker') || finalAvatarUri.includes('ImagePicker')) {
-              throw new Error('Failed to copy to permanent storage - path still temporary');
-            }
-            
-            console.log('[ManageCompanionsScreen] ✅ Successfully copied to permanent path:', finalAvatarUri);
-            
-            // Delete the temporary file
-            try {
-              await MediaService.deleteMediaAsset(editingAvatarUri);
-            } catch (error) {
-              console.warn('[ManageCompanionsScreen] Failed to delete temporary avatar:', error);
-            }
-          } else {
-            console.error('[ManageCompanionsScreen] Temporary file does not exist:', finalAvatarUri);
-            finalAvatarUri = undefined; // Don't use non-existent file
-          }
-        } catch (error) {
-          console.error('[ManageCompanionsScreen] ⚠️ CRITICAL: Failed to copy temporary avatar to permanent storage:', error);
-          // Don't save with temporary path - it will cause infinite loops
-          finalAvatarUri = undefined;
-          Alert.alert('Error', 'Failed to save avatar. Please try selecting the image again.');
-        }
-      } else {
-        // Path is already permanent, verify it exists
-        try {
-          const fileInfo = await MediaService.getMediaAssetInfo(finalAvatarUri);
-          if (!fileInfo.exists) {
-            console.warn('[ManageCompanionsScreen] Permanent path does not exist:', finalAvatarUri);
-            finalAvatarUri = undefined;
-          }
-        } catch (error) {
-          console.warn('[ManageCompanionsScreen] Failed to verify permanent path:', error);
-          finalAvatarUri = undefined;
-        }
-      }
-    }
-    
-    // Convert avatarUri to new avatar format (only if we have a valid permanent path)
-    if (finalAvatarUri && !finalAvatarUri.includes('Caches/ImagePicker') && !finalAvatarUri.includes('ImagePicker')) {
-      finalAvatar = {
-        type: 'image',
-        source: finalAvatarUri,
-      };
-    } else if (finalAvatarUri) {
-      // Path is still temporary - don't save it
-      console.error('[ManageCompanionsScreen] ⚠️ CRITICAL: Refusing to save temporary path to companion:', finalAvatarUri);
-      finalAvatar = undefined;
-    }
-    
-    const newCompanion: Companion = {
-      id: newId,
-      name: name.trim(),
-      isInteractionEnabled: false, // Default to disabled
-      avatar: finalAvatar,
-    };
-    
-    // Debug: Log new companion creation
-    console.log('[ManageCompanionsScreen] Creating new companion:', {
-      id: newId,
-      name: name.trim(),
-      editingAvatarUri,
-      finalAvatar: newCompanion.avatar,
+  // CRITICAL: Convert the companions object to an array for rendering
+  // This ensures any change to the global companions object will automatically trigger a re-render
+  const companionsArray = Object.values(userState?.companions || {});
+  
+  // Debug: Log companions array and state for troubleshooting
+  React.useEffect(() => {
+    const companionCount = companionsArray.length;
+    const companionIds = companionsArray.map(c => c.id);
+    const companionNames = companionsArray.map(c => c.name);
+    console.log(`[ManageCompanionsScreen] State check:`, {
+      isLoading,
+      userStateExists: !!userState,
+      companionsObject: userState?.companions,
+      companionCount,
+      ids: companionIds,
+      names: companionNames,
     });
+  }, [companionsArray, isLoading, userState]);
 
-    const updatedCompanions = {
-      ...(userState.companions || {}),
-      [newId]: newCompanion,
-    };
+  /**
+   * Handle adding a new companion
+   * CRITICAL: Uses the authoritative addCompanion factory function
+   * Flow:
+   * 1. Input Validation
+   * 2. Create Companion Object (via addCompanion - atomic, with default avatar)
+   * 3. Clear UI State
+   * 
+   * Note: Avatar changes are handled separately via handleAvatarChange after companion exists
+   */
+  const handleAddCompanion = async () => {
+    try {
+      // Step 1: Input Validation
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        Alert.alert('Error', 'Please enter a companion name');
+        return;
+      }
 
-    const updatedState = {
-      ...userState,
-      companions: updatedCompanions,
-      lastUpdatedAt: new Date().toISOString(),
-    };
+      // Check for duplicate names
+      const existingNames = companionsArray.map((c) => c.name.toLowerCase().trim());
+      if (existingNames.includes(trimmedName.toLowerCase())) {
+        Alert.alert('Error', 'A companion with this name already exists');
+        return;
+      }
 
-    await updateUserState(updatedState);
-    setName('');
-    setEditingAvatarUri(null); // Clear avatar preview
+      // Step 2: Create Companion Object using authoritative factory
+      // CRITICAL: addCompanion creates the companion atomically with a default avatar
+      // The companion MUST exist before its avatar can be changed
+      const newCompanion = await addCompanion(trimmedName);
+      console.log('[ManageCompanionsScreen] ✅ Created companion:', {
+        id: newCompanion.id,
+        name: newCompanion.name,
+        hasDefaultAvatar: !!newCompanion.avatar,
+      });
+
+      // Step 3: Clear UI State
+      // The companion is now created and persisted - user can change avatar by tapping camera icon
+      setName('');
+      setEditingAvatarUri(null); // Clear any temporary avatar selection
+      
+      console.log('[ManageCompanionsScreen] ✅ Companion creation completed successfully');
+    } catch (error) {
+      console.error('[ManageCompanionsScreen] ❌ Failed to add companion:', error);
+      Alert.alert('Error', error.message || 'Failed to create companion. Please try again.');
+    }
   };
 
   const handleStartEdit = (companion: Companion) => {
     setEditingId(companion.id);
-    setEditingName(companion.name);
-    // Extract source from avatar object, or fallback to legacy avatarUri
-    const avatarSource = companion.avatar?.source || companion.avatarUri || null;
-    setEditingAvatarUri(avatarSource);
+    // CRITICAL: Ensure name is always a string, never undefined or null
+    setEditingName(companion.name || '');
+    // CRITICAL: Initialize editingAvatarUri to null (not the current avatar source)
+    // This allows us to detect if user picked a new image during editing
+    // null = no change, string = new image picked (temporary URI)
+    setEditingAvatarUri(null);
   };
 
+  /**
+   * CRITICAL: Refactored handleSaveEdit to properly persist changes to global state
+   * This closes the "State Island" bug in the edit modal
+   * 
+   * Flow:
+   * 1. Validate input (name)
+   * 2. Check for name change
+   * 3. Check for avatar change (highest priority - must call MediaService)
+   * 4. If avatar changed, call MediaService.assignCompanionImage with newAvatarUri
+   * 5. Update name on the final companion object if needed
+   * 6. Commit to global state via updateCompanion
+   * 7. Close edit modal
+   */
   const handleSaveEdit = async () => {
     if (!editingId || !editingName.trim()) {
       return;
     }
 
     // Check for duplicate names (excluding the current one being edited)
-    const existingNames = companions
+    const existingNames = companionsArray
       .filter((c) => c.id !== editingId)
       .map((c) => c.name.toLowerCase().trim());
     if (existingNames.includes(editingName.toLowerCase().trim())) {
@@ -188,176 +147,267 @@ const ManageCompanionsScreen = () => {
       return;
     }
 
-    // Handle avatar update: if editingAvatarUri changed, delete old avatar
-    const oldCompanion = userState.companions[editingId];
-    const oldAvatarSource = oldCompanion?.avatar?.source || oldCompanion?.avatarUri;
-    let newAvatarSource = editingAvatarUri !== null 
-      ? (editingAvatarUri && editingAvatarUri.trim() ? editingAvatarUri.trim() : undefined)
-      : oldAvatarSource;
-    
-    // CRITICAL: Validate that new avatar source is NOT a temporary path
-    if (newAvatarSource) {
-      const isTemporary = newAvatarSource.includes('Caches/ImagePicker') || 
-                         newAvatarSource.includes('cache/ImagePicker') ||
-                         newAvatarSource.includes('ImagePicker');
-      
-      if (isTemporary) {
-        console.error('[ManageCompanionsScreen] ⚠️ CRITICAL: Attempted to save temporary path! This should never happen.');
-        console.error('[ManageCompanionsScreen] Temporary path:', newAvatarSource);
-        Alert.alert('Error', 'Invalid avatar path. Please select the image again.');
-        return; // Don't save with temporary path
-      }
-    }
-    
-    // If avatar changed, delete the old one
-    if (oldAvatarSource && oldAvatarSource !== newAvatarSource && oldAvatarSource.startsWith('file://')) {
-      // Only delete if old path is permanent (not temporary)
-      const oldIsTemporary = oldAvatarSource.includes('Caches/ImagePicker') || oldAvatarSource.includes('ImagePicker');
-      if (!oldIsTemporary) {
-        try {
-          await MediaService.deleteMediaAsset(oldAvatarSource);
-        } catch (error) {
-          console.warn('[ManageCompanionsScreen] Failed to delete old avatar:', error);
-          // Continue with update even if deletion fails
-        }
-      }
-    }
-    
-    // Convert to new avatar format (only if we have a valid permanent path)
-    const newAvatar: Companion['avatar'] = newAvatarSource && 
-                                           !newAvatarSource.includes('Caches/ImagePicker') && 
-                                           !newAvatarSource.includes('ImagePicker')
-      ? { type: 'image', source: newAvatarSource }
-      : undefined;
-    
-    const updatedCompanions = {
-      ...(userState.companions || {}),
-      [editingId]: {
-        ...userState.companions[editingId],
-        name: editingName.trim(),
-        // Preserve isInteractionEnabled if it exists, otherwise default to false
-        isInteractionEnabled: userState.companions[editingId]?.isInteractionEnabled !== false,
-        // Update avatar with new format
-        avatar: newAvatar,
-      },
-    };
-    
-    // Debug: Log avatar URI update
-    console.log('[ManageCompanionsScreen] Saving companion:', {
-      id: editingId,
-      name: editingName.trim(),
-      editingAvatarUri,
-      finalAvatarUri: updatedCompanions[editingId].avatarUri,
-    });
-
-    const updatedState = {
-      ...userState,
-      companions: updatedCompanions,
-      lastUpdatedAt: new Date().toISOString(),
-    };
-
-    await updateUserState(updatedState);
-    setEditingId(null);
-    setEditingName('');
-    setEditingAvatarUri(null);
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditingName('');
-    setEditingAvatarUri(null);
-  };
-
-  const handlePickAvatar = async (companionId: string | null) => {
     try {
-      setPickingAvatarForId(companionId);
-      
-      // Use MediaService to handle image selection and storage
-      // If companionId is null, we're adding a new companion, so use a temporary ID
-      const tempId = companionId || `temp-${Date.now()}`;
-      const avatar = await MediaService.assignCompanionImage(tempId);
-      
-      if (!avatar) {
-        // User cancelled
+      // Get the current companion from state
+      const currentCompanion = userState.companions[editingId];
+      if (!currentCompanion) {
+        Alert.alert('Error', 'Companion not found');
         return;
       }
 
-      // MediaService now returns { type: 'image', source: 'file://...' }
-      // Store the avatar object temporarily in state (as string for compatibility)
-      const avatarUri = avatar.source; // For temporary storage, we use source
+      // Step 1: Check for name change
+      const nameChanged = editingName.trim() !== currentCompanion.name;
       
-      if (companionId === null) {
-        // Adding new companion - store temporarily in state
-        setEditingAvatarUri(avatarUri);
-      } else {
-        // Updating existing companion
-        if (editingId === companionId) {
-          // Update editing state
-          setEditingAvatarUri(avatarUri);
+      // Step 2: Check for avatar change (highest priority)
+      // editingAvatarUri !== null means user picked a new image during editing
+      const avatarChanged = editingAvatarUri !== null;
+      
+      let finalUpdatedCompanion: Companion = currentCompanion;
+
+      // Step 3: Handle avatar change (highest priority - must call MediaService)
+      if (avatarChanged) {
+        if (editingAvatarUri && editingAvatarUri.trim()) {
+          // User picked a new image - must process it through MediaService
+          // CRITICAL: Pass editingAvatarUri as sourceUri to MediaService
+          // MediaService will copy it to permanent storage and return complete updated companion
+          console.log('[ManageCompanionsScreen] Processing new avatar through MediaService:', editingAvatarUri);
+          
+          const updatedCompanionFromMedia = await MediaService.assignCompanionImage(
+            editingId,
+            editingAvatarUri, // Pass the temporary URI from image picker
+            currentCompanion
+          );
+          
+          if (!updatedCompanionFromMedia) {
+            // User cancelled or error occurred
+            console.log('[ManageCompanionsScreen] Avatar processing cancelled or failed');
+            return;
+          }
+          
+          // MediaService returned complete updated companion object with new avatar
+          finalUpdatedCompanion = updatedCompanionFromMedia;
+          
+          console.log('[ManageCompanionsScreen] ✅ Avatar processed successfully:', {
+            id: finalUpdatedCompanion.id,
+            hasAvatar: !!finalUpdatedCompanion.avatar,
+          });
         } else {
-          // Update directly in userState with new avatar format
-          const updatedCompanion = {
-            ...userState.companions[companionId],
-            avatar: avatar, // Use new avatar format
+          // User removed avatar (set to empty string)
+          finalUpdatedCompanion = {
+            ...currentCompanion,
+            avatar: undefined,
           };
-          const updatedCompanions = {
-            ...userState.companions,
-            [companionId]: updatedCompanion,
-          };
-          const updatedState = {
-            ...userState,
-            companions: updatedCompanions,
-            lastUpdatedAt: new Date().toISOString(),
-          };
-          await updateUserState(updatedState);
         }
       }
+
+      // Step 4: Update name if it changed
+      if (nameChanged) {
+        finalUpdatedCompanion = {
+          ...finalUpdatedCompanion,
+          name: editingName.trim(),
+        };
+        console.log('[ManageCompanionsScreen] ✅ Name updated:', editingName.trim());
+      }
+
+      // Step 5: Commit to global state
+      // This ensures perfect state synchronization and triggers UI re-render
+      await updateCompanion(finalUpdatedCompanion);
+      
+      console.log('[ManageCompanionsScreen] ✅ Edit saved successfully:', {
+        id: finalUpdatedCompanion.id,
+        name: finalUpdatedCompanion.name,
+        nameChanged,
+        avatarChanged,
+        hasAvatar: !!finalUpdatedCompanion.avatar,
+      });
+
+      // Step 6: Clear editing state and close modal
+      setEditingId(null);
+      setEditingName('');
+      setEditingAvatarUri(null);
     } catch (error) {
-      console.error('[ManageCompanionsScreen] Failed to pick avatar:', error);
+      console.error('[ManageCompanionsScreen] ❌ Failed to save edit:', error);
+      console.error('[ManageCompanionsScreen] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        editingId,
+        editingName,
+        editingAvatarUri,
+        nameChanged,
+        avatarChanged,
+      });
       Alert.alert(
         'Error',
         error.message === 'Permission to access media library was denied'
-          ? 'Please grant photo library access to add an avatar.'
-          : 'Failed to pick image. Please try again.'
+          ? 'Please grant photo library access to update the avatar.'
+          : `Failed to save changes: ${error.message || 'Unknown error'}. Please try again.`
       );
+    }
+  };
+
+  /**
+   * CRITICAL: Cancel button must be clean - only close modal, no state updates
+   * This ensures no side effects when user cancels editing
+   */
+  const handleCancelEdit = () => {
+    // Simply close the edit modal - do nothing else
+    setEditingId(null);
+    setEditingName('');
+    setEditingAvatarUri(null);
+  };
+
+  /**
+   * Handle avatar change for a companion
+   * CRITICAL: Companion MUST exist before avatar can be changed
+   * This function's only job is to call MediaService and then update the central state
+   * @param companionId - ID of the companion (MUST NOT be null - companion must exist)
+   */
+  const handleAvatarChange = async (companionId: string) => {
+    try {
+      // CRITICAL: Validate companion exists
+      if (!companionId) {
+        console.warn('[ManageCompanionsScreen] ⚠️ Cannot change avatar: companionId is null');
+        Alert.alert('Error', 'Please create the companion first before adding an avatar.');
+        return;
+      }
+
+      setPickingAvatarForId(companionId);
+      
+      // Get the current companion from state
+      const currentCompanion = userState.companions?.[companionId];
+      if (!currentCompanion) {
+        console.warn('[ManageCompanionsScreen] ⚠️ Companion not found:', companionId);
+        Alert.alert('Error', 'Companion not found. Please try again.');
+        return;
+      }
+
+      // Pass currentCompanion to MediaService so it can return the complete updated object
+      // MediaService will launch picker, copy image, and return complete updated companion object
+      const updatedCompanion = await MediaService.assignCompanionImage(
+        companionId,
+        null, // sourceUri = null means pick from library
+        currentCompanion
+      );
+      
+      // CRITICAL: If the service returns an updated companion object,
+      // immediately update the central state with it
+      // This ensures perfect state synchronization and triggers UI re-render
+      if (updatedCompanion) {
+        // The returned object is already a complete Companion object with updated avatar
+        // No need to manually construct it - MediaService did that for us
+        await updateCompanion(updatedCompanion);
+        
+        console.log('[ManageCompanionsScreen] ✅ Companion avatar updated successfully:', {
+          id: updatedCompanion.id,
+          name: updatedCompanion.name,
+          hasAvatar: !!updatedCompanion.avatar,
+        });
+      } else {
+        console.log('[ManageCompanionsScreen] Avatar selection cancelled');
+      }
+    } catch (error) {
+      // Check if error is cancellation (user cancelled picker)
+      if (error.code !== 'cancelled' && error.message !== 'User cancelled image selection') {
+        console.error('[ManageCompanionsScreen] ❌ Failed to change avatar:', error);
+        Alert.alert(
+          'Error',
+          error.message === 'Permission to access media library was denied'
+            ? 'Please grant photo library access to add an avatar.'
+            : 'Failed to pick image. Please try again.'
+        );
+      }
     } finally {
       setPickingAvatarForId(null);
     }
   };
 
+  /**
+   * Handle picking avatar for editing mode
+   * CRITICAL: This function only updates local state (editingAvatarUri)
+   * It does NOT call MediaService - MediaService is only called during handleSaveEdit
+   * This ensures the edit modal is a proper "State Island" that only commits on save
+   * @param companionId - ID of the companion being edited
+   */
+  const handlePickAvatarForEdit = async (companionId: string) => {
+    try {
+      // Request permission
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted && permissionResult.status !== 'limited') {
+        Alert.alert(
+          'Permission Required',
+          'Please grant photo library access to select an avatar.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1], // Square aspect ratio for avatars
+        quality: 0.8,
+      });
+
+      // Handle user cancellation
+      if (result.canceled || !result.assets?.[0]?.uri) {
+        console.log('[ManageCompanionsScreen] Avatar selection cancelled');
+        return;
+      }
+
+      // CRITICAL: Only update local state - do NOT call MediaService here
+      // MediaService will be called during handleSaveEdit to process the image
+      const pickedImageUri = result.assets[0].uri;
+      setEditingAvatarUri(pickedImageUri);
+      
+      console.log('[ManageCompanionsScreen] Avatar picked for editing (local state only):', pickedImageUri);
+    } catch (error) {
+      console.error('[ManageCompanionsScreen] Failed to pick avatar:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  /**
+   * Handle picking avatar (legacy function name, redirects to handleAvatarChange)
+   * @deprecated Use handleAvatarChange instead
+   */
+  const handlePickAvatar = handleAvatarChange;
+
   const handleRemoveAvatar = async (companionId: string) => {
     try {
       const companion = userState.companions[companionId];
-      const avatarUri = companion?.avatarUri;
+      if (!companion) {
+        console.warn('[ManageCompanionsScreen] Companion not found:', companionId);
+        return;
+      }
+
+      // If editing this companion, just clear the editing avatar URI
+      if (editingId === companionId) {
+        setEditingAvatarUri(null);
+        return;
+      }
+
+      // Get avatar source for deletion
+      const avatarSource = companion.avatar?.source || companion.avatarUri;
 
       // Delete the media asset from storage if it exists
-      if (avatarUri && avatarUri.startsWith('file://')) {
+      if (avatarSource && avatarSource.startsWith('file://')) {
         try {
-          await MediaService.deleteMediaAsset(avatarUri);
+          await MediaService.deleteMediaAsset(avatarSource);
         } catch (error) {
           console.warn('[ManageCompanionsScreen] Failed to delete media asset:', error);
           // Continue with removing from state even if file deletion fails
         }
       }
 
-      if (editingId === companionId) {
-        setEditingAvatarUri(null);
-      } else {
-        const updatedCompanion = {
-          ...userState.companions[companionId],
-          avatarUri: undefined,
-        };
-        const updatedCompanions = {
-          ...userState.companions,
-          [companionId]: updatedCompanion,
-        };
-        const updatedState = {
-          ...userState,
-          companions: updatedCompanions,
-          lastUpdatedAt: new Date().toISOString(),
-        };
-        await updateUserState(updatedState);
-      }
+      // Create updated companion without avatar
+      const updatedCompanion: Companion = {
+        ...companion,
+        avatar: undefined,
+      };
+
+      // Use updateCompanion from context - this will trigger re-render
+      await updateCompanion(updatedCompanion);
     } catch (error) {
       console.error('[ManageCompanionsScreen] Failed to remove avatar:', error);
       Alert.alert('Error', 'Failed to remove avatar. Please try again.');
@@ -366,6 +416,8 @@ const ManageCompanionsScreen = () => {
 
   // Helper to get avatar source for display
   const getAvatarUri = (companion: Companion, isEditing: boolean): string | null => {
+    // CRITICAL: In editing mode, if editingAvatarUri is set, show the picked image (even if temporary)
+    // This gives user immediate feedback of their selection
     if (isEditing && editingAvatarUri !== null) {
       return editingAvatarUri;
     }
@@ -396,7 +448,19 @@ const ManageCompanionsScreen = () => {
     return colors[code % colors.length];
   };
 
-  const handleDeleteCompanion = (companion: Companion) => {
+  /**
+   * Handle deleting a companion
+   * Shows confirmation alert and calls deleteCompanion from context
+   * The context is responsible for all deletion logic (including deleting media assets)
+   * @param companionId - ID of the companion to delete
+   */
+  const handleDelete = (companionId: string) => {
+    const companion = userState.companions[companionId];
+    if (!companion) {
+      console.warn('[ManageCompanionsScreen] Companion not found:', companionId);
+      return;
+    }
+
     Alert.alert(
       'Delete Companion',
       `Are you sure you want to delete "${companion.name}"? This cannot be undone.`,
@@ -407,27 +471,9 @@ const ManageCompanionsScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Delete companion's avatar from storage if it exists (only for image type)
-              const avatarSource = companion.avatar?.source || companion.avatarUri;
-              if (avatarSource && avatarSource.startsWith('file://') && companion.avatar?.type === 'image') {
-                try {
-                  await MediaService.deleteMediaAsset(avatarSource);
-                } catch (error) {
-                  console.warn('[ManageCompanionsScreen] Failed to delete companion avatar:', error);
-                  // Continue with companion deletion even if avatar deletion fails
-                }
-              }
-
-              const updatedCompanions = { ...(userState.companions || {}) };
-              delete updatedCompanions[companion.id];
-
-              const updatedState = {
-                ...userState,
-                companions: updatedCompanions,
-                lastUpdatedAt: new Date().toISOString(),
-              };
-
-              await updateUserState(updatedState);
+              // Simply call deleteCompanion from context
+              // The context handles all deletion logic including media cleanup
+              await deleteCompanion(companionId);
             } catch (error) {
               console.error('[ManageCompanionsScreen] Failed to delete companion:', error);
               Alert.alert('Error', 'Failed to delete companion. Please try again.');
@@ -441,8 +487,11 @@ const ManageCompanionsScreen = () => {
   const renderCompanionItem = ({ item }: { item: Companion }) => {
     const isEditing = editingId === item.id;
     const avatarUri = getAvatarUri(item, isEditing);
-    const initials = getInitials(isEditing ? editingName : item.name);
-    const fallbackColor = getFallbackColor(isEditing ? editingName : item.name);
+    // CRITICAL: Ensure name is always available for display
+    const displayName = item.name || item.id || 'Unnamed Companion';
+    const editingDisplayName = editingName || displayName;
+    const initials = getInitials(isEditing ? editingDisplayName : displayName);
+    const fallbackColor = getFallbackColor(isEditing ? editingDisplayName : displayName);
 
     return (
       <View
@@ -459,7 +508,7 @@ const ManageCompanionsScreen = () => {
             {/* Avatar Section */}
             <View style={styles.avatarSection}>
               <TouchableOpacity
-                onPress={() => handlePickAvatar(item.id)}
+                onPress={() => handlePickAvatarForEdit(item.id)}
                 style={styles.avatarButton}
                 activeOpacity={0.8}
               >
@@ -476,7 +525,11 @@ const ManageCompanionsScreen = () => {
               </TouchableOpacity>
               {avatarUri && (
                 <TouchableOpacity
-                  onPress={() => handleRemoveAvatar(item.id)}
+                  onPress={() => {
+                    // CRITICAL: In edit mode, only update local state
+                    // The actual removal will be handled in handleSaveEdit
+                    setEditingAvatarUri('');
+                  }}
                   style={styles.removeAvatarButton}
                   hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 >
@@ -518,7 +571,7 @@ const ManageCompanionsScreen = () => {
           <View style={styles.companionContent}>
             {/* Avatar Display */}
             <TouchableOpacity
-              onPress={() => handlePickAvatar(item.id)}
+              onPress={() => handleAvatarChange(item.id)}
               style={styles.avatarDisplayContainer}
               activeOpacity={0.8}
             >
@@ -531,7 +584,9 @@ const ManageCompanionsScreen = () => {
               )}
             </TouchableOpacity>
             <View style={styles.companionInfo}>
-              <ThemedText style={styles.companionName}>{item.name}</ThemedText>
+              <ThemedText style={styles.companionName}>
+                {item.name || item.id || 'Unnamed Companion'}
+              </ThemedText>
               <ThemedText
                 style={[
                   styles.interactionLabel,
@@ -546,29 +601,29 @@ const ManageCompanionsScreen = () => {
                 <Switch
                   value={item.isInteractionEnabled !== false}
                   onValueChange={async (value) => {
-                    // Ensure global setting is also enabled
-                    if (value && !userState.settings?.isAIInteractionEnabled) {
-                      Alert.alert(
-                        'Global Setting Required',
-                        'Please enable "AI Companion Interaction" in Settings first to use this feature.',
-                        [{ text: 'OK' }]
-                      );
-                      return;
+                    try {
+                      // Ensure global setting is also enabled
+                      if (value && !userState.settings?.isAIInteractionEnabled) {
+                        Alert.alert(
+                          'Global Setting Required',
+                          'Please enable "AI Companion Interaction" in Settings first to use this feature.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
+                      
+                      // Create updated companion object
+                      const updatedCompanion: Companion = {
+                        ...item,
+                        isInteractionEnabled: value,
+                      };
+                      
+                      // Use updateCompanion from context - this will trigger re-render
+                      await updateCompanion(updatedCompanion);
+                    } catch (error) {
+                      console.error('[ManageCompanionsScreen] Failed to update interaction setting:', error);
+                      Alert.alert('Error', 'Failed to update setting. Please try again.');
                     }
-                    const updatedCompanion = {
-                      ...item,
-                      isInteractionEnabled: value,
-                    };
-                    const updatedCompanions = {
-                      ...userState.companions,
-                      [item.id]: updatedCompanion,
-                    };
-                    const updatedState = {
-                      ...userState,
-                      companions: updatedCompanions,
-                      lastUpdatedAt: new Date().toISOString(),
-                    };
-                    await updateUserState(updatedState);
                   }}
                   thumbColor={
                     item.isInteractionEnabled !== false
@@ -591,7 +646,7 @@ const ManageCompanionsScreen = () => {
                 <Ionicons name="pencil" size={20} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleDeleteCompanion(item)}
+                onPress={() => handleDelete(item.id)}
                 style={styles.actionButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
@@ -627,7 +682,14 @@ const ManageCompanionsScreen = () => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        {companions.length === 0 ? (
+        {isLoading ? (
+          <View style={styles.emptyContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <ThemedText style={[styles.emptyText, { color: colors.text, marginTop: 16 }]}>
+              Loading companions...
+            </ThemedText>
+          </View>
+        ) : companionsArray.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="people-outline" size={64} color={colors.border} />
             <ThemedText style={[styles.emptyText, { color: colors.text }]}>
@@ -641,7 +703,7 @@ const ManageCompanionsScreen = () => {
           </View>
         ) : (
           <FlatList
-            data={companions}
+            data={companionsArray}
             keyExtractor={(item) => item.id}
             renderItem={renderCompanionItem}
             scrollEnabled={false}
@@ -663,18 +725,7 @@ const ManageCompanionsScreen = () => {
             Add New Companion
           </ThemedText>
           
-          {/* Avatar Preview for New Companion */}
-          {editingAvatarUri && (
-            <View style={styles.newAvatarSection}>
-              <Image source={{ uri: editingAvatarUri }} style={styles.newAvatarPreview} />
-              <TouchableOpacity
-                onPress={() => setEditingAvatarUri(null)}
-                style={styles.removeNewAvatarButton}
-              >
-                <Ionicons name="close-circle" size={24} color="#FF6B6B" />
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* Avatar preview removed - user creates companion first, then changes avatar */}
           
           <View style={styles.inputContainer}>
             <TextInput
@@ -692,19 +743,7 @@ const ManageCompanionsScreen = () => {
               onChangeText={setName}
               onSubmitEditing={handleAddCompanion}
             />
-            <TouchableOpacity
-              onPress={() => handlePickAvatar(null)}
-              style={[
-                styles.avatarPickerButton,
-                {
-                  backgroundColor: colors.background,
-                  borderColor: colors.border,
-                },
-              ]}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="camera" size={20} color={colors.primary} />
-            </TouchableOpacity>
+            {/* Avatar picker removed - user must create companion first, then tap camera icon on the companion */}
             <TouchableOpacity
               onPress={handleAddCompanion}
               style={[

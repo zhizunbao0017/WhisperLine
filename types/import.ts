@@ -12,10 +12,11 @@ export interface ImportedEntry {
     longitude: number;
     address: string;
   };
-  media: Array<{
-    type: 'photo' | 'video';
-    path: string; // Local path after unzipping
-  }>;
+  photos?: Array<{
+    md5: string;
+    type: string; // e.g., 'jpeg', 'png'
+    orderInEntry?: number;
+  }>; // Raw photos metadata from Day One JSON (parser responsibility)
   metadata: {
     weather?: object;
     tags?: string[];

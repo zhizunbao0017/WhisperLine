@@ -28,6 +28,8 @@ import { useUserState } from '../context/UserStateContext';
 import { exportService } from '../services/ExportService';
 import { importService } from '../services/ImportService';
 import * as DocumentPicker from 'expo-document-picker';
+import { SettingsSection } from '../components/SettingsSection';
+import { SettingRow } from '../components/SettingRow';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -168,6 +170,9 @@ const SettingsScreen = () => {
     } = useUserState();
     const [isExporting, setIsExporting] = useState(false);
     
+    // Get AI interaction enabled state for conditional disabling
+    const isAIInteractionGloballyEnabled = userState?.settings?.isAIInteractionEnabled || false;
+    
     // Merge companions from both sources: CompanionContext (legacy) and userState.companions (new)
     const legacyCompanions = companionContext?.companions || [];
     const userCreatedCompanions = Object.values(userState?.companions || {});
@@ -283,6 +288,7 @@ const SettingsScreen = () => {
             ]
         );
     };
+
 
     const handleImportData = async () => {
         try {
@@ -476,32 +482,116 @@ const SettingsScreen = () => {
                 />
             </View>
 
-            {/* Enable AI Companion Interaction */}
-            <View style={[styles.row, { borderBottomColor: colors.border }]}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={[styles.rowText, { color: colors.text }]}>Enable AI Companion Interaction</Text>
-                    <Text style={[styles.rowSubText, { color: colors.secondaryText }]}>
-                        Allow AI to interact with your companions
-                    </Text>
-                </View>
-                <Switch
-                    value={userState?.settings?.isAIInteractionEnabled || false}
-                    onValueChange={async (value) => {
-                        const newSettings = {
-                            ...(userState.settings || { isAIInteractionEnabled: false }),
-                            isAIInteractionEnabled: value,
-                        };
-                        const updatedState = {
-                            ...userState,
-                            settings: newSettings,
-                            lastUpdatedAt: new Date().toISOString(),
-                        };
-                        await updateUserState(updatedState);
-                    }}
-                    thumbColor={(userState?.settings?.isAIInteractionEnabled || false) ? colors.primary : (Platform.OS === 'android' ? '#f4f3f4' : undefined)}
-                    trackColor={{ false: colors.border, true: colors.primary + '87' }}
+            {/* Companions & AI Interaction Section */}
+            <SettingsSection title="Companions & AI Interaction">
+                {/* Enable AI Companion Interaction */}
+                <SettingRow
+                    title="Enable AI Companion Interaction"
+                    subtitle="Allow AI to interact with your companions"
+                    colors={colors}
+                    rightElement={
+                        <Switch
+                            value={isAIInteractionGloballyEnabled}
+                            onValueChange={async (value) => {
+                                const newSettings = {
+                                    ...(userState.settings || { isAIInteractionEnabled: false }),
+                                    isAIInteractionEnabled: value,
+                                };
+                                const updatedState = {
+                                    ...userState,
+                                    settings: newSettings,
+                                    lastUpdatedAt: new Date().toISOString(),
+                                };
+                                await updateUserState(updatedState);
+                            }}
+                            thumbColor={isAIInteractionGloballyEnabled ? colors.primary : (Platform.OS === 'android' ? '#f4f3f4' : undefined)}
+                            trackColor={{ false: colors.border, true: colors.primary + '87' }}
+                        />
+                    }
                 />
-            </View>
+
+                {/* Manage Companions */}
+                <SettingRow
+                    title="Manage Companions"
+                    subtitle="Create and manage your companions"
+                    icon="people-outline"
+                    iconColor={colors.primary}
+                    colors={colors}
+                    disabled={!isAIInteractionGloballyEnabled}
+                    onPress={() => router.push('/companions')}
+                    rightElement={<Ionicons name="chevron-forward" size={20} color={colors.border} />}
+                />
+
+                {/* Primary Companion */}
+                <View style={{ marginTop: 20 }}>
+                    <Text style={[styles.sectionTitle, { color: colors.text, fontSize: 16, marginBottom: 12 }]}>
+                        Primary Companion
+                    </Text>
+                    <View style={styles.primaryStatusContainer}>
+                        <Text style={[styles.primaryStatus, { color: colors.text }]}>
+                            {primaryCompanion ? `Current: ${primaryCompanion.name}` : 'Current: None'}
+                        </Text>
+                        {primaryCompanion && (
+                            primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim() ? (
+                                <View style={styles.primaryAvatarContainer}>
+                                    <Image 
+                                        source={{ uri: primaryCompanion.avatarIdentifier }} 
+                                        style={styles.primaryAvatarImage}
+                                        resizeMode="cover"
+                                        onError={(error) => {
+                                            console.warn('Failed to load primary companion avatar:', error.nativeEvent.error);
+                                        }}
+                                    />
+                                </View>
+                            ) : (
+                                <View style={[styles.primaryAvatarFallback, { backgroundColor: colors.primary + '40' }]}>
+                                    <Text style={[styles.primaryAvatarInitials, { color: colors.primary }]}>
+                                        {primaryCompanion.name ? primaryCompanion.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() : '?'}
+                                    </Text>
+                                </View>
+                            )
+                        )}
+                    </View>
+                    <TouchableOpacity
+                        style={[
+                            styles.noneOption,
+                            {
+                                borderColor: colors.border,
+                                backgroundColor: primaryCompanionId === null ? colors.primary + '15' : colors.card,
+                                opacity: !isAIInteractionGloballyEnabled ? 0.5 : 1,
+                            },
+                        ]}
+                        onPress={isAIInteractionGloballyEnabled ? handleSetNoPrimary : undefined}
+                        activeOpacity={0.85}
+                        disabled={primaryCompanionId === null || !isAIInteractionGloballyEnabled}
+                    >
+                        <Ionicons
+                            name={primaryCompanionId === null ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={20}
+                            color={primaryCompanionId === null ? colors.primary : colors.border}
+                            style={{ marginRight: 10 }}
+                        />
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.noneOptionText, { color: colors.text }]}>No default companion</Text>
+                            <Text style={[styles.noneOptionHint, { color: colors.text }]}>
+                                WhisperLine will use your theme avatar instead.
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
+                    <View style={{ opacity: !isAIInteractionGloballyEnabled ? 0.5 : 1 }}>
+                        <CompanionSelectorCarousel
+                            allCompanions={allCompanions}
+                            selectedIDs={primaryCompanionId ? [primaryCompanionId] : []}
+                            onSelectionChange={isAIInteractionGloballyEnabled ? handlePrimaryChange : undefined}
+                        />
+                    </View>
+                    {!isAIInteractionGloballyEnabled && (
+                        <Text style={[styles.disabledHint, { color: colors.secondaryText }]}>
+                            Enable AI Companion Interaction to set a primary companion
+                        </Text>
+                    )}
+                </View>
+            </SettingsSection>
 
             {/* Appearance */}
             <TouchableOpacity
@@ -543,80 +633,6 @@ const SettingsScreen = () => {
                 </TouchableOpacity>
             </View>
 
-            {/* Companion Management */}
-            <View style={styles.sectionContainer}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Relationships</Text>
-                <TouchableOpacity
-                    onPress={() => router.push('/companions')}
-                    style={[styles.manageButton, { borderColor: colors.border, backgroundColor: colors.card }]}
-                    activeOpacity={0.85}
-                >
-                    <Ionicons name="people-outline" size={22} color={colors.primary} style={{ marginRight: 10 }} />
-                    <Text style={[styles.manageButtonText, { color: colors.text }]}>
-                        Manage Companions
-                    </Text>
-                    <Ionicons name="chevron-forward" size={20} color={colors.border} />
-                </TouchableOpacity>
-            </View>
-
-            <View style={styles.sectionContainer}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Primary Companion</Text>
-                <View style={styles.primaryStatusContainer}>
-                    <Text style={[styles.primaryStatus, { color: colors.text }]}>
-                        {primaryCompanion ? `Current: ${primaryCompanion.name}` : 'Current: None'}
-                    </Text>
-                    {primaryCompanion && (
-                        primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim() ? (
-                            <View style={styles.primaryAvatarContainer}>
-                                <Image 
-                                    source={{ uri: primaryCompanion.avatarIdentifier }} 
-                                    style={styles.primaryAvatarImage}
-                                    resizeMode="cover"
-                                    onError={(error) => {
-                                        console.warn('Failed to load primary companion avatar:', error.nativeEvent.error);
-                                    }}
-                                />
-                            </View>
-                        ) : (
-                            <View style={[styles.primaryAvatarFallback, { backgroundColor: colors.primary + '40' }]}>
-                                <Text style={[styles.primaryAvatarInitials, { color: colors.primary }]}>
-                                    {primaryCompanion.name ? primaryCompanion.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() : '?'}
-                                </Text>
-                            </View>
-                        )
-                    )}
-                </View>
-                <TouchableOpacity
-                    style={[
-                        styles.noneOption,
-                        {
-                            borderColor: colors.border,
-                            backgroundColor: primaryCompanionId === null ? colors.primary + '15' : colors.card,
-                        },
-                    ]}
-                    onPress={handleSetNoPrimary}
-                    activeOpacity={0.85}
-                    disabled={primaryCompanionId === null}
-                >
-                    <Ionicons
-                        name={primaryCompanionId === null ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={20}
-                        color={primaryCompanionId === null ? colors.primary : colors.border}
-                        style={{ marginRight: 10 }}
-                    />
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.noneOptionText, { color: colors.text }]}>No default companion</Text>
-                        <Text style={[styles.noneOptionHint, { color: colors.text }]}>
-                            WhisperLine will use your theme avatar instead.
-                        </Text>
-                    </View>
-                </TouchableOpacity>
-                <CompanionSelectorCarousel
-                    allCompanions={allCompanions}
-                    selectedIDs={primaryCompanionId ? [primaryCompanionId] : []}
-                    onSelectionChange={handlePrimaryChange}
-                />
-            </View>
 
             <View style={styles.sectionContainer}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Advanced</Text>
@@ -844,6 +860,12 @@ const styles = StyleSheet.create({
     themeHelpText: { fontSize: 14, opacity: 0.7 },
     themeStatusText: { fontSize: 13, marginTop: 10 },
     themeStatusHint: { fontSize: 12, opacity: 0.7, marginTop: 4 },
+    disabledHint: {
+        fontSize: 13,
+        marginTop: 8,
+        fontStyle: 'italic',
+        opacity: 0.7,
+    },
     editIconButtonFixed: {
         // No longer needed in new design (was used for overlay edit pencil)
         display: 'none',

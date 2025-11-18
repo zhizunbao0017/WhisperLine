@@ -1,11 +1,13 @@
 // services/ImportService.ts
 import * as FileSystem from 'expo-file-system';
 import JSZip from 'jszip';
+import { v4 as uuidv4 } from 'uuid';
 import { dayOneJsonParser } from './parsers/DayOneJsonParser';
 import { ImportedEntry } from '../types/import';
 import { DiaryContext } from '../context/DiaryContext';
 import { pieService } from './PIE/PIEService';
 import { createDiaryEntry } from '../models/DiaryEntry';
+import MediaService from './MediaService';
 
 /**
  * Progress callback type for import operations
@@ -128,7 +130,7 @@ class ImportService {
 
       progressCallback(30, 'Parsing entries...');
 
-      // Step 3: Parse JSON file
+      // Step 3: Parse JSON file (parser no longer needs mediaPath, but we keep it for compatibility)
       const importedEntries = await dayOneJsonParser.parse(jsonFilePath, mediaPath);
       
       if (importedEntries.length === 0) {
@@ -137,21 +139,65 @@ class ImportService {
 
       progressCallback(35, `Found ${importedEntries.length} entries`);
 
-      // Step 4: Convert ImportedEntry to DiaryEntry and save
+      // Step 4: Process each parsed entry with MediaService integration
       const totalEntries = importedEntries.length;
       let successCount = 0;
       let failCount = 0;
 
+      // Store the detected photos directory path for use in photo processing
+      const photosDirectoryPath = mediaPath;
+
       for (let i = 0; i < importedEntries.length; i++) {
-        const importedEntry = importedEntries[i];
+        const parsedEntry = importedEntries[i];
         
         try {
-          // Convert ImportedEntry to DiaryEntry format
-          const diaryEntry = this.convertToDiaryEntry(importedEntry);
+          // Generate a new, unique UUID for the diary entry
+          const newEntryId = uuidv4();
 
-          // Save entry using DiaryContext
-          // Note: We use addDiary which internally calls saveDiary
-          await diaryContext.addDiary(diaryEntry);
+          // Initialize Media Assets: Create an empty array to hold the final, processed media assets
+          let finalMediaAssets: any[] = [];
+
+          // Process Photos: Check if parsedEntry.photos exists and is not empty
+          if (parsedEntry.photos && parsedEntry.photos.length > 0) {
+            // Loop through each photo object in the parsedEntry.photos array
+            for (const photo of parsedEntry.photos) {
+              try {
+                // Construct Source Path: Build the full path to the source image within the unzipped temporary directory
+                // The path will be: ${photosDirectoryPath}/${photo.md5}.${photo.type}
+                const fileExtension = photo.type || 'jpg';
+                const sourceImagePath = `${photosDirectoryPath}/${photo.md5}.${fileExtension}`;
+
+                // Check if the source file exists before trying to import
+                const sourceFileInfo = await FileSystem.getInfoAsync(sourceImagePath);
+                if (!sourceFileInfo.exists) {
+                  console.warn(`[ImportService] Photo file not found: ${sourceImagePath}, skipping...`);
+                  continue;
+                }
+
+                // Delegate to MediaService: Call our specialized media import function
+                const newAsset = await MediaService.importExternalImage(
+                  sourceImagePath,
+                  'entry',
+                  newEntryId
+                );
+
+                // Collect Results: Push the newAsset object returned by MediaService into the finalMediaAssets array
+                finalMediaAssets.push(newAsset);
+              } catch (photoError) {
+                console.error(`[ImportService] Failed to import photo ${photo.md5}:`, photoError);
+                // Continue with next photo even if one fails
+              }
+            }
+          }
+
+          // Construct Final Entry: Create the final DiaryEntry object that will be saved to our database
+          const finalDiaryEntry = this.convertToDiaryEntry(parsedEntry, newEntryId, finalMediaAssets);
+
+          // Save and Process: Save the complete entry to the database
+          await diaryContext.addDiary(finalDiaryEntry);
+
+          // Note: PIE analysis will be triggered automatically by DiaryContext.addDiary
+          // or we can trigger it manually after all entries are imported (see Step 5)
 
           successCount++;
 
@@ -218,8 +264,15 @@ class ImportService {
 
   /**
    * Convert ImportedEntry to DiaryEntry format
+   * @param importedEntry The parsed entry from DayOneJsonParser
+   * @param newEntryId The new UUID generated for this entry
+   * @param mediaAssets Array of MediaAsset objects processed by MediaService
    */
-  private convertToDiaryEntry(importedEntry: ImportedEntry): any {
+  private convertToDiaryEntry(
+    importedEntry: ImportedEntry,
+    newEntryId: string,
+    mediaAssets: any[]
+  ): any {
     // Extract title from content (first line or first 60 characters)
     const contentLines = importedEntry.content.split('\n').filter((line) => line.trim());
     const firstLine = contentLines[0] || '';
@@ -242,6 +295,16 @@ class ImportService {
       content = `<h1>${escapedTitle}</h1>\n${content}`;
     }
 
+    // Embed media assets into content as HTML img tags
+    if (mediaAssets.length > 0) {
+      const photoHtml = mediaAssets
+        .map((asset) => `<img src="${asset.localPath}" alt="Imported photo" />`)
+        .join('\n');
+      
+      // Append photos after text content
+      content = content ? `${content}\n\n${photoHtml}` : photoHtml;
+    }
+
     // Convert weather metadata if available
     const weather = importedEntry.metadata.weather
       ? {
@@ -252,7 +315,8 @@ class ImportService {
       : null;
 
     // Create DiaryEntry using the model factory
-    return createDiaryEntry({
+    const diaryEntry = createDiaryEntry({
+      id: newEntryId, // Use the new UUID
       title,
       content,
       mood: null, // Imported entries don't have mood, will be detected by AI
@@ -262,6 +326,12 @@ class ImportService {
       createdAt,
       updatedAt: createdAt,
     });
+
+    // Add media field to the entry (MediaAsset array)
+    return {
+      ...diaryEntry,
+      media: mediaAssets, // Include the array of assets processed by MediaService
+    };
   }
 }
 

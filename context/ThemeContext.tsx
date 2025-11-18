@@ -9,7 +9,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { ActivityIndicator, InteractionManager } from 'react-native';
+import { ActivityIndicator, Alert, InteractionManager } from 'react-native';
 
 import {
   AVAILABLE_THEMES,
@@ -186,6 +186,18 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const pickCustomAvatar = useCallback(async () => {
     try {
+      // Request permission for ThemeContext's custom avatar picker
+      // This is separate from MediaService's companion avatar permission handling
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Photo library access is needed to choose a custom avatar for the theme.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,

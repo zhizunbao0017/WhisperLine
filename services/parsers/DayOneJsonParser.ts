@@ -9,13 +9,15 @@ import { ImportedEntry, DayOneEntry } from '../../types/import';
 class DayOneJsonParser {
   /**
    * Parse Day One JSON file and convert entries to ImportedEntry format
+   * The parser's responsibility is only to parse, not to interpret.
+   * It returns raw photo metadata without building file paths.
    * @param jsonFilePath Path to the Day One JSON file
-   * @param mediaDirectoryPath Path to the directory containing media files
-   * @returns Array of ImportedEntry objects
+   * @param mediaDirectoryPath Path to the directory containing media files (unused, kept for compatibility)
+   * @returns Array of ImportedEntry objects with raw photos metadata
    */
   public async parse(
     jsonFilePath: string,
-    mediaDirectoryPath: string
+    mediaDirectoryPath?: string
   ): Promise<ImportedEntry[]> {
     try {
       // Read JSON file
@@ -34,7 +36,7 @@ class DayOneJsonParser {
       // Convert each Day One entry to ImportedEntry format
       const importedEntries: ImportedEntry[] = entries.map((entry, index) => {
         try {
-          return this.convertDayOneEntry(entry, mediaDirectoryPath, index);
+          return this.convertDayOneEntry(entry, index);
         } catch (error) {
           console.error(`[DayOneJsonParser] Error converting entry ${index}:`, error);
           // Return a minimal entry if conversion fails
@@ -42,7 +44,7 @@ class DayOneJsonParser {
             id: `imported_${Date.now()}_${index}`,
             createdAt: new Date(entry.creationDate || Date.now()),
             content: entry.text || '',
-            media: [],
+            photos: entry.photos || [],
             metadata: {
               tags: entry.tags || [],
               weather: entry.weather || undefined,
@@ -61,10 +63,11 @@ class DayOneJsonParser {
 
   /**
    * Convert a single Day One entry to ImportedEntry format
+   * The parser only parses, it does not build file paths or interpret data.
+   * It returns raw photo metadata directly from the JSON.
    */
   private convertDayOneEntry(
     entry: DayOneEntry,
-    mediaDirectoryPath: string,
     index: number
   ): ImportedEntry {
     // Parse creation date
@@ -81,30 +84,12 @@ class DayOneJsonParser {
         }
       : undefined;
 
-    // Convert photos to media array
-    const media = (entry.photos || []).map((photo) => {
-      // Construct media file path: mediaDirectoryPath + photo.md5 + '.' + photo.type
-      const fileExtension = photo.type || 'jpg';
-      const mediaPath = `${mediaDirectoryPath}/${photo.md5}.${fileExtension}`;
+    // Return raw photos array directly from JSON (e.g., [{ "md5": "...", "type": "jpeg" }, ...])
+    // The parser does not build file paths - that's the responsibility of ImportService
+    const photos = entry.photos || [];
 
-      return {
-        type: 'photo' as const,
-        path: mediaPath,
-      };
-    });
-
-    // Build content with photos embedded as HTML img tags
-    let content = entry.text || '';
-    
-    // If there are photos, append them to content as HTML img tags
-    if (media.length > 0) {
-      const photoHtml = media
-        .map((m) => `<img src="${m.path}" alt="Imported photo" />`)
-        .join('\n');
-      
-      // Append photos after text content
-      content = content ? `${content}\n\n${photoHtml}` : photoHtml;
-    }
+    // Content is just the text - no photo embedding here
+    const content = entry.text || '';
 
     // Convert tags
     const tags = entry.tags || [];
@@ -122,7 +107,7 @@ class DayOneJsonParser {
       createdAt,
       content,
       location,
-      media,
+      photos, // Raw photos metadata array
       metadata: {
         weather,
         tags,
