@@ -12,7 +12,14 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "image": "latest",
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "COCOAPODS_DISABLE_STATS": "1"
+      }
     }
   },
   "submit": {
