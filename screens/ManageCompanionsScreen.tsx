@@ -14,6 +14,7 @@ import {
   Switch,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,6 +43,9 @@ const ManageCompanionsScreen = () => {
   const [editingName, setEditingName] = useState('');
   const [editingAvatarUri, setEditingAvatarUri] = useState<string | null>(null);
   const [pickingAvatarForId, setPickingAvatarForId] = useState<string | null>(null);
+  // CRITICAL: Loading state to track which companion is currently being processed
+  // This prevents duplicate actions and provides visual feedback to the user
+  const [processingCompanionId, setProcessingCompanionId] = useState<string | null>(null);
 
   // CRITICAL: Convert the companions object to an array for rendering
   // This ensures any change to the global companions object will automatically trigger a re-render
@@ -134,6 +138,11 @@ const ManageCompanionsScreen = () => {
    * 7. Close edit modal
    */
   const handleSaveEdit = async () => {
+    // Prevent duplicate saves
+    if (processingCompanionId) {
+      return;
+    }
+    
     if (!editingId || !editingName.trim()) {
       return;
     }
@@ -146,6 +155,9 @@ const ManageCompanionsScreen = () => {
       Alert.alert('Error', 'A companion with this name already exists');
       return;
     }
+
+    // CRITICAL: Set loading state to prevent duplicate actions
+    setProcessingCompanionId(editingId);
 
     try {
       // Get the current companion from state
@@ -242,6 +254,9 @@ const ManageCompanionsScreen = () => {
           ? 'Please grant photo library access to update the avatar.'
           : `Failed to save changes: ${error.message || 'Unknown error'}. Please try again.`
       );
+    } finally {
+      // CRITICAL: Always clear loading state, even if an error occurred
+      setProcessingCompanionId(null);
     }
   };
 
@@ -263,6 +278,15 @@ const ManageCompanionsScreen = () => {
    * @param companionId - ID of the companion (MUST NOT be null - companion must exist)
    */
   const handleAvatarChange = async (companionId: string) => {
+    // Prevent duplicate actions
+    if (processingCompanionId) {
+      return;
+    }
+    
+    // CRITICAL: Set loading state to prevent duplicate actions
+    setProcessingCompanionId(companionId);
+    setPickingAvatarForId(companionId);
+
     try {
       // CRITICAL: Validate companion exists
       if (!companionId) {
@@ -270,8 +294,6 @@ const ManageCompanionsScreen = () => {
         Alert.alert('Error', 'Please create the companion first before adding an avatar.');
         return;
       }
-
-      setPickingAvatarForId(companionId);
       
       // Get the current companion from state
       const currentCompanion = userState.companions?.[companionId];
@@ -317,7 +339,9 @@ const ManageCompanionsScreen = () => {
         );
       }
     } finally {
+      // CRITICAL: Always clear loading state, even if an error occurred
       setPickingAvatarForId(null);
+      setProcessingCompanionId(null);
     }
   };
 
@@ -465,11 +489,21 @@ const ManageCompanionsScreen = () => {
       'Delete Companion',
       `Are you sure you want to delete "${companion.name}"? This cannot be undone.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => {
+            // Clear loading state if user cancels
+            setProcessingCompanionId(null);
+          },
+        },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // CRITICAL: Set loading state to prevent duplicate actions
+            setProcessingCompanionId(companionId);
+            
             try {
               // Simply call deleteCompanion from context
               // The context handles all deletion logic including media cleanup
@@ -477,6 +511,9 @@ const ManageCompanionsScreen = () => {
             } catch (error) {
               console.error('[ManageCompanionsScreen] Failed to delete companion:', error);
               Alert.alert('Error', 'Failed to delete companion. Please try again.');
+            } finally {
+              // CRITICAL: Always clear loading state, even if an error occurred
+              setProcessingCompanionId(null);
             }
           },
         },
@@ -492,6 +529,8 @@ const ManageCompanionsScreen = () => {
     const editingDisplayName = editingName || displayName;
     const initials = getInitials(isEditing ? editingDisplayName : displayName);
     const fallbackColor = getFallbackColor(isEditing ? editingDisplayName : displayName);
+    // CRITICAL: Check if this companion is currently being processed
+    const isProcessing = processingCompanionId === item.id;
 
     return (
       <View
@@ -500,6 +539,7 @@ const ManageCompanionsScreen = () => {
           {
             backgroundColor: colors.card,
             borderColor: colors.border,
+            opacity: isProcessing ? 0.6 : 1, // Dim the item when processing
           },
         ]}
       >
@@ -511,6 +551,8 @@ const ManageCompanionsScreen = () => {
                 onPress={() => handlePickAvatarForEdit(item.id)}
                 style={styles.avatarButton}
                 activeOpacity={0.8}
+                disabled={isProcessing}
+                opacity={isProcessing ? 0.5 : 1}
               >
                 {avatarUri ? (
                   <Image source={{ uri: avatarUri }} style={styles.avatarPreview} />
@@ -556,12 +598,16 @@ const ManageCompanionsScreen = () => {
               <TouchableOpacity
                 onPress={handleSaveEdit}
                 style={[styles.editButton, { backgroundColor: colors.primary }]}
+                disabled={isProcessing}
+                opacity={isProcessing ? 0.5 : 1}
               >
                 <Ionicons name="checkmark" size={20} color="#ffffff" />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleCancelEdit}
                 style={[styles.editButton, { backgroundColor: colors.border }]}
+                disabled={isProcessing}
+                opacity={isProcessing ? 0.5 : 1}
               >
                 <Ionicons name="close" size={20} color={colors.text} />
               </TouchableOpacity>
@@ -574,6 +620,8 @@ const ManageCompanionsScreen = () => {
               onPress={() => handleAvatarChange(item.id)}
               style={styles.avatarDisplayContainer}
               activeOpacity={0.8}
+              disabled={isProcessing}
+              opacity={isProcessing ? 0.5 : 1}
             >
               {avatarUri ? (
                 <Image source={{ uri: avatarUri }} style={styles.avatarDisplay} />
@@ -600,6 +648,7 @@ const ManageCompanionsScreen = () => {
               <View style={styles.switchContainer}>
                 <Switch
                   value={item.isInteractionEnabled !== false}
+                  disabled={isProcessing}
                   onValueChange={async (value) => {
                     try {
                       // Ensure global setting is also enabled
@@ -642,6 +691,8 @@ const ManageCompanionsScreen = () => {
                 onPress={() => handleStartEdit(item)}
                 style={styles.actionButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                disabled={isProcessing}
+                opacity={isProcessing ? 0.5 : 1}
               >
                 <Ionicons name="pencil" size={20} color={colors.primary} />
               </TouchableOpacity>
@@ -649,10 +700,22 @@ const ManageCompanionsScreen = () => {
                 onPress={() => handleDelete(item.id)}
                 style={styles.actionButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                disabled={isProcessing}
+                opacity={isProcessing ? 0.5 : 1}
               >
                 <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
               </TouchableOpacity>
             </View>
+          </View>
+        )}
+        
+        {/* CRITICAL: Loading overlay - shows when companion is being processed */}
+        {isProcessing && (
+          <View style={styles.processingOverlay}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <ThemedText style={[styles.processingText, { color: colors.text }]}>
+              Processing...
+            </ThemedText>
           </View>
         )}
       </View>
@@ -987,6 +1050,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12, // Match container's border radius
+    zIndex: 10,
+  },
+  processingText: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
