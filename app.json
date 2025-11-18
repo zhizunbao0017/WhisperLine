@@ -18,7 +18,7 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.xietian.whisperline",
-      "buildNumber": "5"
+      "buildNumber": "14"
     },
     "android": {
       "adaptiveIcon": {
