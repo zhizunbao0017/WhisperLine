@@ -37,7 +37,10 @@ module.exports = function(api) {
           'React.createClass': "require('create-react-class')",
         },
       }
-    ]
+    ],
+    // CRITICAL: react-native-reanimated plugin must be listed last
+    // This ensures proper transformation order
+    'react-native-reanimated/plugin'
   ];
   
   // Only add React Compiler plugin in development

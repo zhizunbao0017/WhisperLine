@@ -44,6 +44,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-build-properties",
+        {
+          "ios": {
+            "newArchEnabled": false,
+            "deploymentTarget": "13.4"
+          }
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",

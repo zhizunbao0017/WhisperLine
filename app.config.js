@@ -80,31 +80,36 @@ module.exports = function (config) {
         output: baseConfigFromJson.web?.output || "static",
         favicon: baseConfigFromJson.web?.favicon || "./assets/images/favicon.png"
       },
+      // CRITICAL: Read plugins from app.json to ensure expo-build-properties is included
+      // This allows app.json to be the single source of truth for plugin configuration
       plugins: [
-        "expo-router",
-        // CRITICAL: Only include expo-dev-client in development builds
-        // In production builds, devDependencies are not installed, causing plugin resolution failures
-        ...(isProduction ? [] : ["expo-dev-client"]),
-        [
-          "expo-image-picker",
-          {
-            photosPermission: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
-            cameraPermission: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
-          }
-        ],
-        [
-          "expo-splash-screen",
-          {
-            image: "./assets/images/icon.png",
-            resizeMode: "contain",
-            backgroundColor: "#03ACE2",
-            dark: {
+        // Read plugins from app.json, fallback to default if not present
+        ...(baseConfigFromJson.plugins || [
+          "expo-router",
+          // CRITICAL: Only include expo-dev-client in development builds
+          // In production builds, devDependencies are not installed, causing plugin resolution failures
+          ...(isProduction ? [] : ["expo-dev-client"]),
+          [
+            "expo-image-picker",
+            {
+              photosPermission: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
+              cameraPermission: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
+            }
+          ],
+          [
+            "expo-splash-screen",
+            {
               image: "./assets/images/icon.png",
               resizeMode: "contain",
-              backgroundColor: "#03ACE2"
+              backgroundColor: "#03ACE2",
+              dark: {
+                image: "./assets/images/icon.png",
+                resizeMode: "contain",
+                backgroundColor: "#03ACE2"
+              }
             }
-          }
-        ]
+          ]
+        ])
       ],
       experiments: {
         ...(baseConfigFromJson.experiments || {}),
