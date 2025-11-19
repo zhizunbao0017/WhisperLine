@@ -85,7 +85,9 @@ module.exports = function (config) {
       ],
       experiments: {
         typedRoutes: true,
-        reactCompiler: true
+        // CRITICAL: Conditionally enable reactCompiler only in development
+        // React Compiler can cause issues in production builds (Expo SDK 51+)
+        reactCompiler: !isProduction
       },
       extra: {
         router: {},
@@ -99,8 +101,11 @@ module.exports = function (config) {
   // Log the configuration for debugging
   if (isProduction) {
     console.log('📦 [Production Build] expo-dev-client plugin excluded');
+    console.log('📦 [Production Build] reactCompiler disabled');
+    console.log('📦 [Production Build] Source maps disabled');
   } else {
     console.log('🔧 [Development Build] expo-dev-client plugin included');
+    console.log('🔧 [Development Build] reactCompiler enabled');
   }
 
   return baseConfig;

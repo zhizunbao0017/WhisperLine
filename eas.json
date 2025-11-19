@@ -26,6 +26,9 @@
         "EXPO_METRO_NO_SOURCE_MAPS": "true",
         "GENERATE_SOURCEMAP": "false",
         "EXPO_DEBUG": "false",
+        "CI": "true",
+        "SKIP_BUNDLING": "false",
+        "EXPO_USE_METRO_WORKER": "1",
         "NODE_ENV": "production"
       },
       "node": "18.18.2",
