@@ -42,10 +42,12 @@ module.exports = function (config) {
       icon: baseConfigFromJson.icon || "./assets/images/icon.png",
       scheme: baseConfigFromJson.scheme || "whisperline",
       userInterfaceStyle: baseConfigFromJson.userInterfaceStyle || "automatic",
-      // TEMPORARY: Disable New Architecture to fix fastlane build issues
-      // Some native modules may not support New Architecture yet
-      // TODO: Re-enable after verifying all modules are compatible
-      newArchEnabled: false, // baseConfigFromJson.newArchEnabled !== undefined ? baseConfigFromJson.newArchEnabled : true,
+      // CRITICAL: New Architecture is DISABLED for build stability
+      // Reason: Some native modules may not fully support New Architecture yet
+      // Plan: Keep disabled until app is successfully built and published
+      // After successful App Store release, we can gradually enable and test
+      // DO NOT ENABLE until all modules are verified compatible
+      newArchEnabled: false,
       ios: {
         ...(baseConfigFromJson.ios || {}),
         supportsTablet: baseConfigFromJson.ios?.supportsTablet !== undefined ? baseConfigFromJson.ios.supportsTablet : true,

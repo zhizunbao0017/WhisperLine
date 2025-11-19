@@ -8,6 +8,7 @@
     "scheme": "whisperline",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
+    "_comment_newArch": "New Architecture disabled for build stability. Enable after successful App Store release.",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
