@@ -1,132 +1,107 @@
 # 修复应用总结
 
-## ✅ 优先级1修复：FileSystem.getInfoAsync 弃用问题
+## 已处理的问题
 
-### 修复完成时间
-2025-11-18
+### ✅ 1. Git Push 错误修复
 
-### 修复内容
-
-#### 1. 初始化函数 (`initialize`) - 第28-47行
-**修复前**:
-```javascript
-const companionsDirInfo = await FileSystem.getInfoAsync(this.COMPANIONS_MEDIA_PATH);
-if (!companionsDirInfo.exists) {
-  await FileSystem.makeDirectoryAsync(this.COMPANIONS_MEDIA_PATH, { intermediates: true });
-}
+**问题**：
+```
+fatal: unable to access 'https://github.com/zhizunbao0017/WhisperLine.git/': Error in the HTTP2 framing layer
 ```
 
-**修复后**:
-```javascript
-// makeDirectoryAsync automatically handles existing directories (no error if already exists)
-await FileSystem.makeDirectoryAsync(this.COMPANIONS_MEDIA_PATH, { intermediates: true });
+**解决方案**：
+- 使用 HTTP/1.1 替代 HTTP/2
+- 命令：`git config --global http.version HTTP/1.1`
+- 结果：✅ 推送成功
+
+### ✅ 2. react-native-reanimated 版本修复
+
+**问题**：
+- 用户将版本改回了 `~4.1.1`（要求 New Architecture）
+- 这会导致构建失败
+
+**解决方案**：
+- 降级回 `~3.16.1`（支持旧架构）
+- 命令：`npm install react-native-reanimated@~3.16.1 --save`
+- 结果：✅ 版本已修复
+
+### ✅ 3. deploymentTarget 修复
+
+**问题**：
+```
+Error: `ios.deploymentTarget` needs to be at least version 15.1.
 ```
 
-**影响**: 修复了初始化时的弃用警告
+**解决方案**：
+- 将 `deploymentTarget` 从 `13.4` 更新为 `15.1`
+- 文件：`app.json` → `expo-build-properties` 插件配置
+- 结果：✅ 配置已修复
 
----
+## 最终配置
 
-#### 2. 复制和存储图像 (`_copyAndStoreImage`) - 第93-98行
-**修复前**:
-```javascript
-const dirInfo = await FileSystem.getInfoAsync(baseDir);
-if (!dirInfo.exists) {
-  await FileSystem.makeDirectoryAsync(baseDir, { intermediates: true });
-}
+### package.json
+```json
+"react-native-reanimated": "~3.16.1"
 ```
 
-**修复后**:
-```javascript
-// This single line REPLACES the old getInfoAsync logic.
-await FileSystem.makeDirectoryAsync(baseDir, { intermediates: true });
+### app.json
+```json
+[
+  "expo-build-properties",
+  {
+    "ios": {
+      "newArchEnabled": false,
+      "deploymentTarget": "15.1"
+    }
+  }
+]
 ```
 
-**影响**: 修复了头像保存失败的核心问题
-
----
-
-#### 3. 文件复制验证 (`_copyAndStoreImage`) - 第122-125行
-**修复前**:
-```javascript
-const fileInfo = await FileSystem.getInfoAsync(destinationPath);
-if (!fileInfo.exists) {
-  throw new Error(`Failed to verify copied file exists at ${destinationPath}`);
-}
+### eas.json
+```json
+"RCT_NEW_ARCH_ENABLED": "0"
 ```
 
-**修复后**:
-```javascript
-// Removed deprecated getInfoAsync verification
-// If copyAsync succeeds without throwing an error, the file was copied successfully
-// No need to verify with getInfoAsync - copyAsync already guarantees success
+## 验证结果
+
+✅ **所有检查通过**：
+- react-native-reanimated: `~3.16.1` ✅
+- deploymentTarget: `15.1` ✅
+- New Architecture: 已禁用 ✅
+- 预构建检查: 全部通过 ✅
+- Git 推送: 成功 ✅
+
+## 提交记录
+
+1. `f309586` - fix (build): Align Reanimated version via expo-install, move babel plugin, and enforce Old Arch in app.json
+2. `579a375` - fix: Update deploymentTarget to 15.1 and ensure react-native-reanimated 3.16.1
+
+## 下一步
+
+项目已准备好进行 EAS 构建：
+
+```bash
+eas build --platform ios --profile production
 ```
 
-**影响**: 移除了不必要的验证步骤，简化了代码
+## 关键配置总结
 
----
+### New Architecture 禁用（三重保障）
+1. ✅ `app.json`: `newArchEnabled: false`
+2. ✅ `expo-build-properties`: `ios.newArchEnabled: false`
+3. ✅ `eas.json`: `RCT_NEW_ARCH_ENABLED: "0"`
 
-#### 4. 删除媒体资产 (`deleteMediaAsset`) - 第444-455行
-**修复前**:
-```javascript
-const fileInfo = await FileSystem.getInfoAsync(localPath);
-if (fileInfo.exists) {
-  await FileSystem.deleteAsync(localPath, { idempotent: true });
-}
-```
+### 依赖版本
+- ✅ `react-native-reanimated`: `~3.16.1`（支持旧架构）
+- ✅ `expo-build-properties`: `~1.0.9`（在 dependencies）
+- ✅ `babel-plugin-module-resolver`: `^5.0.2`（在 dependencies）
 
-**修复后**:
-```javascript
-// deleteAsync with { idempotent: true } will not throw an error if file doesn't exist
-await FileSystem.deleteAsync(localPath, { idempotent: true });
-```
+### iOS 配置
+- ✅ `deploymentTarget`: `15.1`（满足最低要求）
+- ✅ `buildConfiguration`: `Release`
+- ✅ `build image`: `sdk-54`
 
-**影响**: 简化了删除逻辑，更健壮
+## 相关文档
 
----
-
-#### 5. 获取媒体资产信息 (`getMediaAssetInfo`) - 第463-495行
-**修复前**:
-```javascript
-return await FileSystem.getInfoAsync(localPath);
-```
-
-**修复后**:
-```javascript
-// Use new File API instead of deprecated getInfoAsync
-const { File } = await import('expo-file-system');
-const file = new File(localPath);
-const exists = await file.exists();
-// ... return appropriate info
-```
-
-**影响**: 迁移到新的 File API（虽然此方法很少被使用）
-
----
-
-### 修复统计
-
-- **总修复数**: 6处
-- **目录检查修复**: 3处（使用 `makeDirectoryAsync`）
-- **文件检查修复**: 2处（移除验证或使用新API）
-- **文件信息获取**: 1处（使用新 File API）
-
-### 验证
-
-✅ 所有 `getInfoAsync` 调用已移除
-✅ 代码通过 linter 检查
-✅ 使用现代、健壮的 API
-
-### 预期效果
-
-1. ✅ 头像保存功能恢复正常
-2. ✅ 不再有弃用警告
-3. ✅ 代码更简洁、更健壮
-4. ✅ 兼容 Expo SDK v54
-
-### 测试建议
-
-1. 测试companion头像设置功能
-2. 测试日记条目图片添加功能
-3. 测试媒体资产删除功能
-4. 检查控制台不再有弃用警告
-
+- [REANIMATED_NEW_ARCH_FIX.md](./REANIMATED_NEW_ARCH_FIX.md)
+- [FINAL_FIX_SUMMARY.md](./FINAL_FIX_SUMMARY.md)
