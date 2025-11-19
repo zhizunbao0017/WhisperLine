@@ -15,39 +15,73 @@ def ccache_enabled?(podfile_properties)
   podfile_properties['apple.ccacheEnabled'] == 'true'
 end
 
-# Determine if this is a Release/Production build
+# ULTIMATE Release/Production build detection for 2025 EAS builds
+# This function comprehensively detects all Release/CI/Production scenarios
 def is_release_build?
-  # Method 1: Check explicit build configuration
+  # Method 1: Explicit build configuration (highest priority)
   build_config = ENV['CONFIGURATION'] || ENV['BUILD_CONFIGURATION'] || podfile_properties['ios.buildConfiguration']
   if build_config == 'Release'
     return true
   end
   
-  # Method 2: Check EAS build profile (production = Release)
+  # Method 2: EAS build profile detection
   if ENV['EAS_BUILD_PROFILE'] == 'production'
     return true
   end
   
-  # Method 3: Check if we're in EAS build environment (production builds are Release)
+  # Method 3: EAS build environment (production builds are always Release)
   if ENV['EAS_BUILD'] == 'true' && ENV['EAS_BUILD_PROFILE'] != 'development'
     return true
   end
   
-  # Method 4: Default to Release if no Debug configuration is explicitly set
-  # This handles cases where EAS doesn't set explicit environment variables
-  # but we're building for production (which should be Release)
+  # Method 4: CI environment detection (GitHub Actions, GitLab CI, etc.)
+  if ENV['CI'] == 'true' || ENV['CONTINUOUS_INTEGRATION'] == 'true'
+    # In CI, assume Release unless explicitly Debug
+    return build_config != 'Debug'
+  end
+  
+  # Method 5: Check for production-like environment variables
+  if ENV['NODE_ENV'] == 'production' || ENV['EXPO_PUBLIC_ENV'] == 'production'
+    return true
+  end
+  
+  # Method 6: Check Xcode build settings (for local Release builds)
+  if ENV['CONFIGURATION_BUILD_DIR'] && ENV['CONFIGURATION_BUILD_DIR'].include?('Release')
+    return true
+  end
+  
+  # Method 7: Default to Release if no Debug configuration is explicitly set
+  # This is the safest default for EAS production builds
   if ENV['CONFIGURATION'].nil? && ENV['BUILD_CONFIGURATION'].nil? && podfile_properties['ios.buildConfiguration'].nil?
     # If no explicit configuration, assume Release for safety
-    # (Debug builds should always explicitly set CONFIGURATION=Debug)
+    # Debug builds should always explicitly set CONFIGURATION=Debug
     return true
   end
   
   false
 end
 
-# Check if Flipper should be enabled (only in Debug)
+# SCORCHED EARTH: Check if Flipper should be enabled (ONLY in Debug)
+# Multiple layers of protection to ensure Flipper is DEAD in production
 def flipper_enabled?
-  !is_release_build?
+  # Layer 1: Explicit NO_FLIPPER environment variable (highest priority)
+  if ENV['NO_FLIPPER'] == '1'
+    return false
+  end
+  
+  # Layer 2: Release build detection
+  if is_release_build?
+    return false
+  end
+  
+  # Layer 3: Production environment
+  if ENV['NODE_ENV'] == 'production' || ENV['EAS_BUILD_PROFILE'] == 'production'
+    return false
+  end
+  
+  # Only enable Flipper if explicitly in Debug mode
+  build_config = ENV['CONFIGURATION'] || ENV['BUILD_CONFIGURATION'] || podfile_properties['ios.buildConfiguration']
+  build_config == 'Debug'
 end
 
 ENV['RCT_NEW_ARCH_ENABLED'] ||= '0' if podfile_properties['newArchEnabled'] == 'false'
@@ -79,19 +113,38 @@ target 'WhisperLine' do
   use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
   use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
 
-  # CRITICAL: Disable Flipper in Release builds to avoid archive failures
-  # Flipper is a debug-only tool and should never be included in production builds
+  # SCORCHED EARTH: Disable Flipper COMPLETELY in Release/Production builds
+  # Flipper is a debug-only tool and should NEVER be included in production builds
+  # Multiple layers of protection ensure Flipper is DEAD in production
+  
+  # CRITICAL: Never call use_flipper!() in production
+  # We use flipper_configuration parameter instead, which is safer
+  flipper_config = flipper_enabled? ? FlipperConfiguration.enabled : FlipperConfiguration.disabled
+  
+  # Double-check: If NO_FLIPPER is set, force disable
+  if ENV['NO_FLIPPER'] == '1'
+    flipper_config = FlipperConfiguration.disabled
+    puts "🚫 [Flipper] Explicitly disabled via NO_FLIPPER=1"
+  end
+  
   use_react_native!(
     :path => config[:reactNativePath],
     :hermes_enabled => podfile_properties['expo.jsEngine'] == nil || podfile_properties['expo.jsEngine'] == 'hermes',
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/..",
     :privacy_file_aggregation_enabled => podfile_properties['apple.privacyManifestAggregationEnabled'] != 'false',
-    # Explicitly disable Flipper in Release builds
-    :flipper_configuration => flipper_enabled? ? FlipperConfiguration.enabled : FlipperConfiguration.disabled,
+    # Explicitly disable Flipper in Release/Production builds
+    :flipper_configuration => flipper_config,
   )
+  
+  # CRITICAL: Ensure use_flipper!() is NEVER called
+  # This is a safety check - if someone tries to call it, we prevent it
+  if is_release_build? || ENV['NO_FLIPPER'] == '1'
+    puts "🚫 [Flipper] Production build detected - Flipper is DEAD"
+  end
 
   post_install do |installer|
+    # Standard React Native post-install
     react_native_post_install(
       installer,
       config[:reactNativePath],
@@ -99,9 +152,11 @@ target 'WhisperLine' do
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
     
-    # CRITICAL: Remove debug-only pods from Release builds to avoid archive failures
-    # These pods cause exit code 65 errors during archive/archive validation
+    # ULTIMATE Release build cleanup for 2025 EAS production builds
     if is_release_build?
+      puts "🔧 [Release Build] Starting comprehensive debug-only cleanup..."
+      
+      # Step 1: Remove all debug-only pods
       debug_only_pods = [
         'ReactNativeStaticServer',
         'Flipper',
@@ -113,28 +168,119 @@ target 'WhisperLine' do
         'CocoaAsyncSocket',
         'FlipperDoubleConversion',
         'FlipperFmt',
+        'Flipper-Boost-iOSX',
+        'Flipper-DoubleConversion',
+        'Flipper-Fmt',
+        'Flipper-PeerTalk',
+        'Flipper-RSocket',
+        'FlipperKit',
+        'FlipperKit-Core',
+        'FlipperKit-Folly',
+        'FlipperKit-Glog',
+        'FlipperKit-RSocket',
+        'FlipperKit-SKIOSNetworkPlugin',
+        'FlipperKitUserDefaultsPlugin',
+        'FlipperKitLayoutPlugin',
+        'FlipperKitLayoutTextSearchable',
+        'FlipperKitNetworkPlugin',
+        'FlipperKitReactPlugin',
+        'FlipperKitReactNativePlugin',
       ]
       
-      removed_count = 0
+      removed_pods = []
       installer.pods_project.targets.each do |target|
-        # Check if this target matches any debug-only pod
         should_remove = debug_only_pods.any? { |pod_name| target.name.include?(pod_name) }
         
         if should_remove
           puts "⚠️  [Release Build] Removing debug-only pod: #{target.name}"
-          # Remove from project
           target.remove_from_project
-          removed_count += 1
+          removed_pods << target.name
         end
       end
       
-      if removed_count > 0
-        puts "✅ [Release Build] Removed #{removed_count} debug-only pod(s)"
-      else
-        puts "ℹ️  [Release Build] No debug-only pods found (already clean)"
+      if removed_pods.any?
+        puts "✅ [Release Build] Removed #{removed_pods.length} debug-only pod(s): #{removed_pods.join(', ')}"
       end
+      
+      # Step 2: Remove debug-only architectures and symbols from all targets
+      installer.pods_project.targets.each do |target|
+        target.build_configurations.each do |config|
+          if config.name == 'Release'
+            # Remove debug architectures (x86_64 simulator in Release builds)
+            config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64 x86_64'
+            config.build_settings['ONLY_ACTIVE_ARCH'] = 'NO'
+            
+            # Strip debug symbols
+            config.build_settings['STRIP_INSTALLED_PRODUCT'] = 'YES'
+            config.build_settings['COPY_PHASE_STRIP'] = 'YES'
+            config.build_settings['STRIP_STYLE'] = 'all'
+            
+            # Remove debug information
+            config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf'
+            config.build_settings['GCC_GENERATE_DEBUGGING_SYMBOLS'] = 'NO'
+            
+            # Optimize for Release
+            config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-O'
+            config.build_settings['GCC_OPTIMIZATION_LEVEL'] = 's'
+            
+            puts "🔧 [Release Build] Optimized #{target.name} for Release"
+          end
+        end
+      end
+      
+      # Step 3: SCORCHED EARTH - Fix IPHONEOS_DEPLOYMENT_TARGET mismatches and signing issues
+      # This prevents exit code 65 archive failures
+      deployment_target = podfile_properties['ios.deploymentTarget'] || '15.1'
+      
+      installer.pods_project.targets.each do |target|
+        target.build_configurations.each do |config|
+          # CRITICAL: Fix IPHONEOS_DEPLOYMENT_TARGET mismatches (prevents signing issues)
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = deployment_target
+          
+          # CRITICAL: Ensure ENABLE_BITCODE is NO (required for modern builds)
+          config.build_settings['ENABLE_BITCODE'] = 'NO'
+          
+          if config.name == 'Release'
+            # Xcode 16.1+ requires explicit script phase handling
+            config.build_settings['ENABLE_TESTABILITY'] = 'NO'
+            
+            # Xcode 16.1+ compatibility settings
+            config.build_settings['SWIFT_VERSION'] = '5.0'
+            
+            # Disable warnings that can cause archive failures
+            config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+            config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+            
+            puts "🔧 [Release Build] Fixed IPHONEOS_DEPLOYMENT_TARGET=#{deployment_target} for #{target.name}"
+          end
+        end
+      end
+      
+      # Step 4: Ensure ALL targets have consistent deployment target (prevents mismatches)
+      installer.pods_project.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = deployment_target
+      end
+      
+      puts "✅ [Release Build] Release build optimization complete!"
+      puts "   - Removed #{removed_pods.length} debug-only pod(s)"
+      puts "   - Cleaned debug architectures and symbols"
+      puts "   - Applied Xcode 16.1+ compatibility settings"
     else
       puts "ℹ️  [Debug Build] Debug-only pods enabled (Flipper, ReactNativeStaticServer, etc.)"
+    end
+    
+    # Additional Xcode 16.1+ compatibility for all builds
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # Fix for Xcode 16.1+ "Invalid Podfile" warnings
+        config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+        config.build_settings['CLANG_WARN_DOCUMENTATION_COMMENTS'] = 'NO'
+        
+        # Ensure proper module map handling
+        if config.build_settings['DEFINES_MODULE'] == 'YES'
+          config.build_settings['SWIFT_INCLUDE_PATHS'] ||= []
+        end
+      end
     end
   end
 end

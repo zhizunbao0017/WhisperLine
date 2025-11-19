@@ -18,7 +18,21 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "COCOAPODS_DISABLE_STATS": "1"
+        "COCOAPODS_DISABLE_STATS": "1",
+        "EXPO_NO_DOCTOR": "true",
+        "EXPO_NO_TELEMETRY": "true",
+        "RCT_NO_LAUNCH_PACKAGER": "true",
+        "NO_FLIPPER": "1",
+        "NODE_ENV": "production"
+      },
+      "node": "18.18.2",
+      "cache": {
+        "disabled": false,
+        "paths": [
+          "node_modules/**",
+          "ios/Pods/**",
+          ".expo/**"
+        ]
       }
     }
   },
