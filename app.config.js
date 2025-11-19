@@ -2,6 +2,14 @@
 // This allows conditional plugin inclusion based on build profile
 
 module.exports = function (config) {
+  // CRITICAL: Fix Expo SDK 51+ Metro source map crash bug (Nov 2025)
+  // Disable source map generation to prevent metro transform-worker crash
+  if (process.env.EAS_BUILD_PROFILE === 'production' || process.env.NODE_ENV === 'production') {
+    process.env.EXPO_METRO_NO_SOURCE_MAPS = "true";
+    process.env.GENERATE_SOURCEMAP = "false";
+    process.env.EXPO_DEBUG = "false";
+  }
+
   const isProduction = process.env.EAS_BUILD_PROFILE === 'production' || 
                        process.env.NODE_ENV === 'production' ||
                        (!process.env.EAS_BUILD_PROFILE && !process.env.EXPO_PUBLIC_ENV);

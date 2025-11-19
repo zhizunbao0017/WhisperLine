@@ -23,6 +23,9 @@
         "EXPO_NO_TELEMETRY": "true",
         "RCT_NO_LAUNCH_PACKAGER": "true",
         "NO_FLIPPER": "1",
+        "EXPO_METRO_NO_SOURCE_MAPS": "true",
+        "GENERATE_SOURCEMAP": "false",
+        "EXPO_DEBUG": "false",
         "NODE_ENV": "production"
       },
       "node": "18.18.2",
