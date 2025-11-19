@@ -42,7 +42,10 @@ module.exports = function (config) {
       icon: baseConfigFromJson.icon || "./assets/images/icon.png",
       scheme: baseConfigFromJson.scheme || "whisperline",
       userInterfaceStyle: baseConfigFromJson.userInterfaceStyle || "automatic",
-      newArchEnabled: baseConfigFromJson.newArchEnabled !== undefined ? baseConfigFromJson.newArchEnabled : true,
+      // TEMPORARY: Disable New Architecture to fix fastlane build issues
+      // Some native modules may not support New Architecture yet
+      // TODO: Re-enable after verifying all modules are compatible
+      newArchEnabled: false, // baseConfigFromJson.newArchEnabled !== undefined ? baseConfigFromJson.newArchEnabled : true,
       ios: {
         ...(baseConfigFromJson.ios || {}),
         supportsTablet: baseConfigFromJson.ios?.supportsTablet !== undefined ? baseConfigFromJson.ios.supportsTablet : true,

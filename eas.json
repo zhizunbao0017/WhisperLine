@@ -14,7 +14,7 @@
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "latest",
+        "image": "macos-15.0.0",
         "buildConfiguration": "Release"
       },
       "env": {
