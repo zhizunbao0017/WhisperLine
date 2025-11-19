@@ -7,11 +7,25 @@ module.exports = function(api) {
                        process.env.NODE_ENV === 'production' ||
                        process.env.CI === 'true';
   
+  // CRITICAL: Ensure babel-plugin-module-resolver is available
+  // Verify the plugin exists before using it
+  try {
+    require.resolve('babel-plugin-module-resolver');
+  } catch (e) {
+    throw new Error(
+      '❌ babel-plugin-module-resolver not found! ' +
+      'Please ensure it is installed: npm install babel-plugin-module-resolver'
+    );
+  }
+  
   const plugins = [
     [
       'module-resolver',
       {
+        root: ['./'],
+        extensions: ['.ios.js', '.android.js', '.js', '.jsx', '.json', '.tsx', '.ts'],
         alias: {
+          '@': './',
           'ReactPropTypes': 'prop-types',
         }
       }

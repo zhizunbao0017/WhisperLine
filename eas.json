@@ -33,13 +33,9 @@
       },
       "node": "18.18.2",
       "cache": {
-        "disabled": false,
-        "paths": [
-          "node_modules/**",
-          "ios/Pods/**",
-          ".expo/**"
-        ]
-      }
+        "disabled": true
+      },
+      "prebuildCommand": "node scripts/verify-dependencies.js"
     }
   },
   "submit": {
