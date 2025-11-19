@@ -15,6 +15,41 @@ def ccache_enabled?(podfile_properties)
   podfile_properties['apple.ccacheEnabled'] == 'true'
 end
 
+# Determine if this is a Release/Production build
+def is_release_build?
+  # Method 1: Check explicit build configuration
+  build_config = ENV['CONFIGURATION'] || ENV['BUILD_CONFIGURATION'] || podfile_properties['ios.buildConfiguration']
+  if build_config == 'Release'
+    return true
+  end
+  
+  # Method 2: Check EAS build profile (production = Release)
+  if ENV['EAS_BUILD_PROFILE'] == 'production'
+    return true
+  end
+  
+  # Method 3: Check if we're in EAS build environment (production builds are Release)
+  if ENV['EAS_BUILD'] == 'true' && ENV['EAS_BUILD_PROFILE'] != 'development'
+    return true
+  end
+  
+  # Method 4: Default to Release if no Debug configuration is explicitly set
+  # This handles cases where EAS doesn't set explicit environment variables
+  # but we're building for production (which should be Release)
+  if ENV['CONFIGURATION'].nil? && ENV['BUILD_CONFIGURATION'].nil? && podfile_properties['ios.buildConfiguration'].nil?
+    # If no explicit configuration, assume Release for safety
+    # (Debug builds should always explicitly set CONFIGURATION=Debug)
+    return true
+  end
+  
+  false
+end
+
+# Check if Flipper should be enabled (only in Debug)
+def flipper_enabled?
+  !is_release_build?
+end
+
 ENV['RCT_NEW_ARCH_ENABLED'] ||= '0' if podfile_properties['newArchEnabled'] == 'false'
 ENV['EX_DEV_CLIENT_NETWORK_INSPECTOR'] ||= podfile_properties['EX_DEV_CLIENT_NETWORK_INSPECTOR']
 ENV['RCT_USE_RN_DEP'] ||= '1' if podfile_properties['ios.buildReactNativeFromSource'] != 'true' && podfile_properties['newArchEnabled'] != 'false'
@@ -44,12 +79,16 @@ target 'WhisperLine' do
   use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
   use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
 
+  # CRITICAL: Disable Flipper in Release builds to avoid archive failures
+  # Flipper is a debug-only tool and should never be included in production builds
   use_react_native!(
     :path => config[:reactNativePath],
     :hermes_enabled => podfile_properties['expo.jsEngine'] == nil || podfile_properties['expo.jsEngine'] == 'hermes',
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/..",
     :privacy_file_aggregation_enabled => podfile_properties['apple.privacyManifestAggregationEnabled'] != 'false',
+    # Explicitly disable Flipper in Release builds
+    :flipper_configuration => flipper_enabled? ? FlipperConfiguration.enabled : FlipperConfiguration.disabled,
   )
 
   post_install do |installer|
@@ -59,5 +98,43 @@ target 'WhisperLine' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+    
+    # CRITICAL: Remove debug-only pods from Release builds to avoid archive failures
+    # These pods cause exit code 65 errors during archive/archive validation
+    if is_release_build?
+      debug_only_pods = [
+        'ReactNativeStaticServer',
+        'Flipper',
+        'FlipperKit',
+        'Flipper-Folly',
+        'Flipper-Glog',
+        'Flipper-PeerTalk',
+        'Flipper-RSocket',
+        'CocoaAsyncSocket',
+        'FlipperDoubleConversion',
+        'FlipperFmt',
+      ]
+      
+      removed_count = 0
+      installer.pods_project.targets.each do |target|
+        # Check if this target matches any debug-only pod
+        should_remove = debug_only_pods.any? { |pod_name| target.name.include?(pod_name) }
+        
+        if should_remove
+          puts "⚠️  [Release Build] Removing debug-only pod: #{target.name}"
+          # Remove from project
+          target.remove_from_project
+          removed_count += 1
+        end
+      end
+      
+      if removed_count > 0
+        puts "✅ [Release Build] Removed #{removed_count} debug-only pod(s)"
+      else
+        puts "ℹ️  [Release Build] No debug-only pods found (already clean)"
+      end
+    else
+      puts "ℹ️  [Debug Build] Debug-only pods enabled (Flipper, ReactNativeStaticServer, etc.)"
+    end
   end
 end
