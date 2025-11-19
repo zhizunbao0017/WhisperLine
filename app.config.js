@@ -1,6 +1,9 @@
 // Dynamic Expo configuration
 // This allows conditional plugin inclusion based on build profile
 
+const fs = require('fs');
+const path = require('path');
+
 module.exports = function (config) {
   // CRITICAL: Fix Expo SDK 51+ Metro source map crash bug (Nov 2025)
   // Disable source map generation to prevent metro transform-worker crash
@@ -14,48 +17,67 @@ module.exports = function (config) {
                        process.env.NODE_ENV === 'production' ||
                        (!process.env.EAS_BUILD_PROFILE && !process.env.EXPO_PUBLIC_ENV);
 
-  // Base configuration from app.json
+  // Read base configuration from app.json (if it exists)
+  // This satisfies expo doctor's requirement that app.config.js uses values from app.json
+  let baseConfigFromJson = {};
+  const appJsonPath = path.join(__dirname, 'app.json');
+  if (fs.existsSync(appJsonPath)) {
+    try {
+      const appJsonContent = fs.readFileSync(appJsonPath, 'utf8');
+      const appJson = JSON.parse(appJsonContent);
+      baseConfigFromJson = appJson.expo || {};
+    } catch (e) {
+      console.warn('⚠️  Could not read app.json:', e.message);
+    }
+  }
+
+  // Base configuration (merge app.json values with dynamic overrides)
   const baseConfig = {
     expo: {
-      name: "WhisperLine",
-      slug: "whisperline",
-      version: "1.1.1",
-      orientation: "portrait",
-      icon: "./assets/images/icon.png",
-      scheme: "whisperline",
-      userInterfaceStyle: "automatic",
-      newArchEnabled: true,
+      // Use values from app.json if available, otherwise use defaults
+      name: baseConfigFromJson.name || "WhisperLine",
+      slug: baseConfigFromJson.slug || "whisperline",
+      version: baseConfigFromJson.version || "1.1.1",
+      orientation: baseConfigFromJson.orientation || "portrait",
+      icon: baseConfigFromJson.icon || "./assets/images/icon.png",
+      scheme: baseConfigFromJson.scheme || "whisperline",
+      userInterfaceStyle: baseConfigFromJson.userInterfaceStyle || "automatic",
+      newArchEnabled: baseConfigFromJson.newArchEnabled !== undefined ? baseConfigFromJson.newArchEnabled : true,
       ios: {
-        supportsTablet: true,
+        ...(baseConfigFromJson.ios || {}),
+        supportsTablet: baseConfigFromJson.ios?.supportsTablet !== undefined ? baseConfigFromJson.ios.supportsTablet : true,
         infoPlist: {
-          NSLocationWhenInUseUsageDescription: "We need your location to get the current weather for your diary entry.",
-          NSFaceIDUsageDescription: "WhisperLine uses Face ID to securely lock and protect your entries.",
-          NSPhotoLibraryUsageDescription: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
-          NSCameraUsageDescription: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries.",
-          ITSAppUsesNonExemptEncryption: false
+          ...(baseConfigFromJson.ios?.infoPlist || {}),
+          NSLocationWhenInUseUsageDescription: baseConfigFromJson.ios?.infoPlist?.NSLocationWhenInUseUsageDescription || "We need your location to get the current weather for your diary entry.",
+          NSFaceIDUsageDescription: baseConfigFromJson.ios?.infoPlist?.NSFaceIDUsageDescription || "WhisperLine uses Face ID to securely lock and protect your entries.",
+          NSPhotoLibraryUsageDescription: baseConfigFromJson.ios?.infoPlist?.NSPhotoLibraryUsageDescription || "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
+          NSCameraUsageDescription: baseConfigFromJson.ios?.infoPlist?.NSCameraUsageDescription || "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries.",
+          ITSAppUsesNonExemptEncryption: baseConfigFromJson.ios?.infoPlist?.ITSAppUsesNonExemptEncryption !== undefined ? baseConfigFromJson.ios.infoPlist.ITSAppUsesNonExemptEncryption : false
         },
-        bundleIdentifier: "com.xietian.whisperline",
-        buildNumber: "14"
+        bundleIdentifier: baseConfigFromJson.ios?.bundleIdentifier || "com.xietian.whisperline",
+        buildNumber: baseConfigFromJson.ios?.buildNumber || "14"
       },
       android: {
-        adaptiveIcon: {
+        ...(baseConfigFromJson.android || {}),
+        adaptiveIcon: baseConfigFromJson.android?.adaptiveIcon || {
           backgroundColor: "#E6F4FE",
           foregroundImage: "./assets/images/android-icon-foreground.png",
           backgroundImage: "./assets/images/android-icon-background.png",
           monochromeImage: "./assets/images/android-icon-monochrome.png"
         },
-        edgeToEdgeEnabled: true,
-        predictiveBackGestureEnabled: false,
-        package: "com.xietian.whisperline",
-        permissions: [
+        edgeToEdgeEnabled: baseConfigFromJson.android?.edgeToEdgeEnabled !== undefined ? baseConfigFromJson.android.edgeToEdgeEnabled : true,
+        predictiveBackGestureEnabled: baseConfigFromJson.android?.predictiveBackGestureEnabled !== undefined ? baseConfigFromJson.android.predictiveBackGestureEnabled : false,
+        package: baseConfigFromJson.android?.package || "com.xietian.whisperline",
+        permissions: baseConfigFromJson.android?.permissions || [
           "android.permission.CAMERA",
           "android.permission.READ_EXTERNAL_STORAGE",
           "android.permission.READ_MEDIA_IMAGES"
         ]
       },
       web: {
-        output: "static",
-        favicon: "./assets/images/favicon.png"
+        ...(baseConfigFromJson.web || {}),
+        output: baseConfigFromJson.web?.output || "static",
+        favicon: baseConfigFromJson.web?.favicon || "./assets/images/favicon.png"
       },
       plugins: [
         "expo-router",
@@ -84,15 +106,19 @@ module.exports = function (config) {
         ]
       ],
       experiments: {
-        typedRoutes: true,
+        ...(baseConfigFromJson.experiments || {}),
+        typedRoutes: baseConfigFromJson.experiments?.typedRoutes !== undefined ? baseConfigFromJson.experiments.typedRoutes : true,
         // CRITICAL: Conditionally enable reactCompiler only in development
         // React Compiler can cause issues in production builds (Expo SDK 51+)
+        // Override app.json value if it exists
         reactCompiler: !isProduction
       },
       extra: {
-        router: {},
+        ...(baseConfigFromJson.extra || {}),
+        router: baseConfigFromJson.extra?.router || {},
         eas: {
-          projectId: "9685fd18-75f1-4c62-807b-e38eed6370ae"
+          ...(baseConfigFromJson.extra?.eas || {}),
+          projectId: baseConfigFromJson.extra?.eas?.projectId || "9685fd18-75f1-4c62-807b-e38eed6370ae"
         }
       }
     }

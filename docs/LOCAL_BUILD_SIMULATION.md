@@ -4,6 +4,21 @@
 
 ## 快速开始
 
+### 方法 0: 快速预检查（最快，推荐先运行）
+```bash
+npm run prebuild:check
+```
+
+**优点**：
+- ⚡ 最快（几秒钟）
+- ✅ 检查所有关键配置
+- 🎯 适合每次提交前运行
+
+**验证内容**：
+- ✅ 依赖验证
+- ✅ Babel 配置测试
+- ✅ **原生代码编译检查**（新增）
+
 ### 方法 1: 轻量级模拟（推荐，快速）
 ```bash
 npm run simulate:build:light
@@ -20,6 +35,8 @@ npm run simulate:build:light
 - ✅ Babel 配置测试
 - ✅ app.config.js 加载测试
 - ✅ Metro 入口点解析
+- ✅ **@ 别名路径解析**
+- ✅ **原生代码编译检查**（新增）
 - ✅ 常见问题检查
 
 ### 方法 2: 完整模拟（彻底，但较慢）
@@ -61,7 +78,10 @@ npm run prebuild:check
 完整模拟 EAS 构建环境，包括清理和重新安装依赖
 
 ### `npm run prebuild:check`
-运行依赖验证和 Babel 测试（快速检查）
+运行依赖验证、Babel 测试和原生代码检查（完整快速检查）
+
+### `npm run test:native`
+只检查原生代码编译配置（iOS 配置、依赖、EAS 设置等）
 
 ## 模拟构建验证的内容
 
@@ -70,7 +90,15 @@ npm run prebuild:check
 3. **Babel 配置**：测试 babel.config.js 是否能正确加载
 4. **app.config.js**：验证应用配置是否正确
 5. **Metro 入口点**：检查 expo-router 入口点是否能解析
-6. **常见问题**：检查 package.json、.npmrc、eas.json 配置
+6. **@ 别名路径解析**：验证路径别名配置是否正确
+7. **原生代码编译检查**（新增）：
+   - iOS Bundle ID 和 Build Number
+   - 权限描述配置
+   - New Architecture 配置
+   - 原生依赖检查
+   - CocoaPods 文件检查
+   - EAS 构建配置验证
+8. **常见问题**：检查 package.json、.npmrc、eas.json 配置
 
 ## 模拟构建 vs 真实构建
 
@@ -79,18 +107,21 @@ npm run prebuild:check
 - 依赖安装
 - 配置文件加载
 - Metro bundler 入口点
+- **@ 别名路径解析**
+- **原生代码配置**（Bundle ID、权限、架构等）
+- **EAS 构建配置**
 
 ### ❌ 模拟构建无法验证：
-- 原生 iOS 代码编译
-- CocoaPods 依赖
-- Xcode 构建过程
-- 证书和签名
+- 实际的 Xcode 编译过程
+- CocoaPods 依赖冲突（运行时）
+- 代码签名和证书
+- App Store Connect 配置
 
 ## 使用流程
 
 ### 推荐流程：
 ```bash
-# 1. 快速检查（几秒钟）
+# 1. 快速预检查（几秒钟）- 包含原生代码检查
 npm run prebuild:check
 
 # 2. 如果通过，运行轻量级模拟（1-2分钟）
@@ -102,6 +133,8 @@ git commit -m "Fix babel-plugin-module-resolver build issue"
 git push
 eas build --platform ios --profile production
 ```
+
+**注意**：`prebuild:check` 现在包含原生代码编译检查，可以提前发现 iOS 配置问题！
 
 ### 如果发现问题：
 1. 根据错误信息修复问题

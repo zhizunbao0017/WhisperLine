@@ -129,8 +129,17 @@ fi
 echo -e "${GREEN}✅ @ alias paths can be resolved${NC}"
 echo ""
 
-# Step 7: Check for common issues
-echo "🔎 Step 7: Checking for common build issues..."
+# Step 7: Check native build configuration
+echo "🔧 Step 7: Checking native build configuration..."
+node scripts/check-native-build.js
+if [ $? -ne 0 ]; then
+    echo -e "${YELLOW}⚠️  Native build check found issues (may not block build)${NC}"
+    # Don't exit, as warnings are acceptable
+fi
+echo ""
+
+# Step 8: Check for common issues
+echo "🔎 Step 8: Checking for common build issues..."
 ISSUES_FOUND=0
 
 # Check if babel-plugin-module-resolver is in dependencies

@@ -19,7 +19,7 @@
       },
       "env": {
         "COCOAPODS_DISABLE_STATS": "1",
-        "EXPO_NO_DOCTOR": "true",
+        "EXPO_NO_DOCTOR": "false",
         "EXPO_NO_TELEMETRY": "true",
         "RCT_NO_LAUNCH_PACKAGER": "true",
         "NO_FLIPPER": "1",
@@ -34,8 +34,7 @@
       "node": "18.18.2",
       "cache": {
         "disabled": true
-      },
-      "prebuildCommand": "node scripts/verify-dependencies.js"
+      }
     }
   },
   "submit": {

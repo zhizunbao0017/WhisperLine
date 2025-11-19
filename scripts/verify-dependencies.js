@@ -3,10 +3,20 @@
 /**
  * Verify critical dependencies before EAS build
  * This script ensures babel-plugin-module-resolver is installed
+ * 
+ * Note: This script ignores unknown command-line arguments (like --platform)
+ * to work with EAS build system which may pass additional arguments
  */
 
 const fs = require('fs');
 const path = require('path');
+
+// Ignore unknown command-line arguments (EAS may pass --platform, etc.)
+// We only care about verifying dependencies, not parsing arguments
+const args = process.argv.slice(2);
+if (args.length > 0) {
+  // Silently ignore any arguments passed by EAS build system
+}
 
 console.log('🔍 Verifying critical dependencies...\n');
 

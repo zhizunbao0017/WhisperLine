@@ -9,6 +9,14 @@ const isProduction = process.env.EAS_BUILD_PROFILE === 'production' ||
 
 const config = getDefaultConfig(__dirname);
 
+// Configure module resolver for @ alias (matches babel.config.js)
+config.resolver = {
+  ...config.resolver,
+  alias: {
+    '@': __dirname,
+  },
+};
+
 // CRITICAL: Disable source map generation in production builds
 // This prevents Metro transform-worker crash in Expo SDK 51+
 if (isProduction) {
@@ -32,10 +40,12 @@ if (isProduction) {
     },
   };
 
-  // Disable source map in resolver
+  // Disable source map in resolver (preserve alias config)
   config.resolver = {
     ...config.resolver,
     sourceExts: config.resolver.sourceExts || [],
+    // Keep @ alias configuration
+    alias: config.resolver.alias || { '@': __dirname },
   };
 
   // Ensure source maps are disabled

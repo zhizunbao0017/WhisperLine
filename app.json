@@ -42,7 +42,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-dev-client",
       [
         "expo-image-picker",
         {
@@ -65,8 +64,7 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
     "extra": {
       "router": {},

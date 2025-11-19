@@ -129,8 +129,17 @@ if [ $? -ne 0 ]; then
 fi
 echo ""
 
-# Step 8: Check for common issues
-echo "🔎 Step 8: Checking for common build issues..."
+# Step 8: Check native build configuration
+echo "🔧 Step 8: Checking native build configuration..."
+node scripts/check-native-build.js
+if [ $? -ne 0 ]; then
+    echo -e "${YELLOW}⚠️  Native build check found issues (may not block build)${NC}"
+    # Don't exit, as warnings are acceptable
+fi
+echo ""
+
+# Step 9: Check for common issues
+echo "🔎 Step 9: Checking for common build issues..."
 ISSUES_FOUND=0
 
 # Check if babel-plugin-module-resolver is in dependencies

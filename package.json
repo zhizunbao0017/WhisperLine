@@ -11,9 +11,10 @@
     "lint": "expo lint",
     "test:babel": "node scripts/test-babel-only.js",
     "test:deps": "node scripts/verify-dependencies.js",
+    "test:native": "node scripts/check-native-build.js",
     "simulate:build": "bash scripts/simulate-eas-build.sh",
     "simulate:build:light": "bash scripts/simulate-eas-build-light.sh",
-    "prebuild:check": "npm run test:deps && npm run test:babel"
+    "prebuild:check": "npm run test:deps && npm run test:babel && npm run test:native"
   },
   "dependencies": {
     "@dr.pogodin/react-native-fs": "^2.36.1",
@@ -74,7 +75,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
-    "@types/react-native": "0.73.0",
     "babel-plugin-transform-define": "^2.1.4",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
