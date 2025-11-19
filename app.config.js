@@ -8,7 +8,7 @@ module.exports = function (config) {
   // NOTE: Environment variables are set in eas.json
   // EAS build system will set these automatically based on eas.json env configuration
   // No need to set them here to avoid conflicts
-  
+
   const isProduction = process.env.EAS_BUILD_PROFILE === 'production' || 
                        process.env.NODE_ENV === 'production' ||
                        (!process.env.EAS_BUILD_PROFILE && !process.env.EXPO_PUBLIC_ENV);
@@ -85,30 +85,30 @@ module.exports = function (config) {
       plugins: [
         // Read plugins from app.json, fallback to default if not present
         ...(baseConfigFromJson.plugins || [
-          "expo-router",
-          // CRITICAL: Only include expo-dev-client in development builds
-          // In production builds, devDependencies are not installed, causing plugin resolution failures
-          ...(isProduction ? [] : ["expo-dev-client"]),
-          [
-            "expo-image-picker",
-            {
-              photosPermission: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
-              cameraPermission: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
-            }
-          ],
-          [
-            "expo-splash-screen",
-            {
+        "expo-router",
+        // CRITICAL: Only include expo-dev-client in development builds
+        // In production builds, devDependencies are not installed, causing plugin resolution failures
+        ...(isProduction ? [] : ["expo-dev-client"]),
+        [
+          "expo-image-picker",
+          {
+            photosPermission: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
+            cameraPermission: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
+          }
+        ],
+        [
+          "expo-splash-screen",
+          {
+            image: "./assets/images/icon.png",
+            resizeMode: "contain",
+            backgroundColor: "#03ACE2",
+            dark: {
               image: "./assets/images/icon.png",
               resizeMode: "contain",
-              backgroundColor: "#03ACE2",
-              dark: {
-                image: "./assets/images/icon.png",
-                resizeMode: "contain",
-                backgroundColor: "#03ACE2"
-              }
+              backgroundColor: "#03ACE2"
             }
-          ]
+          }
+        ]
         ])
       ],
       experiments: {
