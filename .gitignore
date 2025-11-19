@@ -41,5 +41,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Ignore specific image files (not all PNGs)
+# Note: assets/images/*.png should be tracked for app icons
 image.png
-*.png
