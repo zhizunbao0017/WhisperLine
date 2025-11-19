@@ -5,14 +5,10 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = function (config) {
-  // CRITICAL: Fix Expo SDK 51+ Metro source map crash bug (Nov 2025)
-  // Disable source map generation to prevent metro transform-worker crash
-  if (process.env.EAS_BUILD_PROFILE === 'production' || process.env.NODE_ENV === 'production') {
-    process.env.EXPO_METRO_NO_SOURCE_MAPS = "true";
-    process.env.GENERATE_SOURCEMAP = "false";
-    process.env.EXPO_DEBUG = "false";
-  }
-
+  // NOTE: Environment variables are set in eas.json
+  // EAS build system will set these automatically based on eas.json env configuration
+  // No need to set them here to avoid conflicts
+  
   const isProduction = process.env.EAS_BUILD_PROFILE === 'production' || 
                        process.env.NODE_ENV === 'production' ||
                        (!process.env.EAS_BUILD_PROFILE && !process.env.EXPO_PUBLIC_ENV);
