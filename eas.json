@@ -14,7 +14,7 @@
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "macos-15.0.0",
+        "image": "sdk-54",
         "buildConfiguration": "Release"
       },
       "env": {
