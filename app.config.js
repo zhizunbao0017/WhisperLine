@@ -82,35 +82,51 @@ module.exports = function (config) {
       },
       // CRITICAL: Read plugins from app.json to ensure expo-build-properties is included
       // This allows app.json to be the single source of truth for plugin configuration
-      plugins: [
-        // Read plugins from app.json, fallback to default if not present
-        ...(baseConfigFromJson.plugins || [
-        "expo-router",
-        // CRITICAL: Only include expo-dev-client in development builds
-        // In production builds, devDependencies are not installed, causing plugin resolution failures
-        ...(isProduction ? [] : ["expo-dev-client"]),
-        [
-          "expo-image-picker",
-          {
-            photosPermission: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
-            cameraPermission: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
-          }
-        ],
-        [
-          "expo-splash-screen",
-          {
-            image: "./assets/images/icon.png",
-            resizeMode: "contain",
-            backgroundColor: "#03ACE2",
-            dark: {
+      plugins: (() => {
+        // Get plugins from app.json or use defaults
+        const pluginsFromJson = baseConfigFromJson.plugins || [
+          "expo-router",
+          ...(process.env.EAS_BUILD_PROFILE === 'production' ? [] : ["expo-dev-client"]),
+          [
+            "expo-image-picker",
+            {
+              photosPermission: "Allow WhisperLine to access your photos to let you personalize your Companions and journal entries with your own images.",
+              cameraPermission: "Allow WhisperLine to use your camera to let you capture photos for your Companions and journal entries."
+            }
+          ],
+          [
+            "expo-splash-screen",
+            {
               image: "./assets/images/icon.png",
               resizeMode: "contain",
-              backgroundColor: "#03ACE2"
+              backgroundColor: "#03ACE2",
+              dark: {
+                image: "./assets/images/icon.png",
+                resizeMode: "contain",
+                backgroundColor: "#03ACE2"
+              }
             }
-          }
-        ]
-        ])
-      ],
+          ]
+        ];
+        
+        // CRITICAL: Dynamically exclude expo-dev-client in production builds
+        // In production builds (EAS_BUILD_PROFILE === 'production'), devDependencies are not installed
+        // This prevents "Cannot find module 'expo-dev-client'" errors during build
+        if (process.env.EAS_BUILD_PROFILE === 'production') {
+          return pluginsFromJson.filter(plugin => {
+            // Filter out expo-dev-client string or array with expo-dev-client
+            if (typeof plugin === 'string') {
+              return plugin !== 'expo-dev-client';
+            }
+            if (Array.isArray(plugin) && plugin[0] === 'expo-dev-client') {
+              return false;
+            }
+            return true;
+          });
+        }
+        
+        return pluginsFromJson;
+      })(),
       experiments: {
         ...(baseConfigFromJson.experiments || {}),
         typedRoutes: baseConfigFromJson.experiments?.typedRoutes !== undefined ? baseConfigFromJson.experiments.typedRoutes : true,
