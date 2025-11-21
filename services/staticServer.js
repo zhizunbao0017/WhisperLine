@@ -1,5 +1,8 @@
 import * as FileSystem from 'expo-file-system';
 
+// TEMPORARILY DISABLED: @dr.pogodin/react-native-static-server causes build failures
+// TODO: Re-enable when the library is fixed or replaced
+/*
 let StaticServer = null;
 let DocumentDirectoryPath = null;
 let exists = async () => false;
@@ -13,6 +16,12 @@ try {
 } catch (error) {
     StaticServer = null;
 }
+*/
+let StaticServer = null;
+let DocumentDirectoryPath = null;
+let exists = async () => false;
+let mkdir = async () => {};
+let didWarnNativeUnavailable = false;
 
 try {
     // eslint-disable-next-line global-require
@@ -40,7 +49,12 @@ const normalizeOrigin = (origin) => {
     return origin.endsWith('/') ? origin.slice(0, -1) : origin;
 };
 
+// TEMPORARILY DISABLED: StaticServer functionality disabled due to build failures
 export const ensureStaticServer = async () => {
+    // Always return null to use fallback mode (data: URIs)
+    return null;
+    
+    /*
     if (!StaticServer || !DocumentDirectoryPath) {
         if (!didWarnNativeUnavailable) {
             console.warn(
@@ -115,6 +129,7 @@ export const ensureStaticServer = async () => {
     const origin = await serverInstance.start();
     serverOrigin = normalizeOrigin(origin);
     return serverOrigin;
+    */
 };
 
 const guessMimeType = (uri = '') => {
@@ -127,7 +142,30 @@ const guessMimeType = (uri = '') => {
     return 'image/jpeg';
 };
 
+// TEMPORARILY DISABLED: Always use data: URI fallback
 export const getPublicUrlForFileUri = async (fileUri) => {
+    // Always use data: URI fallback since StaticServer is disabled
+    try {
+        const primaryUri = fileUri?.startsWith('file://') ? fileUri : `file://${fileUri}`;
+        let base64;
+        try {
+            base64 = await FileSystem.readAsStringAsync(primaryUri, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+        } catch (primaryError) {
+            const stripped = stripFileScheme(primaryUri);
+            base64 = await FileSystem.readAsStringAsync(stripped, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+        }
+        const mime = guessMimeType(fileUri);
+        return `data:${mime};base64,${base64}`;
+    } catch (error) {
+        console.warn('[StaticServer] Failed to create data URI fallback, returning original URI.', error);
+        return fileUri;
+    }
+    
+    /*
     const origin = await ensureStaticServer();
     if (!origin) {
         try {
@@ -169,9 +207,15 @@ export const getPublicUrlForFileUri = async (fileUri) => {
 
     const relativePath = fileUri.slice(imagesDirUri.length);
     return `${origin}/${relativePath.replace(/^\//, '')}`;
+    */
 };
 
+// TEMPORARILY DISABLED: StaticServer functionality disabled
 export const stopStaticServer = async () => {
+    // No-op since StaticServer is disabled
+    return;
+    
+    /*
     if (serverInstance) {
         try {
             await serverInstance.stop();
@@ -181,4 +225,5 @@ export const stopStaticServer = async () => {
         serverInstance = null;
         serverOrigin = null;
     }
+    */
 };

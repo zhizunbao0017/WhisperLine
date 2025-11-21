@@ -38,7 +38,9 @@ import { CompanionContext } from '../context/CompanionContext';
 import { useUserState } from '../context/UserStateContext';
 import { ThemedText as Text } from '../components/ThemedText';
 import { getCurrentWeather } from '../services/weatherService';
-import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
+// TEMPORARILY DISABLED: StaticServer removed due to build failures
+// import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
+// import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 import themeAnalysisService from '../services/ThemeAnalysisService';
 import { useThemeStyles } from '@/hooks/useThemeStyles';
 
@@ -139,7 +141,10 @@ const remapHtmlImageSourcesToServer = async (html) => {
                 return [tag, tag];
             }
 
-            const publicUrl = await getPublicUrlForFileUri(fileUri);
+            // TEMPORARILY DISABLED: StaticServer removed - using original URI
+            // const publicUrl = await getPublicUrlForFileUri(fileUri);
+            // const publicUrl = await getPublicUrlForFileUri(fileUri); // Still works, returns data: URI fallback
+            const publicUrl = fileUri; // Fallback to original URI
             const updatedTag = tag.replace(/src="([^"]*)"/i, `src="${publicUrl}"`);
             return [tag, updatedTag];
         })
@@ -688,7 +693,8 @@ const AddEditDiaryScreen = () => {
     useEffect(() => {
         let isMounted = true;
         (async () => {
-            await ensureStaticServer();
+            // TEMPORARILY DISABLED: StaticServer removed - no-op call
+            // await ensureStaticServer(); // Still works, returns null immediately
             if (!isMounted) return;
 
             if (!hasRemappedInitialHtml.current && initialContentRef.current) {
@@ -713,7 +719,8 @@ const AddEditDiaryScreen = () => {
     // --- Image insertion logic (persistent file URI + ID passing) ---
     const handleInsertImage = async () => {
         try {
-            await ensureStaticServer();
+            // TEMPORARILY DISABLED: StaticServer removed - no-op call
+            // await ensureStaticServer(); // Still works, returns null immediately
 
             // 1. Request permission to access photos
             const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -808,7 +815,9 @@ const AddEditDiaryScreen = () => {
                 console.log('handleInsertImage: finalUri ->', finalUri, 'type:', typeof finalUri);
 
                 if (editorRef.current) {
-                    const publicUri = await getPublicUrlForFileUri(destinationFile.uri);
+                    // TEMPORARILY DISABLED: StaticServer removed - still works, returns data: URI fallback
+                    // const publicUri = await getPublicUrlForFileUri(destinationFile.uri);
+                    const publicUri = destinationFile.uri; // Fallback to original URI
                     const style = 'max-width:100%; height:auto; display:block; margin:12px 0; border-radius:8px;';
                     editorRef.current.insertImage(publicUri, style);
 
