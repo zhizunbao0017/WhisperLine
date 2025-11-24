@@ -1,62 +1,30 @@
-import React, { useContext, useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   SafeAreaView,
-  ScrollView,
+  SectionList,
+  StatusBar, // 核心改动：使用 SectionList
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { Chapter, EmotionType, Storyline } from '../models/PIE';
+import DiarySummaryCard from '../components/DiarySummaryCard';
+import FloatingActionButton from '../components/FloatingActionButton'; // 引入 FAB
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { useUserState } from '../context/UserStateContext';
-import DiarySummaryCard from '../components/DiarySummaryCard';
+import { Chapter, EmotionType } from '../models/PIE';
 
-type ChapterDetailParams = {
-  id?: string;
-};
+type ChapterDetailParams = { id?: string };
 
-const FALLBACK_COLORS = {
-  background: '#ffffff',
-  card: '#ffffff',
-  text: '#111111',
-  border: '#e5e5e5',
-  primary: '#4a6cf7',
-};
-
-// Emotion color mapping
+// ... (保留之前的颜色和 Label 常量) ...
 const EMOTION_COLORS: Record<EmotionType, string> = {
-  happy: '#FFD700', // Gold
-  excited: '#FF69B4', // Hot Pink
-  calm: '#87CEEB', // Sky Blue
-  tired: '#A9A9A9', // Dark Gray
-  sad: '#483D8B', // Dark Slate Blue
-  angry: '#FF4500', // Orange Red
+  happy: '#FFD700', excited: '#FF69B4', calm: '#87CEEB',
+  tired: '#A9A9A9', sad: '#483D8B', angry: '#FF4500',
 };
-
-// Emotion label mapping
-const EMOTION_LABELS: Record<EmotionType, string> = {
-  happy: 'Happy',
-  excited: 'Excited',
-  calm: 'Calm',
-  tired: 'Tired',
-  sad: 'Sad',
-  angry: 'Angry',
-};
-
-// --- Internal State Management ---
-interface ChapterData {
-  chapter: Chapter;
-  entries: any[];
-  recentEntries: any[];
-  relatedStorylines: Storyline[];
-  totalEmotions: number;
-  emotionDistribution: Record<EmotionType, number>;
-}
 
 const ChapterDetailScreen: React.FC = () => {
   const { id } = useLocalSearchParams<ChapterDetailParams>();
@@ -64,616 +32,237 @@ const ChapterDetailScreen: React.FC = () => {
   const diaryContext = useContext(DiaryContext);
   const themeContext = useContext(ThemeContext);
   const { userState, allRichEntries } = useUserState();
+  const { colors } = themeContext;
 
-  const colors = themeContext?.colors ?? FALLBACK_COLORS;
-  const diaries = diaryContext?.diaries ?? [];
-
-  // --- Internal State Management ---
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [chapterData, setChapterData] = useState<ChapterData | null>(null);
+  const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [sections, setSections] = useState<any[]>([]); // SectionList 的数据源
+  const [stats, setStats] = useState<any>(null); // 统计数据
 
   useEffect(() => {
-    // --- CRITICAL: Use try...catch...finally to ensure loading state is always cleared ---
-    try {
-      // --- Start Data Processing ---
-      console.log(`[ChapterDetail] Loading data for chapterId: ${id}`);
-
-      // --- Defensive Check 1: Chapter ID exists ---
-      if (!id) {
-        throw new Error('Chapter ID is missing.');
-      }
-
-      // --- Defensive Check 2: UserState is available ---
-      if (!userState) {
-        throw new Error('User state is not available. Please wait for data to load.');
-      }
-
-      // --- Defensive Check 3: Chapters object exists ---
-      if (!userState.chapters) {
-        throw new Error('Chapter data could not be found.');
-      }
-
-      const chapter = userState.chapters[id];
-
-      // --- Defensive Check 4: Chapter exists ---
-      if (!chapter) {
-        throw new Error(`Chapter with ID "${id}" could not be found.`);
-      }
-
-      // --- Defensive Check 5: Chapter has required properties ---
-      if (!chapter.id || !chapter.title) {
-        throw new Error('Chapter data is incomplete. Some required fields are missing.');
-      }
-
-      // --- Defensive Check 6: Metrics exist (warn but don't fail) ---
-      if (!chapter.metrics) {
-        console.warn(`[ChapterDetail] Metrics not found for chapter ${id}. May need a rebuild.`);
-      }
-
-      // --- Process entries for this chapter ---
-      const entryIds = chapter.entryIds ?? [];
-      const ids = new Set(entryIds.map(String));
-      const entries = diaries
-        .filter((entry) => ids.has(String(entry.id)))
-        .sort((a, b) => {
-          const dateA = new Date(a.createdAt || 0).getTime();
-          const dateB = new Date(b.createdAt || 0).getTime();
-          return dateB - dateA; // Sort descending (newest first)
-        });
-
-      // --- Get recent entries (last 3) ---
-      const recentEntries = entries.slice(0, 3);
-
-      // --- Get storylines that contain entries from this chapter ---
-      const chapterEntryIds = new Set(entryIds.map(String));
-      const relatedStorylines = (userState.storylines || []).filter((storyline: Storyline) => {
-        return storyline.entryIds.some((entryId) => chapterEntryIds.has(String(entryId)));
-      });
-
-      // --- Calculate total emotions for the stacked bar ---
-      const emotionDistribution = chapter.metrics?.emotionDistribution ?? {};
-      const totalEmotions = Object.values(emotionDistribution).reduce((a, b) => a + b, 0);
-
-      // --- If all checks pass, set the data for rendering ---
-      setChapterData({
-        chapter,
-        entries,
-        recentEntries,
-        relatedStorylines,
-        totalEmotions,
-        emotionDistribution: emotionDistribution as Record<EmotionType, number>,
-      });
-
-      console.log(`[ChapterDetail] Successfully loaded chapter data for ${id}`);
-    } catch (e: any) {
-      console.error(`[ChapterDetail] Error loading chapter:`, e);
-      setError(e?.message || 'An error occurred while loading chapter details.');
-    } finally {
-      // --- CRITICAL STEP ---
-      // This block will run regardless of success or failure in the try/catch.
-      // It GUARANTEES the loading state will be turned off.
-      setIsLoading(false);
-      console.log(`[ChapterDetail] Finished loading attempt for chapterId: ${id}`);
+    if (!id || !userState || !userState.chapters) {
+      if (userState) setIsLoading(false);
+      return;
     }
-  }, [id, userState, diaries]); // Rerun if the ID, global state, or diaries change
 
-  // --- Conditional Rendering ---
+    try {
+      const currentChapter = userState.chapters[id];
+      if (!currentChapter) throw new Error('Chapter not found');
+      
+      setChapter(currentChapter);
+
+      // --- 数据处理核心逻辑 ---
+      const entryIds = new Set((currentChapter.entryIds || []).map(String));
+      const rawEntries = (diaryContext?.diaries || [])
+        .filter(e => entryIds.has(String(e.id)))
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+      // 1. 按月份分组 (Grouping by Month)
+      const grouped = rawEntries.reduce((acc: any, entry) => {
+        const date = new Date(entry.createdAt || Date.now());
+        const sectionTitle = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        
+        if (!acc[sectionTitle]) {
+          acc[sectionTitle] = [];
+        }
+        acc[sectionTitle].push(entry);
+        return acc;
+      }, {});
+
+      // 2. 转换为 SectionList 格式
+      const sectionData = Object.keys(grouped).map(title => ({
+        title,
+        data: grouped[title]
+      }));
+      
+      setSections(sectionData);
+
+      // 3. 计算统计数据
+      const emotionDist = currentChapter.metrics?.emotionDistribution || {};
+      const totalEmotions = Object.values(emotionDist).reduce((a: number, b: number) => a + b, 0);
+      setStats({
+        total: rawEntries.length,
+        perWeek: currentChapter.metrics?.frequency?.perWeek || 0,
+        emotionDist,
+        totalEmotions
+      });
+
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, userState, diaryContext?.diaries]);
+
+  // --- Header 组件 (包含图表和统计) ---
+  const renderHeader = useCallback(() => {
+    if (!chapter || !stats) return null;
+
+    return (
+      <View style={styles.headerContainer}>
+        {/* Title Area */}
+        <View style={styles.navBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <View>
+            <Text style={[styles.pageTitle, { color: colors.text }]}>{chapter.title}</Text>
+            <Text style={[styles.pageSubtitle, { color: colors.text }]}>
+               {chapter.type.toUpperCase()} • {stats.total} ENTRIES
+            </Text>
+          </View>
+        </View>
+
+        {/* Stats Cards */}
+        <View style={styles.statsRow}>
+           <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+             <Text style={[styles.statNum, { color: colors.text }]}>{stats.total}</Text>
+             <Text style={[styles.statLabel, { color: colors.text }]}>Moments</Text>
+           </View>
+           <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+             <Text style={[styles.statNum, { color: colors.text }]}>{stats.perWeek.toFixed(1)}</Text>
+             <Text style={[styles.statLabel, { color: colors.text }]}>/ Week</Text>
+           </View>
+        </View>
+
+        {/* Emotion Bar (简化版) */}
+        {stats.totalEmotions > 0 && (
+          <View style={styles.emotionBarContainer}>
+             <View style={styles.emotionBar}>
+                {Object.entries(stats.emotionDist).map(([emo, count]: any) => {
+                  if (count === 0) return null;
+                  return (
+                    <View 
+                      key={emo} 
+                      style={{ 
+                        flex: count / stats.totalEmotions, 
+                        backgroundColor: EMOTION_COLORS[emo as EmotionType],
+                        height: '100%' 
+                      }} 
+                    />
+                  );
+                })}
+             </View>
+             <Text style={[styles.emotionLabel, { color: colors.text }]}>Emotional Spectrum</Text>
+          </View>
+        )}
+      </View>
+    );
+  }, [chapter, stats, colors]);
+
   if (isLoading) {
     return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background, justifyContent: 'center' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.text, marginTop: 16 }]}>Loading chapter...</Text>
       </SafeAreaView>
     );
   }
 
-  if (error) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Ionicons name="alert-circle-outline" size={48} color={colors.primary} style={{ marginBottom: 16 }} />
-        <Text style={[styles.errorText, { color: colors.text }]}>{error}</Text>
-        <TouchableOpacity
-          style={[styles.retryButton, { backgroundColor: colors.primary, marginTop: 24 }]}
-          onPress={() => {
-            setIsLoading(true);
-            setError(null);
-            // Trigger re-render by updating a dependency
-            setChapterData(null);
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>Retry</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.backButton, { marginTop: 12 }]}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.backButtonText, { color: colors.primary }]}>Go Back</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-    );
-  }
-
-  if (!chapterData) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.text }]}>No chapter data available.</Text>
-        <TouchableOpacity
-          style={[styles.backButton, { marginTop: 24 }]}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.backButtonText, { color: colors.primary }]}>Go Back</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-    );
-  }
-
-  // --- Success: Render the actual dashboard ---
-  return <ChapterDashboardUI chapterData={chapterData} colors={colors} router={router} allRichEntries={allRichEntries} />;
-};
-
-// --- Presentation Component: Separated for clarity ---
-interface ChapterDashboardUIProps {
-  chapterData: ChapterData;
-  colors: typeof FALLBACK_COLORS;
-  router: any;
-  allRichEntries: Record<string, any>;
-}
-
-const ChapterDashboardUI: React.FC<ChapterDashboardUIProps> = ({ chapterData, colors, router, allRichEntries }) => {
-  const { chapter, entries, recentEntries, relatedStorylines, totalEmotions, emotionDistribution } = chapterData;
-
-  // Format date range for storylines
-  const formatDateRange = (startDate: string, endDate: string) => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return `${startStr} - ${endStr}`;
-  };
-
-  const metrics = chapter.metrics;
-
-  // Render stacked bar chart for emotion distribution
-  const renderEmotionSpectrum = () => {
-    if (totalEmotions === 0) {
-      return (
-        <View style={styles.emptySpectrum}>
-          <Text style={[styles.emptySpectrumText, { color: colors.text }]}>No emotion data yet</Text>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.spectrumSection}>
-        <View style={styles.spectrumBar}>
-          {Object.entries(emotionDistribution).map(([emotion, count]) => {
-            if (count === 0) return null;
-            const flexValue = count / totalEmotions;
-            return (
-              <TouchableOpacity
-                key={emotion}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (chapter?.id) {
-                    router.push({
-                      pathname: '/filtered-entries',
-                      params: {
-                        chapterId: chapter.id,
-                        emotion: emotion,
-                      },
-                    });
-                  }
-                }}
-                style={[
-                  styles.spectrumSegment,
-                  {
-                    backgroundColor: EMOTION_COLORS[emotion as EmotionType],
-                    flex: flexValue,
-                  },
-                ]}
-              />
-            );
-          })}
-        </View>
-        {/* Legend */}
-        <View style={styles.legendContainer}>
-          {Object.entries(emotionDistribution).map(([emotion, count]) => {
-            if (count === 0) return null;
-            return (
-              <TouchableOpacity
-                key={emotion}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (chapter?.id) {
-                    router.push({
-                      pathname: '/filtered-entries',
-                      params: {
-                        chapterId: chapter.id,
-                        emotion: emotion,
-                      },
-                    });
-                  }
-                }}
-                style={styles.legendItem}
-              >
-                <View
-                  style={[styles.legendDot, { backgroundColor: EMOTION_COLORS[emotion as EmotionType], marginRight: 8 }]}
-                />
-                <Text style={[styles.legendText, { color: colors.text }]}>
-                  {EMOTION_LABELS[emotion as EmotionType]}: {count}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
-
-  // Render overview cards
-  const renderOverviewCards = () => {
-    return (
-      <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, marginRight: 6 }]}>
-          <Text style={[styles.statValue, { color: colors.text }]}>
-            {metrics?.totalEntries ?? entries.length ?? 0}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.text }]}>Total Moments</Text>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, marginLeft: 6 }]}>
-          <Text style={[styles.statValue, { color: colors.text }]}>
-            {metrics?.frequency?.perWeek?.toFixed(1) ?? '0.0'}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.text }]}>Per Week</Text>
-        </View>
-      </View>
-    );
-  };
-
-  // Render storylines list
-  const renderStorylines = () => {
-    if (relatedStorylines.length === 0) {
-      return null;
-    }
-
-    return (
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>Related Storylines</Text>
-        {relatedStorylines.map((storyline: Storyline) => (
-          <TouchableOpacity
-            key={storyline.id}
-            style={[styles.storylineCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            activeOpacity={0.7}
-          >
-            <View style={styles.storylineHeader}>
-              <Ionicons name="book-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.storylineTitle, { color: colors.text }]}>{storyline.title}</Text>
-            </View>
-            <Text style={[styles.storylineDate, { color: colors.text }]}>
-              {formatDateRange(storyline.startDate, storyline.endDate)}
-            </Text>
-            <Text style={[styles.storylineEntries, { color: colors.text }]}>
-              {storyline.entryIds.length} {storyline.entryIds.length === 1 ? 'entry' : 'entries'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
-  // Render recent entries preview
-  const renderRecentEntries = () => {
-    if (recentEntries.length === 0) {
-      return null;
-    }
-
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Entries</Text>
-          {entries.length > 3 && (
-            <TouchableOpacity
-              onPress={() => {
-                if (chapter?.id) {
-                  router.push({
-                    pathname: '/filtered-entries',
-                    params: {
-                      chapterId: chapter.id,
-                    },
-                  });
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.seeAllLink, { color: colors.primary }]}>See All</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {recentEntries.map((entry, index) => {
-          const richEntry = allRichEntries?.[entry.id] || undefined;
-          
-          return (
-            <DiarySummaryCard
-              key={entry.id}
-              item={entry}
-              richEntry={richEntry}
-              index={index}
-              onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(entry) } })}
-              colors={colors}
-            />
-          );
-        })}
-      </View>
-    );
-  };
+  if (!chapter) return null;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <View style={styles.headerContent}>
-            <Text style={[styles.title, { color: colors.text }]}>{chapter.title}</Text>
-            <Text style={[styles.subtitle, { color: colors.text }]}>
-              {chapter.type.charAt(0).toUpperCase() + chapter.type.slice(1)} Chapter
-            </Text>
-          </View>
-        </View>
+      <StatusBar barStyle={colors.background === '#ffffff' ? 'dark-content' : 'light-content'} />
+      
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        stickySectionHeadersEnabled={false} // 也可以设为 true 尝试吸顶效果
+        
+        // 头部
+        ListHeaderComponent={renderHeader}
 
-        {/* Overview Cards */}
-        {renderOverviewCards()}
-
-        {/* Emotion Spectrum */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>Emotional Spectrum</Text>
-          {renderEmotionSpectrum()}
-        </View>
-
-        {/* Storylines */}
-        {renderStorylines()}
-
-        {/* Recent Entries */}
-        {renderRecentEntries()}
-
-        {/* All Entries Section */}
-        {entries.length > 3 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>All Entries</Text>
-            {entries.slice(3).map((entry, index) => {
-              const richEntry = allRichEntries?.[entry.id] || undefined;
-              
-              return (
-                <DiarySummaryCard
-                  key={entry.id}
-                  item={entry}
-                  richEntry={richEntry}
-                  index={index + 3}
-                  onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(entry) } })}
-                  colors={colors}
-                />
-              );
-            })}
+        // 分组头 (Month)
+        renderSectionHeader={({ section: { title } }) => (
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionLine, { backgroundColor: colors.border }]} />
+            <View style={[styles.sectionLabelContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <Text style={[styles.sectionLabel, { color: colors.text }]}>{title}</Text>
+            </View>
           </View>
         )}
 
-        {/* Empty state if no entries */}
-        {entries.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No entries yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.text }]}>
-              Capture more memories with this chapter to see them listed here.
-            </Text>
-          </View>
-        )}
-      </ScrollView>
+        // 列表项
+        renderItem={({ item, index, section }) => {
+            const isLast = index === section.data.length - 1;
+            return (
+              <View style={styles.timelineRow}>
+                {/* 左侧时间轴线 */}
+                <View style={styles.timelineLeft}>
+                   <View style={[styles.timelineDot, { borderColor: colors.primary, backgroundColor: colors.background }]} />
+                   {!isLast && <View style={[styles.timelineLine, { backgroundColor: colors.border }]} />}
+                </View>
+                
+                {/* 右侧卡片 */}
+                <View style={styles.timelineContent}>
+                    <DiarySummaryCard
+                        item={item}
+                        richEntry={allRichEntries?.[item.id]}
+                        index={index}
+                        onPress={() => router.push({ pathname: '/diary-detail', params: { diary: JSON.stringify(item) } })}
+                        colors={colors}
+                        // 如果 DiarySummaryCard 支持 compact 模式最好，这里直接复用
+                    />
+                </View>
+              </View>
+            );
+        }}
+
+        ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+                <Text style={[styles.emptyText, { color: colors.text }]}>No entries yet.</Text>
+                <Text style={[styles.emptySub, { color: colors.text }]}>Write your first entry for this chapter.</Text>
+            </View>
+        }
+      />
+
+      {/* FAB: 允许直接在此章节下写日记 */}
+      <FloatingActionButton 
+        onPress={() => {
+            // 跳转并带上 defaultChapterId
+            router.push({
+                pathname: '/add-edit-diary',
+                params: { defaultChapterId: chapter.id }
+            });
+        }} 
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 20,
-  },
-  backButton: {
-    marginRight: 12,
-    padding: 4,
-  },
-  headerContent: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    opacity: 0.7,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    opacity: 0.7,
-    fontWeight: '500',
-  },
-  section: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  seeAllLink: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  spectrumSection: {
-    marginTop: 8,
-  },
-  spectrumBar: {
-    flexDirection: 'row',
-    height: 32,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-  },
-  spectrumSegment: {
-    height: '100%',
-    minWidth: 8, // Ensure segments are tappable even if very small
-  },
-  emptySpectrum: {
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  emptySpectrumText: {
-    fontSize: 14,
-    opacity: 0.6,
-  },
-  legendContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    marginBottom: 8,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  storylineCard: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-  },
-  storylineHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  storylineTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  storylineDate: {
-    fontSize: 13,
-    opacity: 0.7,
-    marginBottom: 4,
-  },
-  storylineEntries: {
-    fontSize: 13,
-    opacity: 0.6,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 24,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 15,
-    opacity: 0.75,
-    textAlign: 'center',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  loadingText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  errorText: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 8,
-  },
-  retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
+  safeArea: { flex: 1 },
+  headerContainer: { paddingHorizontal: 20, paddingTop: 10, marginBottom: 10 },
+  navBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
+  backBtn: { marginRight: 16, padding: 4 },
+  pageTitle: { fontSize: 24, fontWeight: '800' },
+  pageSubtitle: { fontSize: 13, fontWeight: '600', opacity: 0.5, marginTop: 4, letterSpacing: 0.5 },
+  
+  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  statCard: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1, alignItems: 'center' },
+  statNum: { fontSize: 24, fontWeight: '700', marginBottom: 4 },
+  statLabel: { fontSize: 13, opacity: 0.6, fontWeight: '500' },
+
+  emotionBarContainer: { marginBottom: 24 },
+  emotionBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
+  emotionLabel: { fontSize: 12, opacity: 0.5, fontWeight: '600' },
+
+  // Timeline Styles
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginVertical: 16, paddingHorizontal: 20 },
+  sectionLine: { flex: 1, height: 1, opacity: 0.5 },
+  sectionLabelContainer: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, marginLeft: 12 },
+  sectionLabel: { fontSize: 13, fontWeight: '600' },
+
+  timelineRow: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 16 },
+  timelineLeft: { width: 20, alignItems: 'center', marginRight: 12 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, zIndex: 1 },
+  timelineLine: { width: 2, position: 'absolute', top: 12, bottom: -20, opacity: 0.3 }, // 连接线
+  timelineContent: { flex: 1 },
+
+  emptyContainer: { alignItems: 'center', marginTop: 60, opacity: 0.6 },
+  emptyText: { fontSize: 18, fontWeight: '600' },
+  emptySub: { marginTop: 8 }
 });
 
 export default ChapterDetailScreen;

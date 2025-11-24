@@ -1,11 +1,9 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect, useNavigation, usePreventRemove } from '@react-navigation/native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
-    Button,
     Image,
     Keyboard,
     KeyboardAvoidingView,
@@ -13,37 +11,36 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
-    TextInput,
     TouchableOpacity,
     TouchableWithoutFeedback,
-    View,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- 核心依赖 ---
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import * as ImageManipulator from 'expo-image-manipulator';
 import { Directory, File, Paths } from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- 组件和 Context ---
 import MoodSelector from '../components/MoodSelector';
 // Removed CompanionSelectorCarousel import - companion selection moved to settings
+import { ThemedText as Text } from '../components/ThemedText';
+import { CompanionContext } from '../context/CompanionContext';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { CompanionContext } from '../context/CompanionContext';
 import { useUserState } from '../context/UserStateContext';
-import { ThemedText as Text } from '../components/ThemedText';
 import { getCurrentWeather } from '../services/weatherService';
 // TEMPORARILY DISABLED: StaticServer removed due to build failures
 // import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 // import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
-import themeAnalysisService from '../services/ThemeAnalysisService';
 import { useThemeStyles } from '@/hooks/useThemeStyles';
+import themeAnalysisService from '../services/ThemeAnalysisService';
 
 const DEFAULT_HERO_IMAGE = require('../assets/images/ai_avatar.png');
 
@@ -293,6 +290,11 @@ const AddEditDiaryScreen = () => {
         if (!raw) return undefined;
         return Array.isArray(raw) ? raw[0] : raw;
     }, [params]);
+    const defaultChapterId = useMemo(() => {
+        const raw = params?.defaultChapterId;
+        if (!raw) return undefined;
+        return Array.isArray(raw) ? raw[0] : raw;
+    }, [params]);
     const existingDiary = useMemo(() => {
         const diary = params.diary ? JSON.parse(params.diary) : null;
         return diary;
@@ -418,6 +420,7 @@ const AddEditDiaryScreen = () => {
     const insets = useSafeAreaInsets(); // Get safe area insets
     const editorRef = useRef(null); // Create ref for rich text editor
     const scrollViewRef = useRef(null);
+    const editorOffsetRef = useRef(0); // Track editor's vertical position for smart scrolling
  
     // Process initial content: convert local file URI to WebView-accessible format
     const processContentForEditor = (html) => {
@@ -661,36 +664,65 @@ const AddEditDiaryScreen = () => {
         hasRemappedInitialHtml.current = false;
     }, [processedInitialContent]);
 
-    // --- CRITICAL: Ensure ScrollView scrolls to top when component mounts or when editing existing diary ---
+    // --- CRITICAL: Smart scrolling based on mode ---
     useEffect(() => {
-        // Scroll to top when component first mounts or when switching to edit mode
-        const scrollToTop = () => {
-            if (scrollViewRef.current) {
+        // Smart scroll: top for new entries, editor position for edit mode
+        const scrollToPosition = () => {
+            if (!scrollViewRef.current) return;
+            
+            if (!isEditMode) {
+                // New entry mode: scroll to top
                 scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: false });
+            } else {
+                // Edit mode: scroll to editor position (with small offset for better visibility)
+                const editorY = editorOffsetRef.current;
+                if (editorY > 0) {
+                    scrollViewRef.current.scrollTo({ x: 0, y: editorY - 20, animated: false });
+                    // Auto-focus editor in edit mode for better UX
+                    setTimeout(() => {
+                        if (editorRef.current?.focusContentEditor) {
+                            editorRef.current.focusContentEditor();
+                        }
+                    }, 200);
+                } else {
+                    // Fallback: scroll to top if position not yet measured
+                    scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: false });
+                }
             }
         };
         
-        // Use a small delay to ensure ScrollView is fully rendered
-        const timeoutId = setTimeout(scrollToTop, 100);
+        // Use a delay to ensure ScrollView and editor are fully rendered
+        const timeoutId = setTimeout(scrollToPosition, 150);
         
         return () => clearTimeout(timeoutId);
     }, [isEditMode, existingDiary?.id]); // Re-scroll when entering edit mode or diary changes
 
-    // --- CRITICAL: Also scroll to top when screen gains focus (e.g., navigating from detail screen) ---
+    // --- CRITICAL: Smart scrolling when screen gains focus (e.g., navigating from detail screen) ---
     useFocusEffect(
         useCallback(() => {
-            // Scroll to top when screen comes into focus
-            const scrollToTop = () => {
-                if (scrollViewRef.current) {
+            // Smart scroll based on mode when screen comes into focus
+            const scrollToPosition = () => {
+                if (!scrollViewRef.current) return;
+                
+                if (!isEditMode) {
+                    // New entry mode: scroll to top
                     scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: false });
+                } else {
+                    // Edit mode: scroll to editor position
+                    const editorY = editorOffsetRef.current;
+                    if (editorY > 0) {
+                        scrollViewRef.current.scrollTo({ x: 0, y: editorY - 20, animated: false });
+                    } else {
+                        scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: false });
+                    }
                 }
             };
             
             // Use a delay to ensure ScrollView is fully rendered after navigation
-            const timeoutId = setTimeout(scrollToTop, 150);
+            const timeoutId = setTimeout(scrollToPosition, 200);
             
             return () => clearTimeout(timeoutId);
-        }, [])
+        }, [isEditMode])
     );
 
     // --- Keyboard visibility listener ---
@@ -1111,6 +1143,49 @@ const AddEditDiaryScreen = () => {
                     savedEntry
                 );
             }
+            
+            // Handle defaultChapterId: Add entry to chapter if specified
+            if (savedEntry?.id && defaultChapterId && userStateContext) {
+                try {
+                    const chapterId = String(defaultChapterId);
+                    const currentUserState = userStateContext.userState;
+                    const chapter = currentUserState?.chapters?.[chapterId];
+                    
+                    if (chapter) {
+                        // Check if entry is already in the chapter
+                        const entryId = String(savedEntry.id);
+                        if (!chapter.entryIds.includes(entryId)) {
+                            // Add entry to chapter
+                            const updatedChapter = {
+                                ...chapter,
+                                entryIds: [entryId, ...chapter.entryIds], // Add to beginning
+                                lastUpdated: new Date().toISOString(),
+                            };
+                            
+                            // Update userState with modified chapter
+                            const updatedUserState = {
+                                ...currentUserState,
+                                chapters: {
+                                    ...currentUserState.chapters,
+                                    [chapterId]: updatedChapter,
+                                },
+                                lastUpdatedAt: new Date().toISOString(),
+                            };
+                            
+                            await userStateContext.updateUserState(updatedUserState);
+                            console.log(`[AddEditDiary] ✅ Added entry ${entryId} to chapter ${chapterId}`);
+                        } else {
+                            console.log(`[AddEditDiary] Entry ${entryId} already exists in chapter ${chapterId}`);
+                        }
+                    } else {
+                        console.warn(`[AddEditDiary] Chapter ${chapterId} not found, skipping entry addition`);
+                    }
+                } catch (chapterError) {
+                    console.error('[AddEditDiary] Failed to add entry to chapter:', chapterError);
+                    // Don't block save flow if chapter update fails
+                }
+            }
+            
             // Update state before navigation to prevent usePreventRemove from triggering
             setInitialSnapshot(currentSnapshot);
             setPreventRemove(false);
@@ -1130,6 +1205,7 @@ const AddEditDiaryScreen = () => {
         canSubmit,
         contentHtml,
         currentSnapshot,
+        defaultChapterId,
         effectiveTitle,
         entryDateParam,
         existingDiary,
@@ -1139,11 +1215,13 @@ const AddEditDiaryScreen = () => {
         isSaving,
         plainTextContent,
         router,
+        saveDiary,
         selectedCompanionIDs,
         selectedMood,
         selectedThemeId,
         title,
         updateDiary,
+        userStateContext,
         weather,
     ]);
 
@@ -1613,15 +1691,27 @@ const AddEditDiaryScreen = () => {
                     automaticallyAdjustContentInsets={false}
                     keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 >
-                    <MoodSelector
-                        onSelectMood={handleMoodSelect}
-                        selectedMood={selectedMood}
-                        titleStyle={moodLabelTitleStyle}
-                        hideMoodLabels={isChildTheme}
-                        hideTitle={isChildTheme || isCyberpunkTheme}
-                        moodLabelStyle={{ fontFamily: bodyFontFamily }}
-                        containerStyle={isChildTheme ? { marginBottom: 28 } : null}
-                    />
+                    {/* Editor position tracker - records MoodSelector position for smart scrolling */}
+                    <View
+                        onLayout={(event) => {
+                            // Measure position relative to ScrollView
+                            const { y } = event.nativeEvent.layout;
+                            // y is relative to ScrollView's contentContainer, which is what we need
+                            editorOffsetRef.current = y;
+                            console.log('[AddEditDiaryScreen] Editor position recorded:', y);
+                        }}
+                        collapsable={false}
+                    >
+                        <MoodSelector
+                            onSelectMood={handleMoodSelect}
+                            selectedMood={selectedMood}
+                            titleStyle={moodLabelTitleStyle}
+                            hideMoodLabels={isChildTheme}
+                            hideTitle={isChildTheme || isCyberpunkTheme}
+                            moodLabelStyle={{ fontFamily: bodyFontFamily }}
+                            containerStyle={isChildTheme ? { marginBottom: 28 } : null}
+                        />
+                    </View>
                     {/* Title input removed: all themes now integrate title into content */}
                     <RichEditor
                             ref={editorRef}
@@ -1855,6 +1945,19 @@ const AddEditDiaryScreen = () => {
                         useContainer={true}
                         initialHeight={300}
                         containerStyle={[styles.editorContainerStyle, { minHeight: 300 }]}
+                        // Allow loading local resources (critical for file:// images)
+                        originWhitelist={['*']}
+                        // Android rendering optimization
+                        androidLayerType="software"
+                        // Enable WebView file access permissions (iOS & Android)
+                        editorProps={{
+                            contentMode: 'mobile',
+                            allowFileAccess: true,
+                            allowFileAccessFromFileURLs: true,
+                            allowUniversalAccessFromFileURLs: true,
+                            // Mixed content mode for iOS
+                            mixedContentMode: 'always',
+                        }}
                         />
                 </ScrollView>
                 
