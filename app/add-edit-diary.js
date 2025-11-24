@@ -7,6 +7,7 @@ import {
     Alert,
     Button,
     Image,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -26,7 +27,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- 组件和 Context ---
@@ -498,6 +499,8 @@ const AddEditDiaryScreen = () => {
     const [weather, setWeather] = useState(existingDiary?.weather || null);
     const [isFetchingWeather, setIsFetchingWeather] = useState(false);
     const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
+    // Keyboard state for UI optimization
+    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     // Removed companion picker modal - companion selection moved to settings
     const [emojiTarget, setEmojiTarget] = useState('content');
     const titleInputRef = useRef(null);
@@ -689,6 +692,27 @@ const AddEditDiaryScreen = () => {
             return () => clearTimeout(timeoutId);
         }, [])
     );
+
+    // --- Keyboard visibility listener ---
+    useEffect(() => {
+        const keyboardWillShowListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            () => {
+                setIsKeyboardVisible(true);
+            }
+        );
+        const keyboardWillHideListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            () => {
+                setIsKeyboardVisible(false);
+            }
+        );
+
+        return () => {
+            keyboardWillShowListener.remove();
+            keyboardWillHideListener.remove();
+        };
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -882,6 +906,10 @@ const AddEditDiaryScreen = () => {
 
     const handleInsertEmoji = () => {
         setEmojiPickerVisible(true);
+    };
+
+    const handleDismissKeyboard = () => {
+        Keyboard.dismiss();
     };
 
     const handleSelectEmoji = (emoji) => {
@@ -1439,7 +1467,7 @@ const AddEditDiaryScreen = () => {
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={90}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                     <View style={heroContainerStyle}>
                         {(() => {
@@ -1572,7 +1600,10 @@ const AddEditDiaryScreen = () => {
             <ScrollView 
                     ref={scrollViewRef}
                 style={styles.scrollContainer} 
-                contentContainerStyle={styles.scrollContent} 
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    { paddingBottom: isKeyboardVisible ? 20 : 40 }
+                ]} 
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
@@ -1580,6 +1611,7 @@ const AddEditDiaryScreen = () => {
                     bounces={true}
                     contentOffset={{ x: 0, y: 0 }}
                     automaticallyAdjustContentInsets={false}
+                    keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 >
                     <MoodSelector
                         onSelectMood={handleMoodSelect}
@@ -1623,7 +1655,7 @@ const AddEditDiaryScreen = () => {
                                 font-size: 16px;
                                 line-height: 1.6;
                                 padding: 15px;
-                                min-height: 400px;
+                                min-height: 300px;
                                 height: auto;
                             `,
                             // Add CSS to ensure images and title display correctly
@@ -1821,8 +1853,8 @@ const AddEditDiaryScreen = () => {
                             }
                             placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         useContainer={true}
-                        initialHeight={400}
-                        containerStyle={styles.editorContainerStyle}
+                        initialHeight={300}
+                        containerStyle={[styles.editorContainerStyle, { minHeight: 300 }]}
                         />
                 </ScrollView>
                 
@@ -1850,14 +1882,26 @@ const AddEditDiaryScreen = () => {
                                 actions.insertBulletsList,
                                 actions.insertImage,
                                 'insertEmoji',
+                                'dismissKeyboard',
                             ]}
                             iconMap={{
                                 insertEmoji: ({ tintColor }) => (
                                     <Ionicons name="happy-outline" size={24} color={tintColor || themeStyles.text} />
                                 ),
+                                dismissKeyboard: ({ tintColor }) => (
+                                    <Ionicons name="keyboard-arrow-down" size={24} color={tintColor || themeStyles.text} />
+                                ),
                             }}
                             onPressAddImage={handleInsertImage}
                             insertEmoji={handleInsertEmoji}
+                            onPress={(action) => {
+                                // Handle custom dismissKeyboard action
+                                if (action === 'dismissKeyboard') {
+                                    handleDismissKeyboard();
+                                    return;
+                                }
+                                // Let other actions be handled by RichToolbar's default behavior
+                            }}
                             iconTint={isCyberpunkTheme ? '#00FFFF' : themeStyles.text}
                             selectedIconTint={themeStyles.primary}
                             iconGap={20}
@@ -1923,14 +1967,15 @@ const AddEditDiaryScreen = () => {
                         />
                     </View>
                     
-                    {/* Save Button */}
-                    <TouchableOpacity 
-                        style={styles.saveButton}
-                        onPress={handleSave}
-                        activeOpacity={0.8}
-                        disabled={!saveEnabled || isSaving}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
+                    {/* Save Button - Hide when keyboard is visible */}
+                    {!isKeyboardVisible && (
+                        <TouchableOpacity 
+                            style={styles.saveButton}
+                            onPress={handleSave}
+                            activeOpacity={0.8}
+                            disabled={!saveEnabled || isSaving}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
                         {isChildTheme ? (
                             <LinearGradient
                                 colors={['#FFAECC', '#FFD391']}
@@ -2007,6 +2052,7 @@ const AddEditDiaryScreen = () => {
                             </View>
                         )}
                     </TouchableOpacity>
+                    )}
                 </View>
 
                 <Modal
@@ -2128,7 +2174,7 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
     },
     editorContainerStyle: {
-        minHeight: 400,
+        minHeight: 300,
     },
     footer: {
         borderTopWidth: 1,
