@@ -1,8 +1,11 @@
 // screens/SettingsScreen.js
+import { getThemeDefinition } from '@/constants/themes';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
-import React, { useContext, useEffect, useState, useMemo } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -14,22 +17,18 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { SettingRow } from '../components/SettingRow';
+import { SettingsSection } from '../components/SettingsSection';
+import { ThemedText as Text } from '../components/ThemedText';
 import { AuthContext } from '../context/AuthContext';
+import { CompanionContext } from '../context/CompanionContext';
+import { DiaryContext } from '../context/DiaryContext';
 import { SubscriptionContext } from '../context/SubscriptionContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { AVATARS } from '../data/avatars';
-import { CompanionContext } from '../context/CompanionContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import CompanionSelectorCarousel from '../components/CompanionSelectorCarousel';
-import { DiaryContext } from '../context/DiaryContext';
-import { getThemeDefinition } from '@/constants/themes';
-import { ThemedText as Text } from '../components/ThemedText';
 import { useUserState } from '../context/UserStateContext';
+import { AVATARS } from '../data/avatars';
 import { exportService } from '../services/ExportService';
 import { importService } from '../services/ImportService';
-import * as DocumentPicker from 'expo-document-picker';
-import { SettingsSection } from '../components/SettingsSection';
-import { SettingRow } from '../components/SettingRow';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -482,8 +481,8 @@ const SettingsScreen = () => {
                 />
             </View>
 
-            {/* Companions & AI Interaction Section */}
-            <SettingsSection title="Companions & AI Interaction">
+            {/* AI Personas & Memory Section */}
+            <SettingsSection title="AI Personas & Memory">
                 {/* Enable AI Companion Interaction */}
                 <SettingRow
                     title="Enable AI Companion Interaction"
@@ -510,87 +509,59 @@ const SettingsScreen = () => {
                     }
                 />
 
-                {/* Manage Companions */}
+                {/* Companion Profiles - Always enabled */}
                 <SettingRow
-                    title="Manage Companions"
-                    subtitle="Your circle of companions."
+                    title="Companion Profiles"
+                    subtitle="Create, edit, or customize your circle of companions."
                     icon="people-outline"
                     iconColor={colors.primary}
                     colors={colors}
-                    disabled={!isAIInteractionGloballyEnabled}
+                    disabled={false}
                     onPress={() => router.push('/companions')}
                     rightElement={<Ionicons name="chevron-forward" size={20} color={colors.border} />}
                 />
 
-                {/* Primary Companion */}
-                <View style={{ marginTop: 20 }}>
-                    <Text style={[styles.sectionTitle, { color: colors.text, fontSize: 16, marginBottom: 12 }]}>
-                        Primary Companion
-                    </Text>
-                    <View style={styles.primaryStatusContainer}>
-                        <Text style={[styles.primaryStatus, { color: colors.text }]}>
-                            {primaryCompanion ? `Default reflection partner: ${primaryCompanion.name}` : 'Default reflection partner: None'}
+                {/* Default Responder - Simplified display */}
+                {isAIInteractionGloballyEnabled && (
+                    <View style={{ marginTop: 16 }}>
+                        <Text style={[styles.sectionTitle, { color: colors.text, fontSize: 16, marginBottom: 12 }]}>
+                            Default Responder
                         </Text>
-                        {primaryCompanion && (
-                            primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim() ? (
-                                <View style={styles.primaryAvatarContainer}>
-                                    <Image 
-                                        source={{ uri: primaryCompanion.avatarIdentifier }} 
-                                        style={styles.primaryAvatarImage}
-                                        resizeMode="cover"
-                                        onError={(error) => {
-                                            console.warn('Failed to load primary companion avatar:', error.nativeEvent.error);
-                                        }}
-                                    />
-                                </View>
-                            ) : (
-                                <View style={[styles.primaryAvatarFallback, { backgroundColor: colors.primary + '40' }]}>
-                                    <Text style={[styles.primaryAvatarInitials, { color: colors.primary }]}>
-                                        {primaryCompanion.name ? primaryCompanion.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() : '?'}
-                                    </Text>
-                                </View>
-                            )
-                        )}
-                    </View>
-                    <TouchableOpacity
-                        style={[
-                            styles.noneOption,
-                            {
-                                borderColor: colors.border,
-                                backgroundColor: primaryCompanionId === null ? colors.primary + '15' : colors.card,
-                                opacity: !isAIInteractionGloballyEnabled ? 0.5 : 1,
-                            },
-                        ]}
-                        onPress={isAIInteractionGloballyEnabled ? handleSetNoPrimary : undefined}
-                        activeOpacity={0.85}
-                        disabled={primaryCompanionId === null || !isAIInteractionGloballyEnabled}
-                    >
-                        <Ionicons
-                            name={primaryCompanionId === null ? 'checkmark-circle' : 'ellipse-outline'}
-                            size={20}
-                            color={primaryCompanionId === null ? colors.primary : colors.border}
-                            style={{ marginRight: 10 }}
-                        />
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.noneOptionText, { color: colors.text }]}>No default companion</Text>
-                            <Text style={[styles.noneOptionHint, { color: colors.text }]}>
-                                WhisperLine will use your theme avatar instead.
+                        <View style={styles.primaryStatusContainer}>
+                            <Text style={[styles.primaryStatus, { color: colors.text }]}>
+                                {primaryCompanion ? `Default reflection partner: ${primaryCompanion.name}` : 'Default reflection partner: None'}
                             </Text>
                         </View>
-                    </TouchableOpacity>
-                    <View style={{ opacity: !isAIInteractionGloballyEnabled ? 0.5 : 1 }}>
-                        <CompanionSelectorCarousel
-                            allCompanions={allCompanions}
-                            selectedIDs={primaryCompanionId ? [primaryCompanionId] : []}
-                            onSelectionChange={isAIInteractionGloballyEnabled ? handlePrimaryChange : undefined}
-                        />
-                    </View>
-                    {!isAIInteractionGloballyEnabled && (
-                        <Text style={[styles.disabledHint, { color: colors.secondaryText }]}>
-                            Enable AI Companion Interaction to set a primary companion
+                        <TouchableOpacity
+                            style={[
+                                styles.noneOption,
+                                {
+                                    borderColor: colors.border,
+                                    backgroundColor: primaryCompanionId === null ? colors.primary + '15' : colors.card,
+                                },
+                            ]}
+                            onPress={handleSetNoPrimary}
+                            activeOpacity={0.85}
+                            disabled={primaryCompanionId === null}
+                        >
+                            <Ionicons
+                                name={primaryCompanionId === null ? 'checkmark-circle' : 'ellipse-outline'}
+                                size={20}
+                                color={primaryCompanionId === null ? colors.primary : colors.border}
+                                style={{ marginRight: 10 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.noneOptionText, { color: colors.text }]}>No default companion</Text>
+                                <Text style={[styles.noneOptionHint, { color: colors.text }]}>
+                                    WhisperLine will use your theme avatar instead.
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                        <Text style={[styles.disabledHint, { color: colors.secondaryText, marginTop: 8 }]}>
+                            Configure your default responder in Companion Profiles.
                         </Text>
-                    )}
-                </View>
+                    </View>
+                )}
             </SettingsSection>
 
             {/* Appearance */}
