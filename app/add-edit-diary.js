@@ -41,6 +41,9 @@ import { getCurrentWeather } from '../services/weatherService';
 // import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 import { useThemeStyles } from '@/hooks/useThemeStyles';
 import themeAnalysisService from '../services/ThemeAnalysisService';
+import { analyzeDiaryEntry } from '../src/services/analysisEngine';
+import useCRMStore from '../src/store/crmStore';
+import { AnalysisFeedbackModal } from '../src/components/AnalysisFeedbackModal';
 
 const DEFAULT_HERO_IMAGE = require('../assets/images/ai_avatar.png');
 
@@ -504,6 +507,10 @@ const AddEditDiaryScreen = () => {
     const [isEmojiPickerVisible, setEmojiPickerVisible] = useState(false);
     // Keyboard state for UI optimization
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+    // Zero-Friction Analysis & Feedback
+    const [showAnalysisFeedback, setShowAnalysisFeedback] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState(null);
+    const { trackPersonInteraction, trackTopic } = useCRMStore();
     // Removed companion picker modal - companion selection moved to settings
     const [emojiTarget, setEmojiTarget] = useState('content');
     const titleInputRef = useRef(null);
@@ -1186,14 +1193,72 @@ const AddEditDiaryScreen = () => {
                 }
             }
             
-            // Update state before navigation to prevent usePreventRemove from triggering
-            setInitialSnapshot(currentSnapshot);
-            setPreventRemove(false);
-            console.log('Save completed, navigating back');
-            // Use setTimeout to ensure state updates are processed before navigation
-            setTimeout(() => {
-            router.back(); // Return directly after saving
-            }, 0);
+            // --- Zero-Friction Analysis Pipeline ---
+            // Only analyze new entries (not edits) for instant gratification
+            if (!isEditMode && savedEntry?.id) {
+                try {
+                    // Extract plain text for analysis
+                    const plainText = extractTextFromHTML(contentToSave);
+                    
+                    if (plainText && plainText.trim().length > 0) {
+                        // Run analysis
+                        const analysis = analyzeDiaryEntry(contentToSave);
+                        console.log('[AddEditDiary] Analysis result:', analysis);
+                        
+                        // Update CRM store silently using new NLP-based fields
+                        const people = analysis.people || analysis.detectedPeople || [];
+                        const activities = analysis.activities || analysis.detectedActivities || [];
+                        const moods = analysis.moods || analysis.detectedMoods || [];
+                        
+                        people.forEach((person) => {
+                            trackPersonInteraction(person);
+                        });
+                        
+                        activities.forEach((activity) => {
+                            trackTopic(activity, 'activity');
+                        });
+                        
+                        moods.forEach((mood) => {
+                            trackTopic(mood, 'mood');
+                        });
+                        
+                        // Show feedback modal
+                        setAnalysisResult(analysis);
+                        setShowAnalysisFeedback(true);
+                        
+                        // Delay navigation to show feedback
+                        setTimeout(() => {
+                            setShowAnalysisFeedback(false);
+                            setInitialSnapshot(currentSnapshot);
+                            setPreventRemove(false);
+                            router.back();
+                        }, 3500); // Show for 3.5 seconds (modal auto-dismisses at 3s)
+                    } else {
+                        // No content to analyze, proceed with normal navigation
+                        setInitialSnapshot(currentSnapshot);
+                        setPreventRemove(false);
+                        setTimeout(() => {
+                            router.back();
+                        }, 0);
+                    }
+                } catch (analysisError) {
+                    console.error('[AddEditDiary] Analysis failed:', analysisError);
+                    // Don't block save flow if analysis fails
+                    setInitialSnapshot(currentSnapshot);
+                    setPreventRemove(false);
+                    setTimeout(() => {
+                        router.back();
+                    }, 0);
+                }
+            } else {
+                // Edit mode or no entry saved - normal navigation
+                setInitialSnapshot(currentSnapshot);
+                setPreventRemove(false);
+                console.log('Save completed, navigating back');
+                setTimeout(() => {
+                    router.back();
+                }, 0);
+            }
         } catch (error) {
             console.error('Error saving diary:', error);
             Alert.alert('Error', `Failed to save diary: ${error.message || 'Unknown error'}`);
@@ -1220,6 +1285,8 @@ const AddEditDiaryScreen = () => {
         selectedMood,
         selectedThemeId,
         title,
+        trackPersonInteraction,
+        trackTopic,
         updateDiary,
         userStateContext,
         weather,
@@ -2157,6 +2224,20 @@ const AddEditDiaryScreen = () => {
                     </TouchableOpacity>
                     )}
                 </View>
+
+                {/* Zero-Friction Analysis Feedback Modal */}
+                <AnalysisFeedbackModal
+                    visible={showAnalysisFeedback}
+                    analysisResult={analysisResult}
+                    onClose={() => {
+                        setShowAnalysisFeedback(false);
+                        setInitialSnapshot(currentSnapshot);
+                        setPreventRemove(false);
+                        router.back();
+                    }}
+                    autoDismiss={true}
+                    autoDismissDelay={3000}
+                />
 
                 <Modal
                     animationType="slide"

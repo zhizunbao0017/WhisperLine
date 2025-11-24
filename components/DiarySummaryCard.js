@@ -6,6 +6,7 @@ import { ThemeContext } from '../context/ThemeContext';
 import { MOODS } from '../data/moods';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { ThemedText as Text } from './ThemedText';
+import { stripHtml } from '../src/utils/textUtils';
 
 // --- Helper: Extract Plain Text & First Image from HTML ---
 const parseContent = (html: string) => {
@@ -15,11 +16,8 @@ const parseContent = (html: string) => {
   const imgMatch = html.match(/<img[^>]+src="([^">]+)"/);
   const firstImage = imgMatch ? imgMatch[1] : null;
 
-  // 2. Strip all tags to get plain text
-  const plainText = html
-    .replace(/<[^>]*>?/gm, ' ') // Replace tags with space
-    .replace(/\s+/g, ' ')       // Collapse multiple spaces
-    .trim();
+  // 2. Use robust text utility to strip HTML and decode entities
+  const plainText = stripHtml(html);
 
   return { text: plainText, image: firstImage };
 };
@@ -36,10 +34,41 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, onLongPress, colors
   const themeStyles = useThemeStyles();
   const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
-  // Extract content efficiently
-  const { text: summaryText, image: thumbnail } = useMemo(() => {
-    return parseContent(item.content || item.contentHTML || '');
-  }, [item.content, item.contentHTML]);
+  // Extract content efficiently and ensure clean rendering
+  // AGGRESSIVE CLEANING: Strip HTML from BOTH title and content before comparing
+  const { text: summaryText, image: thumbnail, title: displayTitle, isContentRedundant } = useMemo(() => {
+    const parsed = parseContent(item.content || item.contentHTML || '');
+    
+    // Get raw values
+    const rawTitle = item.title || '';
+    const rawContent = item.content || item.contentHTML || '';
+    
+    // 1. AGGRESSIVE CLEANING: Strip HTML from BOTH title and content immediately
+    const cleanTitle = stripHtml(rawTitle).trim();
+    const cleanContent = parsed.text ? stripHtml(parsed.text) : '';
+    const cleanContentTrimmed = cleanContent.trim();
+    
+    // 2. COMPARE CLEAN STRINGS
+    // Check if the body is effectively the same as the title
+    let isRedundant = false;
+    if (cleanContentTrimmed && cleanTitle) {
+      // Exact match
+      if (cleanContentTrimmed === cleanTitle) {
+        isRedundant = true;
+      }
+      // Title is the start of content (and title is long enough to be meaningful)
+      else if (cleanTitle.length > 10 && cleanContentTrimmed.startsWith(cleanTitle)) {
+        isRedundant = true;
+      }
+    }
+    
+    return {
+      text: cleanContentTrimmed,
+      image: parsed.image,
+      title: cleanTitle, // Use cleaned title
+      isContentRedundant: isRedundant,
+    };
+  }, [item.content, item.contentHTML, item.title]);
 
   const emotionType = richEntry?.metadata?.primaryEmotion || richEntry?.metadata?.detectedEmotion?.primary;
   const emotionEmoji = emotionType && EMOTION_EMOJI_MAP[emotionType] ? EMOTION_EMOJI_MAP[emotionType] : null;
@@ -93,16 +122,67 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, onLongPress, colors
                     {emotionEmoji && <Text style={styles.emoji}>{emotionEmoji}</Text>}
                 </View>
 
-                {/* Summary Text (Max 3 lines) */}
-                <Text 
-                    numberOfLines={3} 
-                    style={[
-                        styles.summaryText, 
-                        { color: colors.text, fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined }
-                    ]}
-                >
-                    {summaryText || "No content..."}
-                </Text>
+                {/* Title Area - Always show CLEAN title if available */}
+                {displayTitle && displayTitle.length > 0 ? (
+                    <Text 
+                        numberOfLines={2} 
+                        style={[
+                            styles.titleText, 
+                            { color: colors.text, fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined }
+                        ]}
+                    >
+                        {displayTitle}
+                    </Text>
+                ) : (
+                    <Text 
+                        numberOfLines={2} 
+                        style={[
+                            styles.titleText, 
+                            { color: colors.text, opacity: 0.5, fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined }
+                        ]}
+                    >
+                        Untitled
+                    </Text>
+                )}
+
+                {/* Content Preview - Only show if it offers NEW info (not redundant with title) */}
+                {(() => {
+                    // If we have a title and content is redundant, don't show content
+                    if (displayTitle && isContentRedundant) {
+                        return null;
+                    }
+                    
+                    // Show content if it exists and provides new information
+                    if (summaryText && summaryText.length > 0) {
+                        return (
+                            <Text 
+                                numberOfLines={3} 
+                                style={[
+                                    styles.summaryText, 
+                                    { color: colors.text, fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined }
+                                ]}
+                            >
+                                {summaryText}
+                            </Text>
+                        );
+                    }
+                    
+                    // Empty state
+                    if (!displayTitle) {
+                        return (
+                            <Text 
+                                style={[
+                                    styles.summaryText, 
+                                    { color: colors.text, opacity: 0.5, fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined }
+                                ]}
+                            >
+                                No content...
+                            </Text>
+                        );
+                    }
+                    
+                    return null;
+                })()}
 
                 {/* Footer: Weather or Location */}
                 {item.weather && (
@@ -162,6 +242,14 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   timeText: { fontSize: 12, fontWeight: '500' },
   emoji: { fontSize: 16 },
+  
+  titleText: {
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 22,
+    marginBottom: 4,
+    opacity: 0.9,
+  },
   
   summaryText: {
     fontSize: 15,
