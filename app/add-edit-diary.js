@@ -280,6 +280,18 @@ const CompanionAvatarView = memo(({ size = 80, visual }) => {
 
 const AddEditDiaryScreen = () => {
     const router = useRouter();
+    
+    // Safe navigation helper to prevent crashes when navigation stack is empty
+    const safeGoBack = useCallback(() => {
+        try {
+            // For expo-router, try to go back, but fallback to timeline if stack is empty
+            router.back();
+        } catch (error) {
+            console.warn('Cannot go back, navigating to timeline instead:', error);
+            // Fallback: Navigate to timeline tab if we can't go back
+            router.replace('/(tabs)/timeline');
+        }
+    }, [router]);
     const navigation = useNavigation();
     const params = useLocalSearchParams();
     
@@ -1128,7 +1140,55 @@ const AddEditDiaryScreen = () => {
                 }
             }
             
-            // Use the unified saveDiary function
+            // --- Zero-Friction Analysis Pipeline ---
+            // Run analysis BEFORE saving to include metadata in the saved entry
+            let analyzedMetadata = null;
+            if (!isEditMode) {
+                try {
+                    // Extract plain text for analysis
+                    const plainText = extractTextFromHTML(contentToSave);
+                    
+                    if (plainText && plainText.trim().length > 0) {
+                        // Run analysis
+                        const analysis = analyzeDiaryEntry(contentToSave);
+                        console.log('[AddEditDiary] Analysis result:', analysis);
+                        
+                        // Extract metadata for persistence
+                        const people = analysis.people || analysis.detectedPeople || [];
+                        const activities = analysis.activities || analysis.detectedActivities || [];
+                        const moods = analysis.moods || analysis.detectedMoods || [];
+                        
+                        // Construct analyzedMetadata object
+                        analyzedMetadata = {
+                            people: people.slice(0, 10), // Limit to top 10
+                            activities: activities.slice(0, 10),
+                            moods: moods.slice(0, 10),
+                        };
+                        
+                        // Update CRM store silently
+                        people.forEach((person) => {
+                            trackPersonInteraction(person);
+                        });
+                        
+                        activities.forEach((activity) => {
+                            trackTopic(activity, 'activity');
+                        });
+                        
+                        moods.forEach((mood) => {
+                            trackTopic(mood, 'mood');
+                        });
+                        
+                        // Show feedback modal
+                        setAnalysisResult(analysis);
+                        setShowAnalysisFeedback(true);
+                    }
+                } catch (analysisError) {
+                    console.error('[AddEditDiary] Analysis failed:', analysisError);
+                    // Continue with save even if analysis fails
+                }
+            }
+            
+            // Use the unified saveDiary function with analyzedMetadata
             // It will automatically determine create vs update based on entryId
             const savedEntry = await saveDiary({
                 entryId: isEditMode ? existingDiary.id : undefined,
@@ -1138,6 +1198,7 @@ const AddEditDiaryScreen = () => {
                 companionIDs: selectedCompanionIDs,
                 themeID: selectedThemeId ?? null,
                 createdAt: isEditMode ? existingDiary.createdAt : createdAtOverride,
+                analyzedMetadata: analyzedMetadata, // Include analyzed metadata
             });
             
             console.log(isEditMode ? 'Diary entry updated successfully' : 'Diary entry created:', savedEntry?.id);
@@ -1193,70 +1254,22 @@ const AddEditDiaryScreen = () => {
                 }
             }
             
-            // --- Zero-Friction Analysis Pipeline ---
-            // Only analyze new entries (not edits) for instant gratification
-            if (!isEditMode && savedEntry?.id) {
-                try {
-                    // Extract plain text for analysis
-                    const plainText = extractTextFromHTML(contentToSave);
-                    
-                    if (plainText && plainText.trim().length > 0) {
-                        // Run analysis
-                        const analysis = analyzeDiaryEntry(contentToSave);
-                        console.log('[AddEditDiary] Analysis result:', analysis);
-                        
-                        // Update CRM store silently using new NLP-based fields
-                        const people = analysis.people || analysis.detectedPeople || [];
-                        const activities = analysis.activities || analysis.detectedActivities || [];
-                        const moods = analysis.moods || analysis.detectedMoods || [];
-                        
-                        people.forEach((person) => {
-                            trackPersonInteraction(person);
-                        });
-                        
-                        activities.forEach((activity) => {
-                            trackTopic(activity, 'activity');
-                        });
-                        
-                        moods.forEach((mood) => {
-                            trackTopic(mood, 'mood');
-                        });
-                        
-                        // Show feedback modal
-                        setAnalysisResult(analysis);
-                        setShowAnalysisFeedback(true);
-                        
-                        // Delay navigation to show feedback
-                        setTimeout(() => {
-                            setShowAnalysisFeedback(false);
-                            setInitialSnapshot(currentSnapshot);
-                            setPreventRemove(false);
-                            router.back();
-                        }, 3500); // Show for 3.5 seconds (modal auto-dismisses at 3s)
-                    } else {
-                        // No content to analyze, proceed with normal navigation
-                        setInitialSnapshot(currentSnapshot);
-                        setPreventRemove(false);
-                        setTimeout(() => {
-                            router.back();
-                        }, 0);
-                    }
-                } catch (analysisError) {
-                    console.error('[AddEditDiary] Analysis failed:', analysisError);
-                    // Don't block save flow if analysis fails
+            // Handle navigation after save
+            if (!isEditMode && analyzedMetadata) {
+                // New entry with analysis - delay navigation to show feedback
+                setTimeout(() => {
+                    setShowAnalysisFeedback(false);
                     setInitialSnapshot(currentSnapshot);
                     setPreventRemove(false);
-                    setTimeout(() => {
-                        router.back();
-                    }, 0);
-                }
+                    safeGoBack();
+                }, 3500); // Show for 3.5 seconds (modal auto-dismisses at 3s)
             } else {
-                // Edit mode or no entry saved - normal navigation
+                // Edit mode or no analysis - normal navigation
                 setInitialSnapshot(currentSnapshot);
                 setPreventRemove(false);
                 console.log('Save completed, navigating back');
                 setTimeout(() => {
-                    router.back();
+                    safeGoBack();
                 }, 0);
             }
         } catch (error) {
@@ -1479,7 +1492,16 @@ const AddEditDiaryScreen = () => {
                 : (isChildTheme ? '#7090AC' : (themeContext?.colors?.text || themeStyles.text));
             return (
             <TouchableOpacity
-                onPress={() => navigation.goBack()}
+                onPress={() => {
+                    // Safe navigation: Check if we can go back before calling goBack()
+                    if (navigation.canGoBack()) {
+                        navigation.goBack();
+                    } else {
+                        // Fallback: Navigate to timeline if we can't go back
+                        console.warn('Cannot go back, navigating to timeline instead');
+                        router.replace('/(tabs)/timeline');
+                    }
+                }}
                 style={styles.childHeaderBack}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -2059,7 +2081,7 @@ const AddEditDiaryScreen = () => {
                                     <Ionicons name="happy-outline" size={24} color={tintColor || themeStyles.text} />
                                 ),
                                 dismissKeyboard: ({ tintColor }) => (
-                                    <Ionicons name="keyboard-arrow-down" size={24} color={tintColor || themeStyles.text} />
+                                    <Ionicons name="chevron-down" size={24} color={tintColor || themeStyles.text} />
                                 ),
                             }}
                             onPressAddImage={handleInsertImage}
@@ -2233,7 +2255,7 @@ const AddEditDiaryScreen = () => {
                         setShowAnalysisFeedback(false);
                         setInitialSnapshot(currentSnapshot);
                         setPreventRemove(false);
-                        router.back();
+                        safeGoBack();
                     }}
                     autoDismiss={true}
                     autoDismissDelay={3000}

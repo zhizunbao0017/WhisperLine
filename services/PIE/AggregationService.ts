@@ -78,7 +78,9 @@ class AggregationService {
       // Calculate frequency (simple version)
       // For a more accurate version, you'd analyze the timestamps of entries
       const chapterAgeInDays = (new Date().getTime() - new Date(chapter.createdAt).getTime()) / (1000 * 3600 * 24);
-      const frequencyPerWeek = chapterAgeInDays > 0 ? (totalEntries / chapterAgeInDays) * 7 : totalEntries;
+      // Prevent division by less than 1 week to avoid impossible frequencies for new users
+      const safeWeeks = Math.max(1, chapterAgeInDays / 7);
+      const frequencyPerWeek = totalEntries / safeWeeks;
 
       const metrics: ChapterMetrics = {
           totalEntries,

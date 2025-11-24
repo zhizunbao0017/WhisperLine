@@ -385,7 +385,7 @@ export const DiaryProvider = ({ children }) => {
   // This function intelligently determines whether to create or update an entry
   // and applies the correct data processing path
   const saveDiary = async (data) => {
-    const { entryId, htmlContent, selectedMood, weather, companionIDs, themeID, createdAt } = data;
+    const { entryId, htmlContent, selectedMood, weather, companionIDs, themeID, createdAt, analyzedMetadata } = data;
     
     let entryToProcess;
     let updatedDiaries;
@@ -415,6 +415,7 @@ export const DiaryProvider = ({ children }) => {
         weather: weather !== undefined ? weather : existingEntry.weather,
         companionIDs: companionIDs !== undefined ? companionIDs : existingEntry.companionIDs,
         themeID: themeID !== undefined ? themeID : existingEntry.themeID,
+        analyzedMetadata: analyzedMetadata !== undefined ? analyzedMetadata : existingEntry.analyzedMetadata,
         updatedAt: new Date().toISOString(),
         createdAt: existingEntry.createdAt, // Preserve original creation date
       });
@@ -444,6 +445,7 @@ export const DiaryProvider = ({ children }) => {
         weather: weather,
         companionIDs: companionIDs || [],
         themeID: themeID || null,
+        analyzedMetadata: analyzedMetadata || null,
         createdAt: createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });

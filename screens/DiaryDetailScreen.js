@@ -7,6 +7,8 @@ import RenderHTML from 'react-native-render-html';
 import { ThemeContext } from '../context/ThemeContext';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { ThemedText as Text } from '../components/ThemedText';
+import { Ionicons } from '@expo/vector-icons';
+import { stripHtml } from '../src/utils/textUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -32,6 +34,39 @@ const DiaryDetailScreen = () => {
 
     // Get diary content: prioritize content, fallback to contentHTML for backward compatibility
     const diaryContent = diary.content || diary.contentHTML || '';
+    
+    // Extract and clean title for duplicate detection
+    const cleanTitle = useMemo(() => {
+        if (!diaryContent) return '';
+        // Extract h1 content
+        const h1Match = diaryContent.match(/^<h1[^>]*>(.*?)<\/h1>/i);
+        if (h1Match) {
+            return stripHtml(h1Match[1]).trim();
+        }
+        return stripHtml(diary.title || '').trim();
+    }, [diaryContent, diary.title]);
+    
+    // Extract clean body text (without h1) for duplicate detection
+    const cleanBodyText = useMemo(() => {
+        if (!diaryContent) return '';
+        // Remove h1 tag and get plain text
+        const withoutH1 = diaryContent.replace(/^<h1[^>]*>.*?<\/h1>/i, '').trim();
+        return stripHtml(withoutH1).trim();
+    }, [diaryContent]);
+    
+    // Check if body starts with title (duplicate detection)
+    const isBodyRedundant = useMemo(() => {
+        if (!cleanTitle || !cleanBodyText) return false;
+        // If title is long enough and body starts with it, consider redundant
+        if (cleanTitle.length > 10 && cleanBodyText.startsWith(cleanTitle)) {
+            return true;
+        }
+        // Exact match
+        if (cleanBodyText === cleanTitle) {
+            return true;
+        }
+        return false;
+    }, [cleanTitle, cleanBodyText]);
 
     // Custom style configuration
     const renderHTMLConfig = useMemo(() => ({
@@ -144,6 +179,39 @@ const DiaryDetailScreen = () => {
                 )}
             </View>
 
+            {/* --- Analyzed Metadata Display --- */}
+            {diary.analyzedMetadata && (
+                <View style={styles.metadataContainer}>
+                    {/* Moods */}
+                    {diary.analyzedMetadata.moods && diary.analyzedMetadata.moods.length > 0 && (
+                        diary.analyzedMetadata.moods.map((mood, index) => (
+                            <View key={`mood-${index}`} style={[styles.moodBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary }]}>
+                                <Text style={[styles.moodText, { color: colors.primary }]}>✨ {mood}</Text>
+                            </View>
+                        ))
+                    )}
+                    
+                    {/* People */}
+                    {diary.analyzedMetadata.people && diary.analyzedMetadata.people.length > 0 && (
+                        diary.analyzedMetadata.people.map((person, index) => (
+                            <View key={`person-${index}`} style={[styles.personChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Ionicons name="person-circle" size={16} color={colors.text} />
+                                <Text style={[styles.chipText, { color: colors.text }]}>{person}</Text>
+                            </View>
+                        ))
+                    )}
+
+                    {/* Activities */}
+                    {diary.analyzedMetadata.activities && diary.analyzedMetadata.activities.length > 0 && (
+                        diary.analyzedMetadata.activities.map((activity, index) => (
+                            <View key={`activity-${index}`} style={[styles.activityTag, { borderColor: colors.border }]}>
+                                <Text style={[styles.tagText, { color: colors.text }]}>#{activity}</Text>
+                            </View>
+                        ))
+                    )}
+                </View>
+            )}
+
             {/* --- Divider --- */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -168,16 +236,36 @@ const DiaryDetailScreen = () => {
                                 fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined,
                             },
                         }}
-                        baseStyle={renderHTMLConfig.baseStyle}
-                        systemFonts={isCyberpunkTheme ? [themeStyles.fontFamily] : ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']}
-                        renderersProps={{
-                            img: {
-                                // Ensure local file URI images can load correctly
-                                enableExperimentalPercentWidth: true,
-                            },
-                        }}
-                        // Custom image renderer to ensure local file URIs display correctly
+                        // Custom h1 renderer to clean HTML entities and handle duplicates
                         renderers={{
+                            h1: ({ TDefaultRenderer, ...props }) => {
+                                // If body is redundant (starts with title), hide the h1
+                                if (isBodyRedundant) {
+                                    return null;
+                                }
+                                
+                                // Extract text content and clean it
+                                const rawText = props.tnode.children
+                                    .map((child: any) => {
+                                        if (child.type === 'text') return child.data;
+                                        return '';
+                                    })
+                                    .join('');
+                                const cleanText = stripHtml(rawText);
+                                
+                                return (
+                                    <Text style={{
+                                        fontSize: 28,
+                                        fontWeight: 'bold',
+                                        marginTop: 0,
+                                        marginBottom: 15,
+                                        color: colors.text,
+                                        fontFamily: isCyberpunkTheme ? themeStyles.fontFamily : undefined,
+                                    }}>
+                                        {cleanText}
+                                    </Text>
+                                );
+                            },
                             img: ({ TDefaultRenderer, ...props }) => {
                                 const { src } = props.tnode.attributes;
                                 // Handle local file URI (file:// or direct path)
@@ -199,6 +287,14 @@ const DiaryDetailScreen = () => {
                                 }
                                 // Use default renderer for other cases
                                 return <TDefaultRenderer {...props} />;
+                            },
+                        }}
+                        baseStyle={renderHTMLConfig.baseStyle}
+                        systemFonts={isCyberpunkTheme ? [themeStyles.fontFamily] : ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']}
+                        renderersProps={{
+                            img: {
+                                // Ensure local file URI images can load correctly
+                                enableExperimentalPercentWidth: true,
                             },
                         }}
                         // Ensure images can render local file URIs correctly
@@ -275,6 +371,53 @@ const styles = StyleSheet.create({
     htmlContainer: {
         width: '100%',
         marginBottom: 20,
+    },
+    metadataContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 20,
+        alignItems: 'center',
+    },
+    moodBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginRight: 8,
+        marginBottom: 8,
+    },
+    moodText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    personChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginRight: 8,
+        marginBottom: 8,
+        gap: 6,
+    },
+    chipText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    activityTag: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginRight: 8,
+        marginBottom: 8,
+    },
+    tagText: {
+        fontSize: 12,
+        fontWeight: '500',
+        opacity: 0.8,
     },
 });
 

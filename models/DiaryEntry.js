@@ -15,6 +15,7 @@ class DiaryEntry {
     companionIDs = [],
     companionIds = undefined,
     analysis = null,
+    analyzedMetadata = null,
     themeID = null,
     themeId = undefined,
     captureType = null,
@@ -37,6 +38,7 @@ class DiaryEntry {
     );
     this.companionIDs = normalizedCompanions;
     this.analysis = analysis || null;
+    this.analyzedMetadata = analyzedMetadata || null;
     this.themeID = DiaryEntry.normalizeThemeID(themeID ?? themeId ?? null);
     this.captureType = captureType ?? null;
     this.captureMeta = captureMeta ? { ...captureMeta } : null;
@@ -125,6 +127,7 @@ class DiaryEntry {
       updatedAt: this.updatedAt,
       companionIDs: [...this.companionIDs],
       analysis: this.analysis,
+      analyzedMetadata: this.analyzedMetadata ? { ...this.analyzedMetadata } : null,
       themeID: this.themeID,
       captureType: this.captureType,
       captureMeta: this.captureMeta ? { ...this.captureMeta } : null,
