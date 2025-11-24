@@ -76,6 +76,9 @@
     "experiments": {
       "typedRoutes": true
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "extra": {
       "router": {},
       "eas": {
