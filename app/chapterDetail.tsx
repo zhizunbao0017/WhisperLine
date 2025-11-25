@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   SafeAreaView,
+  ScrollView,
   SectionList,
   StatusBar, // 核心改动：使用 SectionList
   StyleSheet,
@@ -13,12 +15,20 @@ import {
 } from 'react-native';
 import DiarySummaryCard from '../components/DiarySummaryCard';
 import FloatingActionButton from '../components/FloatingActionButton'; // 引入 FAB
+import MoodTrendChart from '../src/components/MoodTrendChart';
+import ChatInterface from '../src/components/ChatInterface';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { useUserState } from '../context/UserStateContext';
 import { Chapter, EmotionType } from '../models/PIE';
+import { getChatContext } from '../src/services/localChatService';
 
-type ChapterDetailParams = { id?: string };
+type ChapterDetailParams = { 
+  id?: string;
+  filterType?: 'person' | 'topic';
+  filterValue?: string;
+  entryIds?: string; // Comma-separated entry IDs for dynamic chapters
+};
 
 // ... (保留之前的颜色和 Label 常量) ...
 const EMOTION_COLORS: Record<EmotionType, string> = {
@@ -27,7 +37,7 @@ const EMOTION_COLORS: Record<EmotionType, string> = {
 };
 
 const ChapterDetailScreen: React.FC = () => {
-  const { id } = useLocalSearchParams<ChapterDetailParams>();
+  const { id, filterType, filterValue, entryIds: entryIdsParam } = useLocalSearchParams<ChapterDetailParams>();
   const router = useRouter();
   const diaryContext = useContext(DiaryContext);
   const themeContext = useContext(ThemeContext);
@@ -38,24 +48,87 @@ const ChapterDetailScreen: React.FC = () => {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [sections, setSections] = useState<any[]>([]); // SectionList 的数据源
   const [stats, setStats] = useState<any>(null); // 统计数据
+  const [isChatModalVisible, setIsChatModalVisible] = useState(false);
+  const [chatContextId, setChatContextId] = useState<string | null>(null);
+  const [chatEntityName, setChatEntityName] = useState<string>('');
 
   useEffect(() => {
-    if (!id || !userState || !userState.chapters) {
-      if (userState) setIsLoading(false);
+    if (!diaryContext?.diaries) {
+      setIsLoading(false);
       return;
     }
 
     try {
-      const currentChapter = userState.chapters[id];
-      if (!currentChapter) throw new Error('Chapter not found');
-      
-      setChapter(currentChapter);
+      let rawEntries: any[] = [];
+      let chapterTitle = '';
+      let chapterType: 'person' | 'topic' | 'companion' | 'theme' = 'theme';
 
-      // --- 数据处理核心逻辑 ---
-      const entryIds = new Set((currentChapter.entryIds || []).map(String));
-      const rawEntries = (diaryContext?.diaries || [])
-        .filter(e => entryIds.has(String(e.id)))
-        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      // === NEW: Filter-based approach (Event-Driven) ===
+      if (filterType && filterValue) {
+        chapterType = filterType;
+        chapterTitle = filterValue;
+        
+        // Filter entries based on metadata
+        rawEntries = (diaryContext.diaries || []).filter((entry: any) => {
+          const metadata = entry.analyzedMetadata || {};
+          
+          if (filterType === 'person') {
+            return (metadata.people || []).some((p: string) => 
+              p.trim().toLowerCase() === filterValue.trim().toLowerCase()
+            );
+          } else if (filterType === 'topic') {
+            return (metadata.activities || []).some((t: string) => 
+              t.trim().toLowerCase() === filterValue.trim().toLowerCase()
+            );
+          }
+          return false;
+        });
+        
+        // Sort by date (newest first)
+        rawEntries.sort((a, b) => 
+          new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+        
+        // Create a virtual chapter object for dynamic chapters
+        setChapter({
+          id: id || `${filterType}:${filterValue}`,
+          title: chapterTitle,
+          type: chapterType,
+          entryIds: rawEntries.map(e => e.id),
+        });
+      }
+      // === NEW: Direct entryIds parameter ===
+      else if (entryIdsParam) {
+        const entryIdsArray = entryIdsParam.split(',').map(id => id.trim()).filter(Boolean);
+        const entryIdsSet = new Set(entryIdsArray.map(String));
+        rawEntries = (diaryContext.diaries || [])
+          .filter((e: any) => entryIdsSet.has(String(e.id)))
+          .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        
+        setChapter({
+          id: id || 'dynamic',
+          title: chapterTitle || 'Dynamic Chapter',
+          type: chapterType,
+          entryIds: entryIdsArray,
+        });
+      }
+      // === LEGACY: Chapter ID approach ===
+      else if (id && userState?.chapters) {
+        const currentChapter = userState.chapters[id];
+        if (!currentChapter) throw new Error('Chapter not found');
+        
+        setChapter(currentChapter);
+        chapterTitle = currentChapter.title;
+        chapterType = currentChapter.type;
+        
+        const entryIds = new Set((currentChapter.entryIds || []).map(String));
+        rawEntries = (diaryContext?.diaries || [])
+          .filter((e: any) => entryIds.has(String(e.id)))
+          .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      } else {
+        setIsLoading(false);
+        return;
+      }
 
       // 1. 按月份分组 (Grouping by Month)
       const grouped = rawEntries.reduce((acc: any, entry) => {
@@ -78,11 +151,41 @@ const ChapterDetailScreen: React.FC = () => {
       setSections(sectionData);
 
       // 3. 计算统计数据
-      const emotionDist = currentChapter.metrics?.emotionDistribution || {};
+      // For dynamic chapters, calculate stats from entries
+      let emotionDist: Record<string, number> = {};
+      let perWeek = 0;
+      
+      if (chapter && chapter.metrics) {
+        // Use existing metrics for legacy chapters
+        emotionDist = chapter.metrics.emotionDistribution || {};
+        perWeek = chapter.metrics.frequency?.perWeek || 0;
+      } else {
+        // Calculate stats from raw entries for dynamic chapters
+        rawEntries.forEach((entry: any) => {
+          const mood = entry.mood || entry.analyzedMetadata?.moods?.[0];
+          if (mood) {
+            emotionDist[mood] = (emotionDist[mood] || 0) + 1;
+          }
+        });
+        
+        // Calculate frequency (entries per week)
+        if (rawEntries.length > 0) {
+          const firstDate = new Date(rawEntries[rawEntries.length - 1].createdAt || Date.now());
+          const lastDate = new Date(rawEntries[0].createdAt || Date.now());
+          
+          if (!isNaN(firstDate.getTime()) && !isNaN(lastDate.getTime())) {
+            const diffInMs = Math.abs(lastDate.getTime() - firstDate.getTime());
+            const diffInWeeks = Math.max(1, diffInMs / (7 * 24 * 60 * 60 * 1000));
+            const calculated = rawEntries.length / diffInWeeks;
+            perWeek = isNaN(calculated) || !isFinite(calculated) ? 0 : calculated;
+          }
+        }
+      }
+      
       const totalEmotions = Object.values(emotionDist).reduce((a: number, b: number) => a + b, 0);
       setStats({
         total: rawEntries.length,
-        perWeek: currentChapter.metrics?.frequency?.perWeek || 0,
+        perWeek: perWeek,
         emotionDist,
         totalEmotions
       });
@@ -92,7 +195,7 @@ const ChapterDetailScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [id, userState, diaryContext?.diaries]);
+  }, [id, userState, diaryContext?.diaries, filterType, filterValue, entryIdsParam]);
 
   // --- Header 组件 (包含图表和统计) ---
   const renderHeader = useCallback(() => {
@@ -120,10 +223,27 @@ const ChapterDetailScreen: React.FC = () => {
              <Text style={[styles.statLabel, { color: colors.text }]}>Moments</Text>
            </View>
            <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-             <Text style={[styles.statNum, { color: colors.text }]}>{stats.perWeek.toFixed(1)}</Text>
+             <Text style={[styles.statNum, { color: colors.text }]}>
+               {(typeof stats.perWeek === 'number' ? stats.perWeek : 0).toFixed(1)}
+             </Text>
              <Text style={[styles.statLabel, { color: colors.text }]}>/ Week</Text>
            </View>
         </View>
+
+        {/* Mood Trend Chart (Real Data) */}
+        {sections.length > 0 && (
+          <View style={styles.moodTrendContainer}>
+            <Text style={[styles.moodTrendLabel, { color: colors.text }]}>Mood Trend</Text>
+            <MoodTrendChart
+              diaries={sections.flatMap(s => s.data)}
+              width={300}
+              height={40}
+              strokeColor={colors.primary}
+              strokeWidth={2}
+              maxEntries={10}
+            />
+          </View>
+        )}
 
         {/* Emotion Bar (简化版) */}
         {stats.totalEmotions > 0 && (
@@ -149,6 +269,28 @@ const ChapterDetailScreen: React.FC = () => {
       </View>
     );
   }, [chapter, stats, colors]);
+
+  // Handle chat button press - Open chat interface
+  const handleChatPress = useCallback(() => {
+    if (!chapter) return;
+    
+    // Determine entity ID and name
+    let entityId: string;
+    let entityName: string = chapter.title.trim();
+    
+    if (chapter.type === 'person') {
+      entityId = `person-${entityName.toLowerCase().trim()}`;
+    } else if (chapter.type === 'topic') {
+      entityId = `topic-${entityName.toLowerCase().trim()}`;
+    } else {
+      // For companion/theme chapters, use chapter ID (also normalize)
+      entityId = chapter.id.toLowerCase().trim();
+    }
+    
+    setChatContextId(entityId);
+    setChatEntityName(entityName);
+    setIsChatModalVisible(true);
+  }, [chapter]);
 
   if (isLoading) {
     return (
@@ -227,6 +369,55 @@ const ChapterDetailScreen: React.FC = () => {
             });
         }} 
       />
+      
+      {/* Chat FAB: 第二个 FAB 用于聊天 */}
+      <TouchableOpacity
+        style={[styles.chatFAB, { backgroundColor: colors.primary }]}
+        onPress={handleChatPress}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Chat Modal - Full Conversational UI */}
+      <Modal
+        visible={isChatModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsChatModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+              {/* Header */}
+              <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  Chat about {chapter?.title || 'this chapter'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsChatModalVisible(false)}
+                  style={styles.modalCloseButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Chat Interface */}
+              {chatContextId && (
+                <ChatInterface
+                  contextId={chatContextId}
+                  entityName={chatEntityName}
+                  entityId={chatContextId}
+                  currentMood={stats?.emotionDist ? Object.keys(stats.emotionDist)[0] : undefined}
+                  onClose={() => setIsChatModalVisible(false)}
+                  colors={colors}
+                />
+              )}
+            </SafeAreaView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -244,6 +435,8 @@ const styles = StyleSheet.create({
   statNum: { fontSize: 24, fontWeight: '700', marginBottom: 4 },
   statLabel: { fontSize: 13, opacity: 0.6, fontWeight: '500' },
 
+  moodTrendContainer: { marginBottom: 24, alignItems: 'center' },
+  moodTrendLabel: { fontSize: 12, opacity: 0.6, fontWeight: '600', marginBottom: 8 },
   emotionBarContainer: { marginBottom: 24 },
   emotionBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
   emotionLabel: { fontSize: 12, opacity: 0.5, fontWeight: '600' },
@@ -262,7 +455,112 @@ const styles = StyleSheet.create({
 
   emptyContainer: { alignItems: 'center', marginTop: 60, opacity: 0.6 },
   emptyText: { fontSize: 18, fontWeight: '600' },
-  emptySub: { marginTop: 8 }
+  emptySub: { marginTop: 8 },
+  
+  // Chat FAB Styles
+  chatFAB: {
+    position: 'absolute',
+    bottom: 90, // Above the main FAB
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  
+  // Chat Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    height: '70%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    // backgroundColor is set inline in the component (line 390)
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    flex: 1,
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  chatContent: {
+    flex: 1,
+  },
+  chatContentContainer: {
+    padding: 20,
+    flexGrow: 1,
+  },
+  chatLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  chatLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  chatBubble: {
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  chatText: {
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  chatEmptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  chatEmptyText: {
+    marginTop: 16,
+    fontSize: 14,
+    opacity: 0.6,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
+  modalFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  generateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  generateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 export default ChapterDetailScreen;

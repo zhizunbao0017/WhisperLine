@@ -40,6 +40,7 @@ export interface UserStateContextValue {
   updateCompanion: (companion: Companion) => Promise<void>;
   deleteCompanion: (companionId: string) => Promise<void>;
   setPrimaryCompanion: (companionId: string | null) => Promise<void>; // Set primary companion ID
+  getPrimaryCompanion: () => Promise<Companion | null>; // Get primary companion, returns null if not set
   // Import-related state
   isImporting: boolean;
   importProgress: number;
@@ -601,6 +602,42 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, []);
 
+  /**
+   * Get the primary companion
+   * Returns the primary companion object if set, or null if not set or not found
+   * This gracefully handles the case where primaryCompanionId is null/undefined
+   * @returns The primary companion object, or null if not set
+   */
+  const getPrimaryCompanion = useCallback(async (): Promise<Companion | null> => {
+    try {
+      const storedPrimaryId = await AsyncStorage.getItem('primaryCompanionID');
+      
+      // If no primary companion ID is stored, return null gracefully
+      if (!storedPrimaryId || storedPrimaryId === 'null' || storedPrimaryId === 'undefined') {
+        console.log('[UserStateContext] No primary companion set');
+        return null;
+      }
+
+      // Access current userState directly (will be current at call time)
+      // Note: This reads the state at the time of function call, which is correct for async operations
+      const companionId = String(storedPrimaryId).trim();
+      const companion = userState.companions?.[companionId];
+      
+      if (!companion) {
+        console.warn('[UserStateContext] Primary companion ID found but companion not found:', companionId);
+        // Clear the stale ID
+        await AsyncStorage.removeItem('primaryCompanionID');
+        return null;
+      }
+
+      console.log('[UserStateContext] Primary companion found:', companion.name);
+      return companion;
+    } catch (error) {
+      console.error('[UserStateContext] Failed to get primary companion:', error);
+      return null; // Return null on error instead of throwing
+    }
+  }, [userState]); // Include userState in dependencies - function will be recreated when companions change
+
   // Import process handler
   // Note: This function is kept for interface compatibility but the actual import
   // logic is handled directly in SettingsScreen to avoid circular dependencies
@@ -632,6 +669,7 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updateCompanion,
     deleteCompanion,
     setPrimaryCompanion,
+    getPrimaryCompanion,
     // Import-related values
     isImporting,
     importProgress,

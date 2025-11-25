@@ -9,6 +9,8 @@ import achievementService from '../services/AchievementService';
 import chapterService from '../services/ChapterService';
 import { useUserState } from './UserStateContext';
 import { pieService } from '../services/PIE/PIEService';
+import { extractKeyFact, extractMemory } from '../src/services/analysisEngine';
+import useMemoryStore from '../src/store/memoryStore';
 
 // Helper function to extract plain text from diary entry
 // Used for PIE processing which requires plain text content
@@ -468,6 +470,82 @@ export const DiaryProvider = ({ children }) => {
     // --- COMMON LOGIC: Update state and storage ---
     setDiaries(updatedDiaries);
     await saveDiariesToStorage(updatedDiaries);
+    
+    // --- MEMORY GRAPH: Extract and store memory fragments (Privacy First & Local First) ---
+    try {
+      const plainText = extractTextContent(entryToProcess);
+      if (plainText && plainText.trim().length > 0) {
+        const memoryStore = useMemoryStore.getState();
+        
+        // Extract memory fragment (main verb phrase + object)
+        const mood = entryToProcess.mood || entryToProcess.analyzedMetadata?.moods?.[0] || 'neutral';
+        const memoryText = extractMemory(plainText, mood);
+        
+        if (memoryText) {
+          // Extract entity IDs from metadata
+          const metadata = entryToProcess.analyzedMetadata || {};
+          const people = metadata.people || [];
+          const activities = metadata.activities || [];
+          
+          // Store memory for each person mentioned (Fix 2: Ensure lowercase and trimmed)
+          people.forEach((personName: string) => {
+            if (personName && personName.trim()) {
+              const normalizedName = personName.trim().toLowerCase();
+              const entityId = `person-${normalizedName}`;
+              const date = new Date(entryToProcess.createdAt || Date.now()).toISOString().split('T')[0];
+              
+              memoryStore.addMemory({
+                date,
+                entityId,
+                text: memoryText,
+                mood,
+                sourceEntryId: entryToProcess.id,
+              });
+            }
+          });
+          
+          // Store memory for each activity/topic mentioned (Fix 2: Ensure lowercase and trimmed)
+          activities.forEach((activity: string) => {
+            if (activity && activity.trim()) {
+              const normalizedActivity = activity.trim().toLowerCase();
+              const entityId = `topic-${normalizedActivity}`;
+              const date = new Date(entryToProcess.createdAt || Date.now()).toISOString().split('T')[0];
+              
+              memoryStore.addMemory({
+                date,
+                entityId,
+                text: memoryText,
+                mood,
+                sourceEntryId: entryToProcess.id,
+              });
+            }
+          });
+          
+          // Also store as general memory (no entityId) if no specific entities
+          if (people.length === 0 && activities.length === 0) {
+            const date = new Date(entryToProcess.createdAt || Date.now()).toISOString().split('T')[0];
+            memoryStore.addMemory({
+              date,
+              text: memoryText,
+              mood,
+              sourceEntryId: entryToProcess.id,
+            });
+          }
+          
+          console.log('[DiaryContext] Extracted and stored memory fragment:', memoryText);
+        }
+        
+        // Legacy: Also extract and store fact (for backward compatibility)
+        const fact = extractKeyFact(plainText);
+        if (fact) {
+          memoryStore.addFact(fact, entryToProcess.id);
+          console.log('[DiaryContext] Extracted and stored fact:', fact);
+        }
+      }
+    } catch (memoryError) {
+      // Don't block diary saving if memory extraction fails
+      console.warn('[DiaryContext] Memory extraction failed (non-blocking):', memoryError);
+    }
     
     // --- Process with chapter service ---
     try {

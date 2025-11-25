@@ -150,6 +150,220 @@ function generateRawSummary(doc: any): string {
 }
 
 /**
+ * Extract memory fragment from text using NLP (The Miner)
+ * Extracts main verb phrase + object (e.g., "I played tennis with Mike" -> "played tennis")
+ * 
+ * @param text - Plain text content
+ * @param mood - Dominant mood from diary entry
+ * @param entityId - Optional entity ID (person or topic) this memory relates to
+ * @returns Extracted memory text or null if no memory found
+ */
+export function extractMemory(text: string, mood: string = 'neutral', entityId?: string): string | null {
+  if (!text || text.trim().length === 0) {
+    return null;
+  }
+
+  // Check if compromise is available
+  if (!nlp) {
+    console.warn('[AnalysisEngine] compromise library not available for memory extraction');
+    return null;
+  }
+
+  try {
+    const plainText = extractPlainText(text);
+    const doc = nlp(plainText);
+    
+    // Strategy 1: Extract verb phrases (main action + object)
+    // Pattern: "I [verb] [noun]" -> "verb noun"
+    const verbPhrases: string[] = [];
+    
+    // Extract verbs with their objects
+    const verbs = doc.verbs();
+    verbs.forEach((verb: any) => {
+      try {
+        // Get the verb text
+        const verbText = verb.text().toLowerCase().trim();
+        
+        // Skip auxiliary verbs
+        if (COMMON_AUXILIARY_VERBS.includes(verbText)) {
+          return;
+        }
+        
+        // Try to get the object/noun after the verb
+        const afterVerb = verb.after();
+        const nouns = afterVerb.nouns().out('array');
+        
+        if (nouns.length > 0) {
+          // Combine verb + first noun
+          const memory = `${verbText} ${nouns[0].toLowerCase()}`.trim();
+          if (memory.length >= 5 && memory.length <= 100) {
+            verbPhrases.push(memory);
+          }
+        } else {
+          // Just use the verb if it's meaningful
+          if (verbText.length >= 4 && verbText.length <= 50) {
+            verbPhrases.push(verbText);
+          }
+        }
+      } catch (e) {
+        // Skip this verb if processing fails
+      }
+    });
+    
+    // Strategy 2: Extract "I [verb] [preposition] [noun]" patterns
+    // e.g., "I went to the beach" -> "went to beach"
+    const prepositionPhrases: string[] = [];
+    try {
+      const sentences = doc.sentences().out('array');
+      sentences.forEach((sentence: string) => {
+        const lowerSentence = sentence.toLowerCase();
+        // Look for "I [verb] [prep] [noun]" patterns
+        const prepPatterns = [
+          /I\s+(\w+)\s+(?:to|at|in|on|with|for)\s+(?:the\s+)?(\w+)/i,
+          /I\s+(\w+)\s+(\w+)\s+(?:with|for)\s+(\w+)/i,
+        ];
+        
+        prepPatterns.forEach(pattern => {
+          const match = sentence.match(pattern);
+          if (match) {
+            const parts = match.slice(1).filter(Boolean);
+            const memory = parts.join(' ').toLowerCase().trim();
+            if (memory.length >= 5 && memory.length <= 100) {
+              prepositionPhrases.push(memory);
+            }
+          }
+        });
+      });
+    } catch (e) {
+      // Pattern matching might fail, continue
+    }
+    
+    // Combine and prioritize results
+    const allMemories = [...verbPhrases, ...prepositionPhrases];
+    
+    if (allMemories.length > 0) {
+      // Return the first meaningful memory
+      const memory = allMemories[0];
+      // Capitalize first letter
+      const capitalizedMemory = memory.charAt(0).toUpperCase() + memory.slice(1);
+      console.log('[AnalysisEngine] Extracted memory:', capitalizedMemory);
+      return capitalizedMemory;
+    }
+    
+    // Fallback: Extract first meaningful activity from activities list
+    const activities = extractActivities(doc);
+    if (activities.length > 0) {
+      const memory = activities[0];
+      console.log('[AnalysisEngine] Extracted memory (from activities):', memory);
+      return memory;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[AnalysisEngine] Memory extraction failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Extract key facts from text (heuristic-based for local-first/offline)
+ * Looks for self-referential statements like "I am", "I like", "I hate", "I feel"
+ * 
+ * Future: This will be replaced by a small LLM call for better extraction
+ * 
+ * @param text - Plain text content
+ * @returns Extracted fact string or null if no fact found
+ */
+export function extractKeyFact(text: string): string | null {
+  if (!text || text.trim().length === 0) {
+    return null;
+  }
+
+  // Normalize text: remove extra whitespace and split into sentences
+  const normalizedText = text.replace(/\s+/g, ' ').trim();
+  
+  // Patterns for self-referential statements (facts about the user)
+  const factPatterns = [
+    // "I am..." statements (identity, state)
+    /I\s+am\s+([^.!?]+)/gi,
+    // "I'm..." statements (contracted form)
+    /I'm\s+([^.!?]+)/gi,
+    // "I like..." statements (preferences)
+    /I\s+like\s+([^.!?]+)/gi,
+    // "I love..." statements (strong preferences)
+    /I\s+love\s+([^.!?]+)/gi,
+    // "I hate..." statements (dislikes)
+    /I\s+hate\s+([^.!?]+)/gi,
+    // "I dislike..." statements (dislikes)
+    /I\s+dislike\s+([^.!?]+)/gi,
+    // "I feel..." statements (emotions, states)
+    /I\s+feel\s+([^.!?]+)/gi,
+    // "I think..." statements (beliefs, opinions) - but be selective
+    /I\s+think\s+(?:that\s+)?([^.!?]+)/gi,
+    // "I believe..." statements (beliefs)
+    /I\s+believe\s+(?:that\s+)?([^.!?]+)/gi,
+    // "I prefer..." statements (preferences)
+    /I\s+prefer\s+([^.!?]+)/gi,
+    // "I always..." statements (habits, patterns)
+    /I\s+always\s+([^.!?]+)/gi,
+    // "I never..." statements (habits, patterns)
+    /I\s+never\s+([^.!?]+)/gi,
+    // "I usually..." statements (habits)
+    /I\s+usually\s+([^.!?]+)/gi,
+    // "I often..." statements (habits)
+    /I\s+often\s+([^.!?]+)/gi,
+  ];
+
+  // Try each pattern
+  for (const pattern of factPatterns) {
+    const matches = normalizedText.matchAll(pattern);
+    for (const match of matches) {
+      if (match[1]) {
+        let fact = match[1].trim();
+        
+        // Clean up the fact
+        // Remove leading articles and common words
+        fact = fact.replace(/^(the|a|an|this|that|these|those)\s+/i, '').trim();
+        
+        // Ensure fact is meaningful (at least 5 characters)
+        if (fact.length >= 5 && fact.length <= 200) {
+          // Capitalize first letter
+          fact = fact.charAt(0).toUpperCase() + fact.slice(1);
+          
+          // Add period if missing
+          if (!fact.match(/[.!?]$/)) {
+            fact += '.';
+          }
+          
+          console.log('[AnalysisEngine] Extracted fact:', fact);
+          return fact;
+        }
+      }
+    }
+  }
+
+  // If no pattern matched, try to extract first meaningful sentence
+  // (fallback for other types of facts)
+  const sentences = normalizedText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 0);
+  for (const sentence of sentences) {
+    // Look for sentences that start with "I" and are reasonably long
+    if (sentence.match(/^I\s+/i) && sentence.length >= 10 && sentence.length <= 200) {
+      let fact = sentence.trim();
+      // Capitalize first letter
+      fact = fact.charAt(0).toUpperCase() + fact.slice(1);
+      // Add period if missing
+      if (!fact.match(/[.!?]$/)) {
+        fact += '.';
+      }
+      console.log('[AnalysisEngine] Extracted fact (fallback):', fact);
+      return fact;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Main analysis function using NLP
  * @param htmlContent - HTML content from RichEditor
  * @returns AnalysisResult

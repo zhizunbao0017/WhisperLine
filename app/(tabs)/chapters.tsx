@@ -21,6 +21,7 @@ import FloatingActionButton from '../../components/FloatingActionButton';
 import QuickCaptureContextValue from '../../context/QuickCaptureContext';
 import { ThemeContext } from '../../context/ThemeContext';
 import { useUserState } from '../../context/UserStateContext';
+import { DiaryContext } from '../../context/DiaryContext';
 import { Chapter } from '../../models/PIE';
 
 // --- 常量定义 ---
@@ -35,6 +36,7 @@ const ChaptersScreen: React.FC = () => {
   const { colors } = useContext(ThemeContext);
   const { openQuickCapture } = useContext(QuickCaptureContextValue);
   const { userState, isLoading: isUserStateLoading, refreshUserState } = useUserState();
+  const diaryContext = useContext(DiaryContext);
   
   // --- UI States ---
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -43,11 +45,171 @@ const ChaptersScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState(''); // 新增：搜索关键词
   const [isControlSheetVisible, setControlSheetVisible] = useState(false);
 
-  // 1. 获取原始数据
-  const chapters = useMemo(() => {
+  // Get diaries and companions for dynamic chapter generation
+  const diaries = diaryContext?.diaries || [];
+  const officialCompanions = userState?.companions || {};
+  const officialCompanionsArray = Object.values(officialCompanions);
+
+  // 1. DYNAMIC CHAPTER GENERATION: Aggregate chapters from diaries metadata
+  const generatedChapters = useMemo(() => {
+    // Groups: id -> { id, name, count, type, entryIds, lastUpdated }
+    const groups: Record<string, {
+      id: string;
+      name: string;
+      count: number;
+      type: 'person' | 'topic' | 'companion' | 'theme';
+      entryIds: string[];
+      lastUpdated: string;
+    }> = {};
+
+    // Step 1: Initialize with Official Companions
+    officialCompanionsArray.forEach((companion: any) => {
+      if (companion && companion.id && companion.name) {
+        groups[companion.id] = {
+          id: companion.id,
+          name: companion.name,
+          count: 0,
+          type: 'companion',
+          entryIds: [],
+          lastUpdated: '',
+        };
+      }
+    });
+
+    // Step 2: Scan Diaries Metadata (Event-Driven Aggregation)
+    diaries.forEach((diary: any) => {
+      const diaryId = diary.id;
+      const createdAt = diary.createdAt || diary.updatedAt || new Date().toISOString();
+      const metadata = diary.analyzedMetadata || {};
+
+      // Count for explicit companions (companionIDs)
+      if (diary.companionIDs && Array.isArray(diary.companionIDs)) {
+        diary.companionIDs.forEach((companionId: string) => {
+          if (groups[companionId]) {
+            groups[companionId].count++;
+            if (!groups[companionId].entryIds.includes(diaryId)) {
+              groups[companionId].entryIds.push(diaryId);
+            }
+            // Update lastUpdated if this entry is newer
+            if (createdAt > groups[companionId].lastUpdated) {
+              groups[companionId].lastUpdated = createdAt;
+            }
+          }
+        });
+      }
+
+      // Count for extracted metadata people (The "Event-Driven" part)
+      if (metadata.people && Array.isArray(metadata.people)) {
+        metadata.people.forEach((personName: string) => {
+          if (!personName || typeof personName !== 'string') return;
+          
+          const normalizedName = personName.trim();
+          if (normalizedName.length === 0) return;
+
+          // Check if this person matches an existing companion by name
+          const existingCompanion = officialCompanionsArray.find(
+            (c: any) => c.name && c.name.toLowerCase() === normalizedName.toLowerCase()
+          );
+
+          if (existingCompanion) {
+            // Use existing companion ID
+            const companionId = existingCompanion.id;
+            if (groups[companionId]) {
+              groups[companionId].count++;
+              if (!groups[companionId].entryIds.includes(diaryId)) {
+                groups[companionId].entryIds.push(diaryId);
+              }
+              if (createdAt > groups[companionId].lastUpdated) {
+                groups[companionId].lastUpdated = createdAt;
+              }
+            }
+          } else {
+            // Create a new "Virtual Chapter" for this person
+            const virtualKey = `person-${normalizedName.toLowerCase()}`;
+            if (!groups[virtualKey]) {
+              groups[virtualKey] = {
+                id: virtualKey,
+                name: normalizedName,
+                count: 0,
+                type: 'person',
+                entryIds: [],
+                lastUpdated: '',
+              };
+            }
+            groups[virtualKey].count++;
+            if (!groups[virtualKey].entryIds.includes(diaryId)) {
+              groups[virtualKey].entryIds.push(diaryId);
+            }
+            if (createdAt > groups[virtualKey].lastUpdated) {
+              groups[virtualKey].lastUpdated = createdAt;
+            }
+          }
+        });
+      }
+
+      // Optional: Count for topics/activities
+      if (metadata.activities && Array.isArray(metadata.activities)) {
+        metadata.activities.forEach((topicName: string) => {
+          if (!topicName || typeof topicName !== 'string') return;
+          
+          const normalizedTopic = topicName.trim();
+          if (normalizedTopic.length === 0) return;
+
+          const topicKey = `topic-${normalizedTopic.toLowerCase()}`;
+          if (!groups[topicKey]) {
+            groups[topicKey] = {
+              id: topicKey,
+              name: normalizedTopic,
+              count: 0,
+              type: 'topic',
+              entryIds: [],
+              lastUpdated: '',
+            };
+          }
+          groups[topicKey].count++;
+          if (!groups[topicKey].entryIds.includes(diaryId)) {
+            groups[topicKey].entryIds.push(diaryId);
+          }
+          if (createdAt > groups[topicKey].lastUpdated) {
+            groups[topicKey].lastUpdated = createdAt;
+          }
+        });
+      }
+    });
+
+    // Step 3: Convert to Array and filter out empty chapters
+    const chaptersArray = Object.values(groups).filter(ch => ch.count > 0);
+
+    // Step 4: Sort by count (most entries first)
+    chaptersArray.sort((a, b) => b.count - a.count);
+
+    return chaptersArray;
+  }, [diaries, officialCompanionsArray]);
+
+  // 2. Merge with existing chapters from userState (for backward compatibility)
+  const existingChapters = useMemo(() => {
     if (!userState || !userState.chapters) return [];
     return Object.values(userState.chapters);
   }, [userState]);
+
+  // 3. Combine generated chapters with existing chapters
+  // Prefer generated chapters (they're more up-to-date), but keep existing ones that aren't in generated
+  const chapters = useMemo(() => {
+    const existingIds = new Set(generatedChapters.map(ch => ch.id));
+    const additionalExisting = existingChapters.filter(ch => !existingIds.has(ch.id));
+    
+    // Convert generated chapters to Chapter format
+    const convertedGenerated: Chapter[] = generatedChapters.map(ch => ({
+      id: ch.id,
+      title: ch.name,
+      type: ch.type,
+      entryIds: ch.entryIds,
+      lastUpdated: ch.lastUpdated,
+      description: `${ch.count} ${ch.count === 1 ? 'entry' : 'entries'}`,
+    }));
+
+    return [...convertedGenerated, ...additionalExisting];
+  }, [generatedChapters, existingChapters]);
 
   const focusChapterIds = useMemo(() => {
     return new Set(userState?.focus?.currentFocusChapters?.map(fc => fc.chapterId) || []);
@@ -103,15 +265,50 @@ const ChaptersScreen: React.FC = () => {
   }, [chapters, filterMode, sortMode, searchQuery]);
 
   const handlePressChapter = useCallback((chapterId: string) => {
-    const chapter = userState?.chapters?.[chapterId];
-    if (!chapter) return;
+    // Check if it's an existing chapter from userState
+    const existingChapter = userState?.chapters?.[chapterId];
     
-    if (chapter.type === 'companion') {
-      router.push({ pathname: '/companion-dashboard', params: { chapterId } });
+    if (existingChapter) {
+      // Existing chapter - use standard navigation
+      if (existingChapter.type === 'companion') {
+        router.push({ pathname: '/companion-dashboard', params: { chapterId } });
+      } else {
+        router.push({ pathname: '/chapterDetail', params: { id: chapterId } });
+      }
+      return;
+    }
+
+    // Dynamic chapter (person/topic) - find it in generated chapters
+    const dynamicChapter = generatedChapters.find(ch => ch.id === chapterId);
+    if (!dynamicChapter) return;
+
+    // For dynamic chapters, navigate with filterType and filterValue
+    // Also pass entryIds for direct filtering (more efficient)
+    if (dynamicChapter.type === 'person') {
+      router.push({
+        pathname: '/chapterDetail',
+        params: {
+          filterType: 'person',
+          filterValue: dynamicChapter.name,
+          entryIds: dynamicChapter.entryIds.join(','), // Pass entry IDs directly
+          id: chapterId, // Fallback ID
+        },
+      });
+    } else if (dynamicChapter.type === 'topic') {
+      router.push({
+        pathname: '/chapterDetail',
+        params: {
+          filterType: 'topic',
+          filterValue: dynamicChapter.name,
+          entryIds: dynamicChapter.entryIds.join(','), // Pass entry IDs directly
+          id: chapterId, // Fallback ID
+        },
+      });
     } else {
+      // For companion type, use standard navigation
       router.push({ pathname: '/chapterDetail', params: { id: chapterId } });
     }
-  }, [router, userState?.chapters]);
+  }, [router, userState?.chapters, generatedChapters]);
 
   // 新增：判断是否是新章节 (24h)
   const isChapterNew = useCallback((chapter: Chapter) => {
@@ -181,7 +378,9 @@ const ChaptersScreen: React.FC = () => {
                   <View style={styles.filterGroup}>
                     {[
                       { label: 'All', value: 'all' },
+                      { label: 'People', value: 'person' },
                       { label: 'Companions', value: 'companion' },
+                      { label: 'Topics', value: 'topic' },
                       { label: 'Themes', value: 'theme' },
                     ].map((opt) => {
                       const isActive = filterMode === opt.value;

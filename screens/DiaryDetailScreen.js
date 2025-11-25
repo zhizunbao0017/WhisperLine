@@ -131,15 +131,30 @@ const DiaryDetailScreen = () => {
         
         // Ensure immediate navigation without delay
         try {
+            // First, go back to close the current modal/screen
+            if (router.canGoBack()) {
+                router.back();
+            }
+            
+            // Then navigate to editor after a short delay to ensure modal closes
+            setTimeout(() => {
+                router.push({
+                    pathname: '/add-edit-diary',
+                    params: { 
+                        diary: JSON.stringify(diary) 
+                    }
+                });
+                console.log('[DiaryDetailScreen] Navigation triggered successfully');
+            }, 100);
+        } catch (error) {
+            console.error('[DiaryDetailScreen] Navigation error:', error);
+            // Fallback: try direct navigation
             router.push({
                 pathname: '/add-edit-diary',
                 params: { 
                     diary: JSON.stringify(diary) 
                 }
             });
-            console.log('[DiaryDetailScreen] Navigation triggered successfully');
-        } catch (error) {
-            console.error('[DiaryDetailScreen] Navigation error:', error);
         }
     };
 

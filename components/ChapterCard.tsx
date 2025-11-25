@@ -2,7 +2,6 @@ import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import { Animated, Image, Pressable, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
 import { Chapter } from '../models/Chapter';
 import { DiaryContext } from '../context/DiaryContext';
 import { CompanionContext } from '../context/CompanionContext';
@@ -10,6 +9,7 @@ import { useUserState } from '../context/UserStateContext';
 import { getEmotionGradientForChapter } from '../services/ChapterService';
 import { ThemedText as Text } from './ThemedText';
 import { EmotionType } from '../models/PIE';
+import MoodTrendChart from '../src/components/MoodTrendChart';
 
 type ChapterCardProps = {
   chapter: Chapter;
@@ -24,16 +24,6 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 const FALLBACK_GRADIENT = ['#7f53ac', '#647dee'];
-
-// Map emotions to a numerical value for charting (Y-axis)
-const emotionToValue: Record<EmotionType, number> = {
-  excited: 5,
-  happy: 4,
-  calm: 3,
-  tired: 2,
-  sad: 1,
-  angry: 0,
-};
 
 const formatTimeSince = (isoString?: string) => {
   if (!isoString) {
@@ -68,21 +58,9 @@ const formatTimeSince = (isoString?: string) => {
 
 const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = false, isFocus = false }) => {
   const diaryContext = useContext(DiaryContext);
-  const diaries = diaryContext?.diaries;
+  const diaries = diaryContext?.diaries || [];
   const companionContext = useContext(CompanionContext);
   const companions = companionContext?.companions;
-  
-  // Get UserState for rich entries (contains emotion data)
-  // useUserState must be called unconditionally (React Hook rules)
-  let allRichEntries: Record<string, any> = {};
-  try {
-    const userStateContext = useUserState();
-    allRichEntries = userStateContext?.allRichEntries || {};
-  } catch (error) {
-    // UserStateProvider not available, sparkline will fallback to static line
-    // This is acceptable - the sparkline will show a flat line when no data is available
-    console.warn('ChapterCard: UserStateProvider not available, using fallback sparkline');
-  }
 
   const gradientColors = useMemo(
     () => getEmotionGradientForChapter(chapter, diaries ?? []) ?? FALLBACK_GRADIENT,
@@ -108,55 +86,15 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
     return null;
   }, [chapter.sourceId, chapter.type, companions]);
 
-  // Memoized calculation for the SVG path data for sparkline chart
-  const sparklinePath = useMemo(() => {
-    if (!chapter.entryIds || chapter.entryIds.length === 0 || Object.keys(allRichEntries).length === 0) {
-      // Not enough data, return a flat line
-      return 'M 0 15 L 120 15';
+  // Get diary entries for this chapter (for mood trend chart)
+  const chapterDiaries = useMemo(() => {
+    if (!chapter.entryIds || chapter.entryIds.length === 0 || !diaries) {
+      return [];
     }
-
-    // Get the last 7 entries for the trend (most recent)
-    const entryIds = chapter.entryIds.slice(-7);
-    const lastEntries = entryIds
-      .map((id) => allRichEntries[id])
-      .filter((entry) => {
-        // Filter out entries without emotion metadata
-        return entry && entry.metadata && (entry.metadata.primaryEmotion || entry.metadata.detectedEmotion);
-      })
-      .sort((a, b) => {
-        // Sort by creation date to ensure chronological order
-        const dateA = new Date(a.createdAt || 0).getTime();
-        const dateB = new Date(b.createdAt || 0).getTime();
-        return dateA - dateB; // Oldest first
-      });
-
-    if (lastEntries.length < 2) {
-      // Not enough entries for a meaningful line, return a flat line
-      return 'M 0 15 L 120 15';
-    }
-
-    const width = 120; // ViewBox width
-    const height = 30;  // ViewBox height
-
-    // Calculate points for the sparkline
-      const points = lastEntries.map((entry, index) => {
-        const x = (index / (lastEntries.length - 1)) * width;
-        // Use primaryEmotion (authoritative) with fallback to detectedEmotion for legacy entries
-        const emotion = entry.metadata.primaryEmotion || entry.metadata.detectedEmotion?.primary;
-        const emotionValue = emotion ? (emotionToValue[emotion] ?? 3) : 3; // Default to 'calm' if emotion not found
-      // Invert Y-axis for SVG (0 at bottom, 5 at top)
-      const y = height - (emotionValue / 5) * height;
-      return { x, y };
-    });
-
-    // Create the SVG path string
-    let path = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length; i++) {
-      path += ` L ${points[i].x} ${points[i].y}`;
-    }
-
-    return path;
-  }, [chapter.entryIds, allRichEntries]);
+    
+    const entryIdsSet = new Set(chapter.entryIds.map(String));
+    return diaries.filter((diary: any) => entryIdsSet.has(String(diary.id)));
+  }, [chapter.entryIds, diaries]);
 
   const glowAnim = useRef(new Animated.Value(0)).current;
   const focusGlowAnim = useRef(new Animated.Value(0)).current;
@@ -298,16 +236,14 @@ const ChapterCard: React.FC<ChapterCardProps> = ({ chapter, onPress, isNew = fal
           </View>
           <View style={styles.sparklineContainer}>
             <Text style={styles.sparklineLabel}>Mood Trend</Text>
-            <Svg height={30} width="100%" viewBox="0 0 120 30">
-              <Path
-                d={sparklinePath}
-                stroke="rgba(255,255,255,0.85)"
-                strokeWidth={2}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
+            <MoodTrendChart
+              diaries={chapterDiaries}
+              width={120}
+              height={30}
+              strokeColor="rgba(255,255,255,0.85)"
+              strokeWidth={2}
+              maxEntries={7}
+            />
           </View>
         </LinearGradient>
       </Pressable>

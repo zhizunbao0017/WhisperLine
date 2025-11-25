@@ -166,6 +166,8 @@ const SettingsScreen = () => {
         isImporting,
         importProgress,
         importMessage,
+        setPrimaryCompanion,
+        getPrimaryCompanion,
     } = useUserState();
     const [isExporting, setIsExporting] = useState(false);
     
@@ -256,7 +258,13 @@ const SettingsScreen = () => {
         }
         setPrimaryCompanionId(null);
         try {
-            await AsyncStorage.removeItem('primaryCompanionID');
+            // Use UserStateContext method for consistency
+            if (setPrimaryCompanion) {
+                await setPrimaryCompanion(null);
+            } else {
+                // Fallback to direct AsyncStorage if context method not available
+                await AsyncStorage.removeItem('primaryCompanionID');
+            }
         } catch (error) {
             console.warn('Failed to clear primary companion', error);
         }
@@ -271,7 +279,13 @@ const SettingsScreen = () => {
         const nextId = String(selected.id);
         setPrimaryCompanionId(nextId);
         try {
-            await AsyncStorage.setItem('primaryCompanionID', nextId);
+            // Use UserStateContext method for consistency
+            if (setPrimaryCompanion) {
+                await setPrimaryCompanion(nextId);
+            } else {
+                // Fallback to direct AsyncStorage if context method not available
+                await AsyncStorage.setItem('primaryCompanionID', nextId);
+            }
         } catch (error) {
             console.warn('Failed to persist primary companion', error);
         }

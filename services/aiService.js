@@ -1,5 +1,7 @@
 // services/aiService.js
 import Sentiment from 'sentiment';
+import useMemoryStore from '../src/store/memoryStore';
+import { stripHtml } from '../src/utils/textUtils';
 
 const sentiment = new Sentiment();
 
@@ -94,39 +96,294 @@ const analyzeTopics = (text) => {
 };
 
 
-export const getAIResponse = (text) => {
+/**
+ * Retrieve relevant facts from memory store based on context
+ * @param {string} contextPerson - Optional person name (e.g., "Mike")
+ * @param {string} contextTopic - Optional topic name
+ * @param {string} currentText - Current diary text for keyword extraction
+ * @returns {Array<string>} - Array of relevant fact texts
+ */
+function retrieveRelevantFacts(contextPerson, contextTopic, currentText) {
   try {
-    // 步骤A: 分析情感 (情感轴)
-    const sentimentResult = sentiment.analyze(text);
+    const memoryStore = useMemoryStore.getState();
+    const allFacts = memoryStore.facts || [];
+    
+    if (allFacts.length === 0) {
+      return [];
+    }
+    
+    // Build search queries
+    const searchQueries = [];
+    if (contextPerson) {
+      searchQueries.push(contextPerson.toLowerCase());
+    }
+    if (contextTopic) {
+      searchQueries.push(contextTopic.toLowerCase());
+    }
+    
+    // Extract keywords from current text for context-aware search
+    if (currentText) {
+      const lowerText = currentText.toLowerCase();
+      // Extract potential keywords (simple heuristic)
+      const words = lowerText.split(/\s+/).filter(w => w.length > 4);
+      searchQueries.push(...words.slice(0, 5)); // Top 5 keywords
+    }
+    
+    // Search facts that match any query
+    const relevantFacts = [];
+    const seenFacts = new Set();
+    
+    for (const query of searchQueries) {
+      const matchingFacts = memoryStore.searchFacts(query);
+      for (const fact of matchingFacts) {
+        if (!seenFacts.has(fact.id)) {
+          relevantFacts.push(fact.text);
+          seenFacts.add(fact.id);
+        }
+      }
+    }
+    
+    // If no context-specific facts found, get recent facts as fallback
+    if (relevantFacts.length === 0 && allFacts.length > 0) {
+      const recentFacts = memoryStore.getRecentFacts(5);
+      return recentFacts.map(f => f.text);
+    }
+    
+    // Limit to top 10 most relevant facts
+    return relevantFacts.slice(0, 10);
+  } catch (error) {
+    console.warn('[AI Service] Failed to retrieve facts:', error);
+    return [];
+  }
+}
+
+/**
+ * Get recent diary entries related to context
+ * @param {Array} diaries - All diary entries
+ * @param {string} contextPerson - Optional person name
+ * @param {string} contextTopic - Optional topic name
+ * @param {string} currentEntryId - Current entry ID to exclude
+ * @param {number} limit - Maximum number of entries to return
+ * @returns {Array} - Array of recent related entries
+ */
+function getRecentContextEntries(diaries, contextPerson, contextTopic, currentEntryId, limit = 3) {
+  if (!diaries || diaries.length === 0) {
+    return [];
+  }
+  
+  try {
+    // Filter entries related to context
+    let relatedEntries = diaries.filter(entry => {
+      // Exclude current entry
+      if (entry.id === currentEntryId) {
+        return false;
+      }
+      
+      const metadata = entry.analyzedMetadata || {};
+      const content = stripHtml(entry.content || entry.contentHTML || '').toLowerCase();
+      
+      // Check if entry relates to context person
+      if (contextPerson) {
+        const lowerPerson = contextPerson.toLowerCase();
+        const hasPerson = (metadata.people || []).some(p => 
+          p.toLowerCase() === lowerPerson
+        );
+        if (hasPerson || content.includes(lowerPerson)) {
+          return true;
+        }
+      }
+      
+      // Check if entry relates to context topic
+      if (contextTopic) {
+        const lowerTopic = contextTopic.toLowerCase();
+        const hasTopic = (metadata.activities || []).some(t => 
+          t.toLowerCase() === lowerTopic
+        );
+        if (hasTopic || content.includes(lowerTopic)) {
+          return true;
+        }
+      }
+      
+      return false;
+    });
+    
+    // Sort by date (newest first) and limit
+    relatedEntries.sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0).getTime();
+      const dateB = new Date(b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
+    
+    return relatedEntries.slice(0, limit);
+  } catch (error) {
+    console.warn('[AI Service] Failed to get recent context entries:', error);
+    return [];
+  }
+}
+
+/**
+ * Generate summary of recent entries for context
+ * @param {Array} entries - Recent diary entries
+ * @returns {string} - Summary text
+ */
+function summarizeRecentEntries(entries) {
+  if (!entries || entries.length === 0) {
+    return '';
+  }
+  
+  const summaries = entries.map((entry, index) => {
+    const title = entry.title || 'Untitled';
+    const date = new Date(entry.createdAt || Date.now()).toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    const preview = stripHtml(entry.content || entry.contentHTML || '')
+      .substring(0, 80)
+      .trim();
+    
+    return `${index + 1}. [${date}] ${title}: ${preview}${preview.length >= 80 ? '...' : ''}`;
+  });
+  
+  return summaries.join('\n');
+}
+
+/**
+ * Generate high-context AI response with long-term memory (The "Hope" Architecture)
+ * @param {string} currentDiaryContent - Current diary entry HTML/text content
+ * @param {object} options - Options object
+ * @param {object|null} options.companion - Optional companion object with systemPrompt
+ * @param {string} options.contextPerson - Optional person name (e.g., "Mike")
+ * @param {string} options.contextTopic - Optional topic name
+ * @param {Array} options.diaries - All diary entries for context retrieval
+ * @param {string} options.currentEntryId - Current entry ID to exclude from context
+ * @returns {string} - The AI-generated response
+ */
+export const generateReply = (currentDiaryContent, options = {}) => {
+  const {
+    companion = null,
+    contextPerson = null,
+    contextTopic = null,
+    diaries = [],
+    currentEntryId = null,
+  } = options;
+  
+  try {
+    // Extract plain text from current content
+    const currentText = stripHtml(currentDiaryContent || '');
+    
+    // Step 1: Retrieve relevant facts from memory store
+    const relevantFacts = retrieveRelevantFacts(contextPerson, contextTopic, currentText);
+    
+    // Step 2: Get recent context entries
+    const recentEntries = getRecentContextEntries(
+      diaries,
+      contextPerson,
+      contextTopic,
+      currentEntryId,
+      3 // Last 3 entries
+    );
+    const recentContextSummary = summarizeRecentEntries(recentEntries);
+    
+    // Step 3: Determine persona prompt
+    let personaPrompt;
+    if (companion && companion.systemPrompt) {
+      personaPrompt = companion.systemPrompt;
+      console.log('[AI Service] Using companion persona:', companion.name || 'Unknown');
+    } else {
+      personaPrompt = "You are a deep, empathetic companion.";
+      console.log('[AI Service] Using default system archetype');
+    }
+    
+    // Step 4: Construct high-context system prompt (The Soul)
+    let systemPrompt = `${personaPrompt}\n\n`;
+    
+    // Add long-term memory section
+    if (relevantFacts.length > 0) {
+      systemPrompt += '[LONG TERM MEMORY]\n';
+      relevantFacts.forEach(fact => {
+        systemPrompt += `- ${fact}\n`;
+      });
+      systemPrompt += '\n';
+    }
+    
+    // Add recent context section
+    if (recentContextSummary) {
+      systemPrompt += '[RECENT CONTEXT]\n';
+      systemPrompt += recentContextSummary;
+      systemPrompt += '\n\n';
+    }
+    
+    // Add current situation
+    systemPrompt += `[CURRENT SITUATION]\n"${currentText.substring(0, 500)}${currentText.length > 500 ? '...' : ''}"\n\n`;
+    
+    // Add instruction
+    systemPrompt += 'Instruction: Reply to the user as a close friend who remembers their history. Be insightful, not generic. Validate their feelings based on past patterns.';
+    
+    console.log('[AI Service] Generated high-context prompt:', {
+      factsCount: relevantFacts.length,
+      recentEntriesCount: recentEntries.length,
+      hasContext: !!(contextPerson || contextTopic),
+    });
+    
+    // Step 5: Generate response using sentiment analysis (current rule-based approach)
+    // Future: Replace this with LLM API call using systemPrompt
+    const sentimentResult = sentiment.analyze(currentText);
     const score = sentimentResult.comparative;
     let sentimentCategory = 'neutral';
     if (score > 0.1) sentimentCategory = 'positive';
     if (score < -0.1) sentimentCategory = 'negative';
-
-    // 步骤B: 分析主题 (内容轴)
-    const topics = analyzeTopics(text);
-    const primaryTopic = topics.length > 0 ? topics[0] : 'generic'; // 只取第一个匹配到的主题，如果没有就用'generic'
-
-    // 步骤C: 在回应矩阵中寻找最匹配的“剧本”（多级容错）
-    let responseOptions =
-      responses[sentimentCategory]?.[primaryTopic];
-
+    
+    const topics = analyzeTopics(currentText);
+    const primaryTopic = topics.length > 0 ? topics[0] : 'generic';
+    
+    // Enhance response selection based on context
+    let responseOptions = responses[sentimentCategory]?.[primaryTopic];
+    
     if (!Array.isArray(responseOptions) || responseOptions.length === 0) {
       responseOptions = responses[sentimentCategory]?.generic;
     }
     if (!Array.isArray(responseOptions) || responseOptions.length === 0) {
       responseOptions = responses.neutral?.generic;
     }
-
-    // 兜底确保为数组
+    
     if (!Array.isArray(responseOptions) || responseOptions.length === 0) {
+      // Fallback with memory-aware response
+      if (relevantFacts.length > 0) {
+        return "I remember you've shared similar thoughts before. Thank you for continuing to trust me with your reflections.";
+      }
       return "Thank you for sharing your thoughts today.";
     }
-
+    
     const randomIndex = Math.floor(Math.random() * responseOptions.length);
-    return responseOptions[randomIndex];
+    let response = responseOptions[randomIndex];
+    
+    // Enhance response with memory awareness if facts are available
+    if (relevantFacts.length > 0 && Math.random() > 0.5) {
+      // Occasionally reference memory (30% chance to avoid being repetitive)
+      const memoryHint = "I remember you've mentioned this before. ";
+      response = memoryHint + response.toLowerCase();
+    }
+    
+    return response;
   } catch (err) {
-    console.error('AI Response Error:', err);
+    console.error('[AI Service] Error generating reply:', err);
     return "Thank you for sharing your thoughts today.";
   }
+};
+
+/**
+ * Generate AI response based on diary text and optional companion persona
+ * (Legacy function - wraps generateReply for backward compatibility)
+ * @param {string} text - The diary entry text to analyze
+ * @param {object|null} companion - Optional companion object with systemPrompt, or null for default persona
+ * @returns {string} - The AI-generated response
+ */
+export const getAIResponse = (text, companion = null) => {
+  // Legacy function - delegate to generateReply for backward compatibility
+  // Note: Without diaries/context, this will use basic memory retrieval
+  return generateReply(text, {
+    companion,
+    diaries: [], // Empty array - will use basic memory only
+    currentEntryId: null,
+  });
 };

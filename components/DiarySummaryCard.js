@@ -35,37 +35,55 @@ const DiarySummaryCard = ({ item, richEntry, index, onPress, onLongPress, colors
   const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
 
   // Extract content efficiently and ensure clean rendering
-  // AGGRESSIVE CLEANING: Strip HTML from BOTH title and content before comparing
+  // SMART DE-DUPLICATION: Extract title from h1, compare with body to avoid repetition
   const { text: summaryText, image: thumbnail, title: displayTitle, isContentRedundant } = useMemo(() => {
-    const parsed = parseContent(item.content || item.contentHTML || '');
-    
-    // Get raw values
-    const rawTitle = item.title || '';
     const rawContent = item.content || item.contentHTML || '';
+    const parsed = parseContent(rawContent);
     
-    // 1. AGGRESSIVE CLEANING: Strip HTML from BOTH title and content immediately
-    const cleanTitle = stripHtml(rawTitle).trim();
-    const cleanContent = parsed.text ? stripHtml(parsed.text) : '';
-    const cleanContentTrimmed = cleanContent.trim();
+    // Step 1: Extract title from content (h1 tag) OR use item.title
+    let cleanTitle = '';
+    if (rawContent) {
+      // Try to extract h1 tag from content first (title is integrated into content)
+      const h1Match = rawContent.match(/^<h1[^>]*>(.*?)<\/h1>/i);
+      if (h1Match) {
+        cleanTitle = stripHtml(h1Match[1]).trim();
+      }
+    }
     
-    // 2. COMPARE CLEAN STRINGS
-    // Check if the body is effectively the same as the title
+    // Fallback to item.title if no h1 found
+    if (!cleanTitle && item.title) {
+      cleanTitle = stripHtml(item.title).trim();
+    }
+    
+    // Step 2: Extract body text (content WITHOUT h1 tag)
+    let cleanBodyText = '';
+    if (rawContent) {
+      // Remove h1 tag from content to get body text
+      const withoutH1 = rawContent.replace(/^<h1[^>]*>.*?<\/h1>/i, '').trim();
+      cleanBodyText = stripHtml(withoutH1).trim();
+    } else {
+      // Fallback: use parsed text if no raw content
+      cleanBodyText = parsed.text ? stripHtml(parsed.text).trim() : '';
+    }
+    
+    // Step 3: SMART DE-DUPLICATION - Compare title and body
+    // If body is essentially the same as title, mark as redundant
     let isRedundant = false;
-    if (cleanContentTrimmed && cleanTitle) {
+    if (cleanBodyText && cleanTitle) {
       // Exact match
-      if (cleanContentTrimmed === cleanTitle) {
+      if (cleanBodyText === cleanTitle) {
         isRedundant = true;
       }
-      // Title is the start of content (and title is long enough to be meaningful)
-      else if (cleanTitle.length > 10 && cleanContentTrimmed.startsWith(cleanTitle)) {
+      // Body starts with title (and title is reasonably long to be meaningful)
+      else if (cleanTitle.length > 5 && cleanBodyText.startsWith(cleanTitle)) {
         isRedundant = true;
       }
     }
     
     return {
-      text: cleanContentTrimmed,
+      text: cleanBodyText,
       image: parsed.image,
-      title: cleanTitle, // Use cleaned title
+      title: cleanTitle,
       isContentRedundant: isRedundant,
     };
   }, [item.content, item.contentHTML, item.title]);
