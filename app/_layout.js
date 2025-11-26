@@ -21,8 +21,9 @@ import { ThemeContext, ThemeProvider } from '../context/ThemeContext';
 import { getThemeStyles } from '../hooks/useThemeStyles';
 import UnlockScreen from '../screens/UnlockScreen';
 import { CompanionProvider } from '../context/CompanionContext';
-import { UserStateProvider } from '../context/UserStateContext';
+import { UserStateProvider, useUserState } from '../context/UserStateContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
 import FloatingIntentCatcher from '../components/FloatingIntentCatcher';
 import MoodQuickPickerModal from '../components/MoodQuickPickerModal';
 import TemplatePickerModal from '../components/TemplatePickerModal';
@@ -61,6 +62,8 @@ function RootLayoutNav() {
     const authContext = useContext(AuthContext);
     const diaryContext = useContext(DiaryContext);
     const themeContext = useContext(ThemeContext);
+    const userStateContext = useUserState();
+    const { primaryCompanionId, setPrimaryCompanionId } = useUserStateStore();
     const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
     const [needsOnboarding, setNeedsOnboarding] = useState(false);
     const [isTemplatePickerVisible, setTemplatePickerVisible] = useState(false);
@@ -69,7 +72,7 @@ function RootLayoutNav() {
     const [intentText, setIntentText] = useState('');
     const [intentMood, setIntentMood] = useState(null);
     const [intentPhotoUri, setIntentPhotoUri] = useState(null);
-    const contextsReady = Boolean(authContext && diaryContext && themeContext);
+    const contextsReady = Boolean(authContext && diaryContext && themeContext && userStateContext);
     const theme = contextsReady ? themeContext.theme : 'default';
     const colors = contextsReady ? themeContext.colors : FALLBACK_THEME_COLORS;
     const hasSelectedTheme = contextsReady ? themeContext.hasSelectedTheme : false;
@@ -138,6 +141,34 @@ function RootLayoutNav() {
             // Don't block app startup - continue even if MediaService initialization fails
         });
     }, []);
+
+    // CRITICAL: Monitor data consistency and auto-reset invalid Active Focus
+    // This prevents app crashes when a companion is deleted but still selected as Active Focus
+    useEffect(() => {
+        if (!contextsReady || !userStateContext || userStateContext.isLoading) {
+            return; // Wait for contexts to be ready and data to be loaded
+        }
+
+        const companions = userStateContext.userState?.companions || {};
+        const companionIds = Object.keys(companions);
+        const allValidIds = [WHISPERLINE_ASSISTANT_ID, ...companionIds];
+
+        // If the current focus ID is no longer valid...
+        if (!allValidIds.includes(primaryCompanionId)) {
+            console.warn('[App] Active Focus is invalid. Resetting to default assistant.', {
+                currentFocusId: primaryCompanionId,
+                validIds: allValidIds,
+            });
+            // ...reset it to the default assistant.
+            setPrimaryCompanionId(WHISPERLINE_ASSISTANT_ID);
+        }
+    }, [
+        userStateContext?.userState?.companions, // Directly depend on companions object to detect deletions
+        primaryCompanionId,
+        contextsReady,
+        userStateContext?.isLoading,
+        setPrimaryCompanionId,
+    ]);
 
     const ensureDirectoryAsync = useCallback(async (dirUri) => {
         if (!dirUri) return;

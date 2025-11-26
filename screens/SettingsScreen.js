@@ -30,6 +30,8 @@ import { importService } from '../services/ImportService';
 import * as DocumentPicker from 'expo-document-picker';
 import { SettingsSection } from '../components/SettingsSection';
 import { SettingRow } from '../components/SettingRow';
+import { ActiveFocusDisplay } from '../components/ActiveFocusDisplay';
+import { KeyPeopleList } from '../components/KeyPeopleList';
 
 // Redesigned CustomAvatarButton
 const CustomAvatarButton = ({
@@ -453,22 +455,28 @@ const SettingsScreen = () => {
             style={[styles.scrollContainer, { backgroundColor: colors.background }]}
             contentContainerStyle={{ padding: 24, paddingBottom: 40 }}
         >
-            {/* Avatar selection */}
+            {/* 1. Active Focus Section */}
             <View style={styles.sectionContainer}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Choose Your Companion
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Active Focus</Text>
+                <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
+                    The AI will use memories and context related to this person for your conversations.
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarListContainer}>
-                    <CustomAvatarButton
-                        colors={colors}
-                        customUri={customAvatarUri}
-                        isSelected={selectedAvatarId === 'custom'}
-                        onSelect={() => setSelectedAvatarId('custom')}
-                        onPick={pickCustomAvatar}
-                        isPro={isProMember}
-                    />
-                    {AVATARS.map(renderAvatarItem)}
-                </ScrollView>
+                <ActiveFocusDisplay 
+                    colors={colors}
+                    onChangePress={() => {
+                        // Scroll to Key People section (simple implementation)
+                        // In a more sophisticated implementation, you could use refs to scroll
+                    }}
+                />
+            </View>
+
+            {/* 2. Key People Section */}
+            <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Key People</Text>
+                <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
+                    These are the significant people from your journal entries. Select one to make them your Active Focus.
+                </Text>
+                <KeyPeopleList colors={colors} />
             </View>
 
             {/* Enable App Lock */}
@@ -482,116 +490,24 @@ const SettingsScreen = () => {
                 />
             </View>
 
-            {/* Companions & AI Interaction Section */}
-            <SettingsSection title="Companions & AI Interaction">
-                {/* Enable AI Companion Interaction */}
-                <SettingRow
-                    title="Enable AI Companion Interaction"
-                    subtitle="Enable on-device AI for interactive journaling."
-                    colors={colors}
-                    rightElement={
-                        <Switch
-                            value={isAIInteractionGloballyEnabled}
-                            onValueChange={async (value) => {
-                                const newSettings = {
-                                    ...(userState.settings || { isAIInteractionEnabled: false }),
-                                    isAIInteractionEnabled: value,
-                                };
-                                const updatedState = {
-                                    ...userState,
-                                    settings: newSettings,
-                                    lastUpdatedAt: new Date().toISOString(),
-                                };
-                                await updateUserState(updatedState);
-                            }}
-                            thumbColor={isAIInteractionGloballyEnabled ? colors.primary : (Platform.OS === 'android' ? '#f4f3f4' : undefined)}
-                            trackColor={{ false: colors.border, true: colors.primary + '87' }}
-                        />
-                    }
-                />
-
-                {/* Manage Companions */}
-                <SettingRow
-                    title="Manage Companions"
-                    subtitle="Your circle of companions."
-                    icon="people-outline"
-                    iconColor={colors.primary}
-                    colors={colors}
-                    disabled={!isAIInteractionGloballyEnabled}
-                    onPress={() => router.push('/companions')}
-                    rightElement={<Ionicons name="chevron-forward" size={20} color={colors.border} />}
-                />
-
-                {/* Primary Companion */}
-                <View style={{ marginTop: 20 }}>
-                    <Text style={[styles.sectionTitle, { color: colors.text, fontSize: 16, marginBottom: 12 }]}>
-                        Primary Companion
-                    </Text>
-                    <View style={styles.primaryStatusContainer}>
-                        <Text style={[styles.primaryStatus, { color: colors.text }]}>
-                            {primaryCompanion ? `Default reflection partner: ${primaryCompanion.name}` : 'Default reflection partner: None'}
-                        </Text>
-                        {primaryCompanion && (
-                            primaryCompanion.avatarIdentifier && primaryCompanion.avatarIdentifier.trim() ? (
-                                <View style={styles.primaryAvatarContainer}>
-                                    <Image 
-                                        source={{ uri: primaryCompanion.avatarIdentifier }} 
-                                        style={styles.primaryAvatarImage}
-                                        resizeMode="cover"
-                                        onError={(error) => {
-                                            console.warn('Failed to load primary companion avatar:', error.nativeEvent.error);
-                                        }}
-                                    />
-                                </View>
-                            ) : (
-                                <View style={[styles.primaryAvatarFallback, { backgroundColor: colors.primary + '40' }]}>
-                                    <Text style={[styles.primaryAvatarInitials, { color: colors.primary }]}>
-                                        {primaryCompanion.name ? primaryCompanion.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() : '?'}
-                                    </Text>
-                                </View>
-                            )
-                        )}
-                    </View>
-                    <TouchableOpacity
-                        style={[
-                            styles.noneOption,
-                            {
-                                borderColor: colors.border,
-                                backgroundColor: primaryCompanionId === null ? colors.primary + '15' : colors.card,
-                                opacity: !isAIInteractionGloballyEnabled ? 0.5 : 1,
-                            },
-                        ]}
-                        onPress={isAIInteractionGloballyEnabled ? handleSetNoPrimary : undefined}
-                        activeOpacity={0.85}
-                        disabled={primaryCompanionId === null || !isAIInteractionGloballyEnabled}
-                    >
-                        <Ionicons
-                            name={primaryCompanionId === null ? 'checkmark-circle' : 'ellipse-outline'}
-                            size={20}
-                            color={primaryCompanionId === null ? colors.primary : colors.border}
-                            style={{ marginRight: 10 }}
-                        />
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.noneOptionText, { color: colors.text }]}>No default companion</Text>
-                            <Text style={[styles.noneOptionHint, { color: colors.text }]}>
-                                WhisperLine will use your theme avatar instead.
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
-                    <View style={{ opacity: !isAIInteractionGloballyEnabled ? 0.5 : 1 }}>
-                        <CompanionSelectorCarousel
-                            allCompanions={allCompanions}
-                            selectedIDs={primaryCompanionId ? [primaryCompanionId] : []}
-                            onSelectionChange={isAIInteractionGloballyEnabled ? handlePrimaryChange : undefined}
-                        />
-                    </View>
-                    {!isAIInteractionGloballyEnabled && (
-                        <Text style={[styles.disabledHint, { color: colors.secondaryText }]}>
-                            Enable AI Companion Interaction to set a primary companion
-                        </Text>
-                    )}
-                </View>
-            </SettingsSection>
+            {/* 3. Focus Appearance Section */}
+            <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Focus Appearance</Text>
+                <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
+                    Customize the visual style for your active focus. This only affects their appearance.
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarListContainer}>
+                    <CustomAvatarButton
+                        colors={colors}
+                        customUri={customAvatarUri}
+                        isSelected={selectedAvatarId === 'custom'}
+                        onSelect={() => setSelectedAvatarId('custom')}
+                        onPick={pickCustomAvatar}
+                        isPro={isProMember}
+                    />
+                    {AVATARS.map(renderAvatarItem)}
+                </ScrollView>
+            </View>
 
             {/* Appearance */}
             <TouchableOpacity
@@ -734,6 +650,7 @@ const styles = StyleSheet.create({
     scrollContainer: { flex: 1 },
     sectionContainer: { marginBottom: 30 },
     sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, paddingLeft: 2 },
+    sectionDescription: { fontSize: 14, marginTop: 4, paddingLeft: 2, lineHeight: 20 },
     avatarListContainer: { paddingVertical: 10, paddingLeft: 2, alignItems: 'flex-start' },
     row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'space-between' },
     rowText: { fontSize: 17, flexShrink: 1 },
