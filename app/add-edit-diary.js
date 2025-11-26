@@ -7,6 +7,7 @@ import {
     Alert,
     Button,
     Image,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -516,6 +517,8 @@ const AddEditDiaryScreen = () => {
     const { primaryCompanionId } = useUserStateStore();
     // State for Focus Selection Modal
     const [isFocusModalVisible, setFocusModalVisible] = useState(false);
+    // State for keyboard height to dynamically adjust content padding
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
     
     // Handle focus selection - the store update will trigger automatic re-render
     const handleFocusSelected = (selectedId: string) => {
@@ -1463,6 +1466,27 @@ const AddEditDiaryScreen = () => {
         setPreventRemove(hasUnsavedChanges);
     }, [hasUnsavedChanges]);
 
+    // Listen to keyboard show/hide events to adjust content padding
+    useEffect(() => {
+        const keyboardWillShowListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            (e) => {
+                setKeyboardHeight(e.endCoordinates.height);
+            }
+        );
+        const keyboardWillHideListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            () => {
+                setKeyboardHeight(0);
+            }
+        );
+
+        return () => {
+            keyboardWillShowListener.remove();
+            keyboardWillHideListener.remove();
+        };
+    }, []);
+
     usePreventRemove(preventRemove, (event) => {
         if (!hasUnsavedChanges) {
             return;
@@ -1497,7 +1521,7 @@ const AddEditDiaryScreen = () => {
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={90}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 100 : 90}
             >
                     <Pressable
                         onPress={() => setFocusModalVisible(true)}
@@ -1510,7 +1534,10 @@ const AddEditDiaryScreen = () => {
             <ScrollView 
                     ref={scrollViewRef}
                 style={styles.scrollContainer} 
-                contentContainerStyle={styles.scrollContent} 
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    { paddingBottom: Math.max(200, keyboardHeight + 100) } // Dynamic padding based on keyboard height
+                ]} 
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
@@ -2008,7 +2035,7 @@ const AddEditDiaryScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: 40, paddingTop: 0 },
+    scrollContent: { padding: 20, paddingBottom: 200, paddingTop: 0 }, // Increased paddingBottom to prevent keyboard/toolbar from covering content
     heroContainer: {
         alignItems: 'center',
         justifyContent: 'center',
