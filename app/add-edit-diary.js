@@ -7,7 +7,6 @@ import {
     Alert,
     Button,
     Image,
-    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -517,8 +516,6 @@ const AddEditDiaryScreen = () => {
     const { primaryCompanionId } = useUserStateStore();
     // State for Focus Selection Modal
     const [isFocusModalVisible, setFocusModalVisible] = useState(false);
-    // State for keyboard height to dynamically adjust content padding
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
     
     // Handle focus selection - the store update will trigger automatic re-render
     const handleFocusSelected = (selectedId: string) => {
@@ -1466,27 +1463,6 @@ const AddEditDiaryScreen = () => {
         setPreventRemove(hasUnsavedChanges);
     }, [hasUnsavedChanges]);
 
-    // Listen to keyboard show/hide events to adjust content padding
-    useEffect(() => {
-        const keyboardWillShowListener = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-            (e) => {
-                setKeyboardHeight(e.endCoordinates.height);
-            }
-        );
-        const keyboardWillHideListener = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-            () => {
-                setKeyboardHeight(0);
-            }
-        );
-
-        return () => {
-            keyboardWillShowListener.remove();
-            keyboardWillHideListener.remove();
-        };
-    }, []);
-
     usePreventRemove(preventRemove, (event) => {
         if (!hasUnsavedChanges) {
             return;
@@ -1518,35 +1494,33 @@ const AddEditDiaryScreen = () => {
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.background }]}>
+            {/* Header area (outside KeyboardAvoidingView) */}
+            <Pressable
+                onPress={() => setFocusModalVisible(true)}
+                style={heroContainerStyle}
+            >
+                {getActiveFocusComponent()}
+            </Pressable>
+
+            {/* Main content area with KeyboardAvoidingView */}
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 100 : 90}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 100 : 0}
             >
-                    <Pressable
-                        onPress={() => setFocusModalVisible(true)}
-                        style={heroContainerStyle}
-                    >
-                        {getActiveFocusComponent()}
-                    </Pressable>
-
-            {/* --- 2. Scrollable content area --- */}
-            <ScrollView 
+                {/* Scrollable content area */}
+                <ScrollView 
                     ref={scrollViewRef}
-                style={styles.scrollContainer} 
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    { paddingBottom: Math.max(200, keyboardHeight + 100) } // Dynamic padding based on keyboard height
-                ]} 
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ flexGrow: 1 }}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
                     scrollEnabled={true}
                     bounces={true}
-                    contentOffset={{ x: 0, y: 0 }}
-                    automaticallyAdjustContentInsets={false}
                 >
-                    <MoodSelector
+                    <View style={styles.scrollContent}>
+                        <MoodSelector
                         onSelectMood={handleMoodSelect}
                         selectedMood={selectedMood}
                         titleStyle={moodLabelTitleStyle}
@@ -1789,9 +1763,10 @@ const AddEditDiaryScreen = () => {
                         initialHeight={400}
                         containerStyle={styles.editorContainerStyle}
                         />
+                    </View>
                 </ScrollView>
                 
-                {/* --- 2. Fixed footer action area --- */}
+                {/* Fixed footer action area (outside ScrollView, inside KeyboardAvoidingView) */}
                 <View style={[
                     styles.footer, 
                     { 
@@ -2035,7 +2010,7 @@ const AddEditDiaryScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: 200, paddingTop: 0 }, // Increased paddingBottom to prevent keyboard/toolbar from covering content
+    scrollContent: { padding: 20, paddingBottom: 20, paddingTop: 0 }, // Content padding inside ScrollView
     heroContainer: {
         alignItems: 'center',
         justifyContent: 'center',
