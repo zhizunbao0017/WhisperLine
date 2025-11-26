@@ -10,6 +10,7 @@ import {
     KeyboardAvoidingView,
     Modal,
     Platform,
+    Pressable,
     ScrollView,
     StyleSheet,
     TextInput,
@@ -36,7 +37,9 @@ import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { CompanionContext } from '../context/CompanionContext';
 import { useUserState } from '../context/UserStateContext';
+import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
 import { ThemedText as Text } from '../components/ThemedText';
+import { FocusSelectionModal } from '../components/FocusSelectionModal';
 import { getCurrentWeather } from '../services/weatherService';
 import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 import themeAnalysisService from '../services/ThemeAnalysisService';
@@ -274,6 +277,8 @@ const CompanionAvatarView = memo(({ size = 80, visual }) => {
 
 const AddEditDiaryScreen = () => {
     const router = useRouter();
+    // CRITICAL: Use ref to track if component is mounted for async operations
+    const isMountedRef = useRef(true);
     const navigation = useNavigation();
     const params = useLocalSearchParams();
     
@@ -507,8 +512,127 @@ const AddEditDiaryScreen = () => {
     );
     // CRITICAL: Removed heroVisual state - will derive from live context data on every render
     const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
-    // CRITICAL: Track primary companion ID from AsyncStorage for new entries
-    const [primaryCompanionId, setPrimaryCompanionId] = useState(null);
+    // CRITICAL: Use unified focus model - get primaryCompanionId from Zustand store
+    const { primaryCompanionId } = useUserStateStore();
+    // State for Focus Selection Modal
+    const [isFocusModalVisible, setFocusModalVisible] = useState(false);
+    
+    // Handle focus selection - the store update will trigger automatic re-render
+    const handleFocusSelected = (selectedId: string) => {
+        // Close the modal
+        setFocusModalVisible(false);
+        // IMPORTANT: Because `primaryCompanionId` comes from `useUserStateStore()` hook,
+        // and `KeyPeopleList` has ALREADY updated the store via `setPrimaryCompanionId(id)`,
+        // this component will AUTOMATICALLY re-render with the new data when the modal closes.
+        // We don't need to force a refresh manually. The hook system does it for us.
+        console.log('[AddEditDiaryScreen] Focus selected:', selectedId);
+    };
+
+    // THIS IS THE NEW, INTELLIGENT RENDERER
+    const getActiveFocusComponent = () => {
+        // Case 1: The Active Focus is the WhisperLine Assistant
+        if (primaryCompanionId === WHISPERLINE_ASSISTANT_ID) {
+            // Use theme's current avatar (Lottie or custom image)
+            if (currentAvatar?.type === 'custom' && currentAvatar.image) {
+                try {
+                    const heroVisualSource = resolveImageSource(currentAvatar.image);
+                    return (
+                        <CompanionAvatarView 
+                            size={150} 
+                            visual={{ 
+                                type: 'image', 
+                                source: heroVisualSource 
+                            }} 
+                        />
+                    );
+                } catch (error) {
+                    console.error('[AddEditDiaryScreen] Error resolving theme custom avatar:', error);
+                }
+            } else if (currentAvatar?.type === 'system' && currentAvatar.source) {
+                return (
+                    <CompanionAvatarView 
+                        size={150} 
+                        visual={{ 
+                            type: 'lottie', 
+                            source: currentAvatar.source 
+                        }} 
+                    />
+                );
+            }
+            // Fallback to default hero image
+            return (
+                <CompanionAvatarView 
+                    size={150} 
+                    visual={{ type: 'image', source: DEFAULT_HERO_IMAGE }} 
+                />
+            );
+        }
+
+        // Get companion from userState
+        const companion = userState?.companions?.[primaryCompanionId];
+
+        // If for some reason the companion isn't found, provide a safe fallback
+        if (!companion) {
+            return (
+                <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.placeholderInitial}>?</Text>
+                </View>
+            );
+        }
+
+        // Case 2: The Active Focus is a Companion WITH a custom avatar
+        const avatarSource = companion.avatar?.source || companion.avatarUri;
+        
+        // Check for Lottie avatar first
+        if (companion.avatar?.type === 'lottie' && companion.avatar?.source) {
+            // Lottie avatar
+            return (
+                <CompanionAvatarView 
+                    size={150} 
+                    visual={{ 
+                        type: 'lottie', 
+                        source: companion.avatar.source 
+                    }} 
+                />
+            );
+        }
+        
+        // Check for image avatar (either with type='image' or legacy avatarUri)
+        if (avatarSource && (companion.avatar?.type === 'image' || companion.avatarUri)) {
+            // Validate that the path is NOT a temporary ImagePicker cache path
+            // Note: This check is for legacy data. New images are automatically copied to permanent storage.
+            if (avatarSource.includes('Caches/ImagePicker')) {
+                console.warn('[AddEditDiaryScreen] Found temporary ImagePicker cache path. This should not happen with new images.');
+                // Fall through to placeholder for legacy temporary paths
+            } else {
+                try {
+                    const heroVisualSource = resolveImageSource(avatarSource);
+                    return (
+                        <CompanionAvatarView 
+                            size={150} 
+                            visual={{ 
+                                type: 'image', 
+                                source: heroVisualSource 
+                            }} 
+                        />
+                    );
+                } catch (error) {
+                    console.error('[AddEditDiaryScreen] Error resolving companion image:', error);
+                    // Fall through to placeholder
+                }
+            }
+        }
+
+        // Case 3: The Active Focus is a Companion WITHOUT a custom avatar
+        // Display the first character of their name as an initial
+        return (
+            <View style={styles.avatarPlaceholder}>
+                <Text style={styles.placeholderInitial}>
+                    {companion.name.charAt(0).toUpperCase()}
+                </Text>
+            </View>
+        );
+    };
     const processedInitialPlainText = useMemo(
         () => extractTextFromHTML(processedInitialContent || ''),
         [processedInitialContent]
@@ -686,14 +810,14 @@ const AddEditDiaryScreen = () => {
     );
 
     useEffect(() => {
-        let isMounted = true;
+        isMountedRef.current = true;
         (async () => {
             await ensureStaticServer();
-            if (!isMounted) return;
+            if (!isMountedRef.current) return;
 
             if (!hasRemappedInitialHtml.current && initialContentRef.current) {
                 const remapped = await remapHtmlImageSourcesToServer(initialContentRef.current);
-                if (!isMounted) return;
+                if (!isMountedRef.current) return;
                 hasRemappedInitialHtml.current = true;
                 setContentHtml((prev) => {
                     if (!prev) return remapped;
@@ -706,8 +830,8 @@ const AddEditDiaryScreen = () => {
         })();
 
         return () => {
-            isMounted = false;
-    };
+            isMountedRef.current = false;
+        };
     }, [processedInitialContent]);
 
     // --- Image insertion logic (persistent file URI + ID passing) ---
@@ -1204,79 +1328,22 @@ const AddEditDiaryScreen = () => {
             setHasInitialPrimaryApplied(false);
         }
 
-        let isMounted = true;
-        const initializePrimaryCompanion = async () => {
-            try {
-                // For new entries, use primary companion if set
-                const storedPrimary = await AsyncStorage.getItem('primaryCompanionID');
-                if (!isMounted) {
-                    return;
-                }
-
-                // Handle "No default companion" case: 'none', null, undefined, 'null', 'undefined'
-                if (!storedPrimary || 
-                    storedPrimary === 'null' || 
-                    storedPrimary === 'undefined' || 
-                    storedPrimary === 'none') {
-                    // No primary companion set or "No default companion" selected
-                    setPrimaryCompanionId(null);
-                    setSelectedCompanionIDs([]);
-                    setHasInitialPrimaryApplied(true);
-                    return;
-                }
-
-                // CRITICAL: Store the primary companion ID for use in render
-                // The visual will be derived from live context data on every render
-                setPrimaryCompanionId(String(storedPrimary));
-                
-                // CRITICAL: Check userState.companions first (most up-to-date)
-                const userStateCompanion = userState?.companions?.[String(storedPrimary)];
-                
-                if (userStateCompanion) {
-                    // Set primary companion as selected
-                    setSelectedCompanionIDs([String(userStateCompanion.id)]);
-                    console.log('[AddEditDiaryScreen] ✅ Loaded primary companion from userState:', {
-                        id: userStateCompanion.id,
-                        name: userStateCompanion.name,
-                        hasAvatar: !!(userStateCompanion.avatar?.source || userStateCompanion.avatarUri),
-                    });
-                } else {
-                    // Fallback to allCompanions (for legacy companions)
-                    const matched = allCompanions.find(
-                        (item) => String(item.id) === String(storedPrimary)
-                    );
-                    if (matched) {
-                        setSelectedCompanionIDs([String(matched.id)]);
-                        console.log('[AddEditDiaryScreen] ⚠️ Using legacy companion (not in userState):', matched.id);
-                    } else {
-                        // Primary companion not found, clear it
-                        console.warn('[AddEditDiaryScreen] ⚠️ Primary companion not found, clearing selection');
-                        setPrimaryCompanionId(null);
-                        setSelectedCompanionIDs([]);
-                        await AsyncStorage.removeItem('primaryCompanionID');
-                    }
-                }
-            } catch (error) {
-                console.warn('[AddEditDiaryScreen] Failed to load primary companion for editor', error);
-                setPrimaryCompanionId(null);
-                setSelectedCompanionIDs([]);
-            } finally {
-                if (isMounted) {
-                    setHasInitialPrimaryApplied(true);
-                }
-            }
-        };
-
-        // Only initialize for new entries (not edit mode)
-        if (!isEditMode) {
-            initializePrimaryCompanion();
-        } else {
-            // For edit mode, use existing companions from diary
-            setHasInitialPrimaryApplied(true);
+        // CRITICAL: Unified Active Focus Model
+        // primaryCompanionId is now managed by Zustand store (useUserStateStore)
+        // No need for manual initialization - it's always available and reactive
+        
+        // For new entries: Use Active Focus (primaryCompanionId from store)
+        // For edit mode: Use existing companions from diary, but visual still uses Active Focus
+        if (!isEditMode && primaryCompanionId && userState?.companions?.[primaryCompanionId]) {
+            // Set the Active Focus companion as selected for new entries
+            setSelectedCompanionIDs([primaryCompanionId]);
+            console.log('[AddEditDiaryScreen] ✅ Using Active Focus for new entry:', primaryCompanionId);
         }
+        
+        setHasInitialPrimaryApplied(true);
 
         return () => {
-            isMounted = false;
+            isMountedRef.current = false;
         };
     }, [
         allCompanions,
@@ -1432,132 +1499,12 @@ const AddEditDiaryScreen = () => {
                 style={{ flex: 1 }}
                 keyboardVerticalOffset={90}
             >
-                    <View style={heroContainerStyle}>
-                        {(() => {
-                            // --- CRITICAL: Derive hero visual from live context data on every render ---
-                            // This ensures the visual always reflects the current state from UserStateContext
-                            
-                            // Determine the primary companion object from the live state
-                            // Priority: Edit mode companion > Primary companion > None
-                            let primaryCompanion = null;
-                            
-                            if (existingDiary && userState?.companions) {
-                                // EDIT MODE: Use companion from diary
-                                const companionIds = existingDiary.companionIDs || 
-                                                    existingDiary.companionIds || 
-                                                    existingDiary.companions || 
-                                                    [];
-                                const firstCompanionId = Array.isArray(companionIds) ? companionIds[0] : companionIds;
-                                if (firstCompanionId) {
-                                    primaryCompanion = userState.companions[String(firstCompanionId)];
-                                }
-                            } else if (!existingDiary && primaryCompanionId && userState?.companions) {
-                                // CREATE MODE: Use primary companion from settings
-                                primaryCompanion = userState.companions[String(primaryCompanionId)];
-                            }
-                            
-                            // Derive hero visual source based on priority
-                            let heroVisualSource;
-                            
-                            if (primaryCompanion && primaryCompanion.avatar?.type === 'image' && primaryCompanion.avatar?.source) {
-                                // Case 1: Primary companion exists and has a custom image avatar
-                                const avatarSource = primaryCompanion.avatar.source;
-                                
-                                // CRITICAL: Validate that the path is NOT a temporary ImagePicker cache path
-                                if (avatarSource.includes('Caches/ImagePicker')) {
-                                    console.error('[AddEditDiaryScreen] ⚠️ CRITICAL: Found temporary ImagePicker cache path!');
-                                    // Fall through to theme fallback
-                                } else {
-                                    try {
-                                        heroVisualSource = resolveImageSource(avatarSource);
-                                        console.log('[AddEditDiaryScreen] ✅ Using primary companion image avatar:', avatarSource);
-                                        return (
-                                            <CompanionAvatarView 
-                                                size={150} 
-                                                visual={{ 
-                                                    type: 'image', 
-                                                    source: heroVisualSource 
-                                                }} 
-                                            />
-                                        );
-                                    } catch (error) {
-                                        console.error('[AddEditDiaryScreen] Error resolving companion image:', error);
-                                        // Fall through to theme fallback
-                                    }
-                                }
-                            } else if (primaryCompanion && primaryCompanion.avatar?.type === 'lottie' && primaryCompanion.avatar?.source) {
-                                // Case 2: Primary companion exists and has a default Lottie avatar
-                                heroVisualSource = primaryCompanion.avatar.source;
-                                console.log('[AddEditDiaryScreen] ✅ Using primary companion Lottie avatar:', heroVisualSource);
-                                return (
-                                    <CompanionAvatarView 
-                                        size={150} 
-                                        visual={{ 
-                                            type: 'lottie', 
-                                            source: heroVisualSource 
-                                        }} 
-                                    />
-                                );
-                            } else if (primaryCompanion && (primaryCompanion.avatarUri || primaryCompanion.avatarIdentifier)) {
-                                // Case 2b: Legacy format - companion has avatarUri or avatarIdentifier
-                                const avatarSource = primaryCompanion.avatarUri || primaryCompanion.avatarIdentifier;
-                                if (avatarSource && avatarSource.trim() && !avatarSource.includes('Caches/ImagePicker')) {
-                                    try {
-                                        heroVisualSource = resolveImageSource(avatarSource);
-                                        console.log('[AddEditDiaryScreen] ✅ Using primary companion legacy avatar:', avatarSource);
-                                        return (
-                                            <CompanionAvatarView 
-                                                size={150} 
-                                                visual={{ 
-                                                    type: 'image', 
-                                                    source: heroVisualSource 
-                                                }} 
-                                            />
-                                        );
-                                    } catch (error) {
-                                        console.error('[AddEditDiaryScreen] Error resolving legacy avatar:', error);
-                                        // Fall through to theme fallback
-                                    }
-                                }
-                            }
-                            
-                            // Case 3 (Fallback): No primary companion or no avatar - use theme's default avatar
-                            if (currentAvatar?.type === 'custom' && currentAvatar.image) {
-                                heroVisualSource = resolveImageSource(currentAvatar.image);
-                                console.log('[AddEditDiaryScreen] ✅ Using theme custom avatar');
-                                return (
-                                    <CompanionAvatarView 
-                                        size={150} 
-                                        visual={{ 
-                                            type: 'image', 
-                                            source: heroVisualSource 
-                                        }} 
-                                    />
-                                );
-                            } else if (currentAvatar?.type === 'system' && currentAvatar.source) {
-                                heroVisualSource = currentAvatar.source;
-                                console.log('[AddEditDiaryScreen] ✅ Using theme system avatar');
-                                return (
-                                    <CompanionAvatarView 
-                                        size={150} 
-                                        visual={{ 
-                                            type: 'lottie', 
-                                            source: heroVisualSource 
-                                        }} 
-                                    />
-                                );
-                            }
-                            
-                            // Final fallback: DEFAULT_HERO_IMAGE
-                            console.log('[AddEditDiaryScreen] ✅ Using default hero image');
-                            return (
-                                <CompanionAvatarView 
-                                    size={150} 
-                                    visual={{ type: 'image', source: DEFAULT_HERO_IMAGE }} 
-                                />
-                            );
-                        })()}
-                    </View>
+                    <Pressable
+                        onPress={() => setFocusModalVisible(true)}
+                        style={heroContainerStyle}
+                    >
+                        {getActiveFocusComponent()}
+                    </Pressable>
 
             {/* --- 2. Scrollable content area --- */}
             <ScrollView 
@@ -2044,6 +1991,16 @@ const AddEditDiaryScreen = () => {
                     </TouchableWithoutFeedback>
                 </Modal>
             </KeyboardAvoidingView>
+            
+            {/* Focus Selection Modal */}
+            {themeContext && (
+                <FocusSelectionModal
+                    isVisible={isFocusModalVisible}
+                    onClose={() => setFocusModalVisible(false)}
+                    onFocusSelect={handleFocusSelected}
+                    colors={themeContext.colors}
+                />
+            )}
         </View>
     );
 };
@@ -2061,6 +2018,32 @@ const styles = StyleSheet.create({
         borderBottomLeftRadius: 32,
         borderBottomRightRadius: 32,
         marginBottom: 18,
+    },
+    headerAvatar: {
+        width: 100,
+        height: 100,
+        borderRadius: 50, // Make it a circle
+    },
+    avatarPlaceholder: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#EAE0D5', // A soft background color from your theme
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#C6AC8F', // A subtle border
+    },
+    placeholderInitial: {
+        fontSize: 40,
+        color: '#5D5C61', // A darker color for the text
+        fontWeight: 'bold',
+    },
+    headerImage: {
+        // Style for the theme images like the chameleon
+        width: 150,
+        height: 150,
+        resizeMode: 'contain',
     },
     avatarWrapper: { 
         alignItems: 'center', 

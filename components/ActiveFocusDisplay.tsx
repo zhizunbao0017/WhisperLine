@@ -1,10 +1,11 @@
 // components/ActiveFocusDisplay.tsx
-import React from 'react';
-import { View, Text, Pressable, StyleSheet, Image } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
 import { useUserState } from '../context/UserStateContext';
 import { Companion } from '../models/PIE';
+import { FocusSelectionModal } from './FocusSelectionModal';
 
 interface ActiveFocusDisplayProps {
   colors: {
@@ -15,16 +16,16 @@ interface ActiveFocusDisplayProps {
     border: string;
     background: string;
   };
-  onChangePress?: () => void;
 }
 
 function getFocusData(
   id: string,
   companions: Record<string, Companion>
-): { name: string; avatar?: string; avatarType?: 'lottie' | 'image' } | null {
+): { name: string; avatarUri?: string; avatar?: string; avatarType?: 'lottie' | 'image' } | null {
   if (id === WHISPERLINE_ASSISTANT_ID) {
     return {
       name: 'WhisperLine Assistant',
+      avatarUri: undefined,
       avatar: undefined,
       avatarType: undefined,
     };
@@ -35,16 +36,19 @@ function getFocusData(
     return null;
   }
 
+  // Return the entire companion data including avatarUri for proper rendering
   return {
     name: companion.name,
+    avatarUri: companion.avatarUri || companion.avatar?.source,
     avatar: companion.avatar?.source || companion.avatarUri,
     avatarType: companion.avatar?.type,
   };
 }
 
-export function ActiveFocusDisplay({ colors, onChangePress }: ActiveFocusDisplayProps) {
+export function ActiveFocusDisplay({ colors }: ActiveFocusDisplayProps) {
   const { primaryCompanionId } = useUserStateStore();
   const { userState } = useUserState();
+  const [isModalVisible, setModalVisible] = useState(false);
 
   const companions = userState?.companions || {};
   const currentFocus = getFocusData(primaryCompanionId, companions);
@@ -92,17 +96,24 @@ export function ActiveFocusDisplay({ colors, onChangePress }: ActiveFocusDisplay
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.content}>
-        {renderAvatar()}
-        <View style={styles.textContainer}>
-          <Text style={[styles.label, { color: colors.secondaryText }]}>Active Focus</Text>
-          <Text style={[styles.name, { color: colors.text }]}>{currentFocus.name}</Text>
+    <>
+      <FocusSelectionModal
+        isVisible={isModalVisible}
+        onClose={() => setModalVisible(false)}
+        onFocusSelect={() => setModalVisible(false)}
+        colors={colors}
+      />
+
+      <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.content}>
+          {renderAvatar()}
+          <View style={styles.textContainer}>
+            <Text style={[styles.focusName, { color: colors.text }]}>{currentFocus.name}</Text>
+            <Text style={[styles.focusLabel, { color: colors.secondaryText }]}>Current Focus</Text>
+          </View>
         </View>
-      </View>
-      {onChangePress && (
         <Pressable
-          onPress={onChangePress}
+          onPress={() => setModalVisible(true)}
           style={({ pressed }) => [
             styles.changeButton,
             {
@@ -113,8 +124,8 @@ export function ActiveFocusDisplay({ colors, onChangePress }: ActiveFocusDisplay
         >
           <Text style={[styles.changeButtonText, { color: colors.primary }]}>Change</Text>
         </Pressable>
-      )}
-    </View>
+      </View>
+    </>
   );
 }
 
@@ -153,16 +164,14 @@ const styles = StyleSheet.create({
   textContainer: {
     flex: 1,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  name: {
+  focusName: {
     fontSize: 18,
     fontWeight: '600',
+    marginBottom: 4,
+  },
+  focusLabel: {
+    fontSize: 13,
+    fontWeight: '400',
   },
   changeButton: {
     paddingHorizontal: 16,

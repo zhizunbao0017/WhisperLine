@@ -15,11 +15,22 @@ interface KeyPeopleListProps {
     border: string;
     background: string;
   };
+  onSelect?: (id: string) => void; // Callback receives the selected ID
 }
 
-export function KeyPeopleList({ colors }: KeyPeopleListProps) {
+export function KeyPeopleList({ colors, onSelect }: KeyPeopleListProps) {
   const { primaryCompanionId, setPrimaryCompanionId } = useUserStateStore();
   const { userState } = useUserState();
+
+  const handleSelect = (id: string) => {
+    // Set the global state FIRST
+    setPrimaryCompanionId(id);
+    
+    // THEN, call the callback with the new ID
+    if (onSelect) {
+      onSelect(id);
+    }
+  };
 
   // Get all companions from userState
   const companions = Object.values(userState?.companions || {}) as Companion[];
@@ -80,12 +91,12 @@ export function KeyPeopleList({ colors }: KeyPeopleListProps) {
     <View style={styles.container}>
       {/* 1. Render the Default Assistant */}
       <Pressable
-        onPress={() => setPrimaryCompanionId(WHISPERLINE_ASSISTANT_ID)}
+        onPress={() => handleSelect(WHISPERLINE_ASSISTANT_ID)}
         style={({ pressed }) => [
           styles.card,
           {
             backgroundColor: colors.card,
-            borderColor: primaryCompanionId === WHISPERLINE_ASSISTANT_ID ? colors.primary : colors.border,
+            borderColor: primaryCompanionId === WHISPERLINE_ASSISTANT_ID ? THEME_ACCENT_COLOR : colors.border,
             opacity: pressed ? 0.7 : 1,
           },
           primaryCompanionId === WHISPERLINE_ASSISTANT_ID && styles.selectedCard,
@@ -93,11 +104,11 @@ export function KeyPeopleList({ colors }: KeyPeopleListProps) {
       >
         {renderAvatar(null)}
         <View style={styles.cardContent}>
-          <Text style={[styles.cardName, { color: colors.text }]}>WhisperLine Assistant</Text>
-          <Text style={[styles.cardSubtitle, { color: colors.secondaryText }]}>Default AI companion</Text>
+          <Text style={[styles.personName, { color: colors.text }]}>WhisperLine Assistant</Text>
+          <Text style={[styles.personSubtitle, { color: colors.secondaryText }]}>Default Assistant</Text>
         </View>
         {primaryCompanionId === WHISPERLINE_ASSISTANT_ID && (
-          <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+          <Text style={styles.checkmark}>✔</Text>
         )}
       </Pressable>
 
@@ -105,12 +116,12 @@ export function KeyPeopleList({ colors }: KeyPeopleListProps) {
       {companions.map((companion) => (
         <Pressable
           key={companion.id}
-          onPress={() => setPrimaryCompanionId(companion.id)}
+          onPress={() => handleSelect(companion.id)}
           style={({ pressed }) => [
             styles.card,
             {
               backgroundColor: colors.card,
-              borderColor: primaryCompanionId === companion.id ? colors.primary : colors.border,
+              borderColor: primaryCompanionId === companion.id ? THEME_ACCENT_COLOR : colors.border,
               opacity: pressed ? 0.7 : 1,
             },
             primaryCompanionId === companion.id && styles.selectedCard,
@@ -118,19 +129,19 @@ export function KeyPeopleList({ colors }: KeyPeopleListProps) {
         >
           {renderAvatar(companion)}
           <View style={styles.cardContent}>
-            <Text style={[styles.cardName, { color: colors.text }]}>{companion.name}</Text>
-            <Text style={[styles.cardSubtitle, { color: colors.secondaryText }]}>
-              {companion.isInteractionEnabled ? 'AI enabled' : 'AI disabled'}
-            </Text>
+            <Text style={[styles.personName, { color: colors.text }]}>{companion.name}</Text>
           </View>
           {primaryCompanionId === companion.id && (
-            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+            <Text style={styles.checkmark}>✔</Text>
           )}
         </Pressable>
       ))}
     </View>
   );
 }
+
+// Theme accent color for selected state
+const THEME_ACCENT_COLOR = '#A18276';
 
 const styles = StyleSheet.create({
   container: {
@@ -144,9 +155,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 2,
     gap: 12,
+    marginBottom: 12,
   },
   selectedCard: {
     borderWidth: 2,
+    borderColor: THEME_ACCENT_COLOR,
   },
   avatarContainer: {
     width: 48,
@@ -167,13 +180,18 @@ const styles = StyleSheet.create({
   cardContent: {
     flex: 1,
   },
-  cardName: {
+  personName: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
   },
-  cardSubtitle: {
+  personSubtitle: {
     fontSize: 13,
+    marginTop: 2,
+  },
+  checkmark: {
+    color: THEME_ACCENT_COLOR,
+    fontSize: 20,
+    fontWeight: '600',
   },
 });
 
