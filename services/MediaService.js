@@ -489,7 +489,7 @@ class MediaService {
           uri: localPath,
           size: stat.size,
         };
-      } catch (statError) {
+      } catch (_statError) {
         // If stat fails, return basic info
         return {
           exists: true,
@@ -532,6 +532,188 @@ class MediaService {
       console.error('[MediaService] Failed to import external image:', error);
       throw new Error(`Failed to import external image: ${error.message}`);
     }
+  }
+
+  /**
+   * DIARY IMAGE MANAGEMENT METHODS
+   * These methods handle images in diary entries with Base64-free storage
+   */
+
+  /**
+   * Directory for diary entry images
+   */
+  DIARY_IMAGES_PATH = `${FileSystem.documentDirectory}diary_images/`;
+
+  /**
+   * Ensure diary images directory exists
+   */
+  async ensureDiaryImagesDir() {
+    try {
+      await FileSystem.makeDirectoryAsync(this.DIARY_IMAGES_PATH, { intermediates: true });
+      console.log('[MediaService] ✅ Ensured diary images directory exists');
+    } catch (error) {
+      console.error('[MediaService] Failed to ensure diary images directory:', error);
+      throw new Error(`Failed to create diary images directory: ${error.message}`);
+    }
+  }
+
+  /**
+   * Move image from temporary URI to document directory
+   * @param {string} tmpUri - Temporary URI from image picker
+   * @returns {Promise<string>} Filename (e.g., "uuid.jpg")
+   */
+  async moveImageToDocumentDirectory(tmpUri) {
+    try {
+      await this.ensureDiaryImagesDir();
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const randomId = this._generateShortRandomId();
+      const extension = this._getFileExtension(tmpUri);
+      const filename = `${timestamp}_${randomId}${extension}`;
+      const destPath = `${this.DIARY_IMAGES_PATH}${filename}`;
+
+      // Copy file to permanent storage
+      await FileSystem.copyAsync({
+        from: tmpUri,
+        to: destPath,
+      });
+
+      console.log('[MediaService] Image moved to document directory:', {
+        tmpUri,
+        filename,
+        destPath,
+      });
+
+      return filename;
+    } catch (error) {
+      console.error('[MediaService] Failed to move image to document directory:', error);
+      throw new Error(`Failed to move image: ${error.message}`);
+    }
+  }
+
+  /**
+   * Read image file as Base64 for display in WebView
+   * @param {string} filename - Filename (e.g., "uuid.jpg")
+   * @returns {Promise<string|null>} Base64 string or null if file doesn't exist
+   */
+  async readImageAsBase64(filename) {
+    try {
+      const filePath = `${this.DIARY_IMAGES_PATH}${filename}`;
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      
+      if (!fileInfo.exists) {
+        console.warn('[MediaService] Image file not found:', filePath);
+        return null;
+      }
+
+      const base64 = await FileSystem.readAsStringAsync(filePath, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Determine MIME type from extension
+      const extension = this._getFileExtension(filename);
+      const mimeType = this._getMimeTypeFromExtension(extension);
+
+      return `data:${mimeType};base64,${base64}`;
+    } catch (error) {
+      console.error('[MediaService] Failed to read image as Base64:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Replace Base64 images in HTML with file references for storage
+   * Converts: <img src="data:image/jpeg;base64,..." data-filename="123.jpg" />
+   * To: <img src="[LOCAL_FILE:123.jpg]" data-filename="123.jpg" />
+   * @param {string} htmlContent - HTML content with Base64 images
+   * @returns {string} HTML content with file references instead of Base64
+   */
+  replaceHtmlImagesForStorage(htmlContent) {
+    if (!htmlContent || typeof htmlContent !== 'string') {
+      return htmlContent;
+    }
+
+    // Match img tags with Base64 data URIs and extract filename from data-filename attribute
+    // Pattern: <img src="data:image/..." data-filename="filename.jpg" ... />
+    const base64ImagePattern = /<img([^>]*?)src="data:image\/[^"]+"([^>]*?)data-filename="([^"]+)"([^>]*?)>/gi;
+    
+    const processedHtml = htmlContent.replace(base64ImagePattern, (match, beforeSrc, afterSrc, filename, afterFilename) => {
+      // Replace src with placeholder, keep data-filename attribute
+      const newSrc = `src="[LOCAL_FILE:${filename}]"`;
+      return `<img${beforeSrc}${newSrc}${afterSrc}data-filename="${filename}"${afterFilename}>`;
+    });
+
+    // Also handle img tags where filename might be in alt attribute (fallback)
+    // Pattern: <img src="data:image/..." alt="filename.jpg" ... />
+    const altPattern = /<img([^>]*?)src="data:image\/[^"]+"([^>]*?)alt="([^"]+\.(jpg|jpeg|png|gif|webp))"([^>]*?)>/gi;
+    const processedHtml2 = processedHtml.replace(altPattern, (match, beforeSrc, afterSrc, altFilename, ext, afterAlt) => {
+      // Only replace if it looks like a filename (has extension)
+      if (altFilename.includes('.')) {
+        const newSrc = `src="[LOCAL_FILE:${altFilename}]"`;
+        return `<img${beforeSrc}${newSrc}${afterSrc}alt="${altFilename}"${afterAlt}>`;
+      }
+      return match;
+    });
+
+    console.log('[MediaService] Processed HTML for storage:', {
+      originalLength: htmlContent.length,
+      processedLength: processedHtml2.length,
+      reduction: htmlContent.length - processedHtml2.length,
+    });
+
+    return processedHtml2;
+  }
+
+  /**
+   * Restore file references in HTML to Base64 for display
+   * Converts: <img src="[LOCAL_FILE:123.jpg]" data-filename="123.jpg" />
+   * To: <img src="data:image/jpeg;base64,..." data-filename="123.jpg" />
+   * @param {string} htmlContent - HTML content with file references
+   * @returns {Promise<string>} HTML content with Base64 images restored
+   */
+  async restoreHtmlImagesForDisplay(htmlContent) {
+    if (!htmlContent || typeof htmlContent !== 'string') {
+      return htmlContent;
+    }
+
+    // Find all [LOCAL_FILE:filename] references
+    const localFilePattern = /\[LOCAL_FILE:([^\]]+)\]/g;
+    const matches = [...htmlContent.matchAll(localFilePattern)];
+    
+    if (matches.length === 0) {
+      // No local file references found, return as-is
+      return htmlContent;
+    }
+
+    // Extract unique filenames
+    const filenames = [...new Set(matches.map(match => match[1]))];
+    
+    // Read all images as Base64 in parallel
+    const imageDataMap = new Map();
+    await Promise.all(
+      filenames.map(async (filename) => {
+        const base64 = await this.readImageAsBase64(filename);
+        if (base64) {
+          imageDataMap.set(filename, base64);
+        }
+      })
+    );
+
+    // Replace all [LOCAL_FILE:filename] with Base64 data URIs
+    let restoredHtml = htmlContent;
+    for (const [filename, base64] of imageDataMap.entries()) {
+      const placeholder = `[LOCAL_FILE:${filename}]`;
+      restoredHtml = restoredHtml.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), base64);
+    }
+
+    console.log('[MediaService] Restored HTML for display:', {
+      originalLength: htmlContent.length,
+      restoredLength: restoredHtml.length,
+      imagesRestored: imageDataMap.size,
+    });
+
+    return restoredHtml;
   }
 }
 

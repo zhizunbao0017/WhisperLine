@@ -1,51 +1,48 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect, useNavigation, usePreventRemove } from '@react-navigation/native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     Animated,
-    Button,
     Image,
     Keyboard,
+    KeyboardAvoidingView,
     Modal,
     Platform,
     Pressable,
     ScrollView,
     StyleSheet,
-    TextInput,
     TouchableOpacity,
     TouchableWithoutFeedback,
-    View,
+    View
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- 核心依赖 ---
-import * as FileSystem from 'expo-file-system';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- 组件和 Context ---
 import MoodSelector from '../components/MoodSelector';
 // Removed CompanionSelectorCarousel import - companion selection moved to settings
+import { useThemeStyles } from '@/hooks/useThemeStyles';
+import { FocusSelectionModal } from '../components/FocusSelectionModal';
+import { ThemedText as Text } from '../components/ThemedText';
+import { CompanionContext } from '../context/CompanionContext';
 import { DiaryContext } from '../context/DiaryContext';
 import { ThemeContext } from '../context/ThemeContext';
-import { CompanionContext } from '../context/CompanionContext';
 import { useUserState } from '../context/UserStateContext';
-import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
-import { ThemedText as Text } from '../components/ThemedText';
-import { FocusSelectionModal } from '../components/FocusSelectionModal';
-import { getCurrentWeather } from '../services/weatherService';
+import MediaService from '../services/MediaService';
 import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticServer';
 import themeAnalysisService from '../services/ThemeAnalysisService';
-import { useThemeStyles } from '@/hooks/useThemeStyles';
+import { getCurrentWeather } from '../services/weatherService';
+import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
 
 const DEFAULT_HERO_IMAGE = require('../assets/images/ai_avatar.png');
 
@@ -423,7 +420,7 @@ const AddEditDiaryScreen = () => {
     );
     const insets = useSafeAreaInsets(); // Get safe area insets
     const editorRef = useRef(null); // Create ref for rich text editor
-    const scrollViewRef = useRef(null);
+    // scrollViewRef removed - RichEditor now handles internal scrolling automatically
  
     // Process initial content: convert local file URI to WebView-accessible format
     const processContentForEditor = (html) => {
@@ -600,6 +597,16 @@ const AddEditDiaryScreen = () => {
         outputRange: [0, 8], // Increase elevation from 0 to 8
         extrapolate: 'clamp',
     });
+    
+    // Cursor position tracking - RichEditor now handles internal scrolling automatically
+    // The WebView inside RichEditor will automatically scroll to keep cursor visible
+    const handleCursorPosition = useCallback((scrollY) => {
+        // RichEditor's internal WebView handles scrolling automatically
+        // This callback is kept for potential future enhancements
+        if (scrollY !== undefined && scrollY !== null) {
+            console.log('[AddEditDiaryScreen] Cursor position:', scrollY);
+        }
+    }, []);
     
     // Handle focus selection - the store update will trigger automatic re-render
     const handleFocusSelected = (selectedId: string) => {
@@ -913,43 +920,21 @@ const AddEditDiaryScreen = () => {
 
     // CRITICAL: Removed heroVisual useEffect - visual is now derived on every render from live context
 
+    // Load and restore HTML images for display
     useEffect(() => {
-        setContentHtml(processedInitialContent);
-        initialContentRef.current = processedInitialContent;
-        hasRemappedInitialHtml.current = false;
-    }, [processedInitialContent]);
-
-    // --- CRITICAL: Ensure ScrollView scrolls to top when component mounts or when editing existing diary ---
-    useEffect(() => {
-        // Scroll to top when component first mounts or when switching to edit mode
-        const scrollToTop = () => {
-            if (scrollViewRef.current) {
-                scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: false });
-            }
+        const loadAndRestoreContent = async () => {
+            // Restore file references to Base64 for WebView display
+            const restoredContent = await MediaService.restoreHtmlImagesForDisplay(processedInitialContent);
+            setContentHtml(restoredContent);
+            initialContentRef.current = restoredContent;
+            hasRemappedInitialHtml.current = false;
         };
         
-        // Use a small delay to ensure ScrollView is fully rendered
-        const timeoutId = setTimeout(scrollToTop, 100);
-        
-        return () => clearTimeout(timeoutId);
-    }, [isEditMode, existingDiary?.id]); // Re-scroll when entering edit mode or diary changes
+        loadAndRestoreContent();
+    }, [processedInitialContent]);
 
-    // --- CRITICAL: Also scroll to top when screen gains focus (e.g., navigating from detail screen) ---
-    useFocusEffect(
-        useCallback(() => {
-            // Scroll to top when screen comes into focus
-            const scrollToTop = () => {
-                if (scrollViewRef.current) {
-                    scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: false });
-                }
-            };
-            
-            // Use a delay to ensure ScrollView is fully rendered after navigation
-            const timeoutId = setTimeout(scrollToTop, 150);
-            
-            return () => clearTimeout(timeoutId);
-        }, [])
-    );
+    // Note: ScrollView removed - RichEditor now handles internal scrolling automatically
+    // No need to scroll to top on mount/focus since RichEditor manages its own scroll position
 
     useEffect(() => {
         isMountedRef.current = true;
@@ -976,7 +961,7 @@ const AddEditDiaryScreen = () => {
         };
     }, [processedInitialContent]);
 
-    // --- Image insertion logic (persistent file URI + ID passing) ---
+    // --- Image insertion logic (Base64-free storage with MediaService) ---
     const handleInsertImage = async () => {
         try {
             await ensureStaticServer();
@@ -1005,11 +990,7 @@ const AddEditDiaryScreen = () => {
                 return;
             }
 
-            const imagesDir = new Directory(Paths.document, 'images');
-            if (!imagesDir.exists) {
-                await imagesDir.create({ intermediates: true });
-            }
-
+            // 3. Process each selected image
             for (const asset of assets) {
                 const sourceUri = asset?.uri;
                 if (!sourceUri) {
@@ -1019,9 +1000,10 @@ const AddEditDiaryScreen = () => {
                 let workingUri = sourceUri;
                 let extension = (asset?.fileName || sourceUri).split('.').pop()?.split('?')[0] || 'jpg';
 
+                // Convert HEIC/HEIF to JPEG if needed
                 if (extension.toLowerCase() === 'heic' || extension.toLowerCase() === 'heif') {
                     try {
-                        console.log('handleInsertImage: converting HEIC/HEIF to JPEG');
+                        console.log('[handleInsertImage] Converting HEIC/HEIF to JPEG');
                         const manipulated = await ImageManipulator.manipulateAsync(
                             sourceUri,
                             [],
@@ -1030,62 +1012,38 @@ const AddEditDiaryScreen = () => {
                         workingUri = manipulated.uri;
                         extension = 'jpg';
                     } catch (conversionError) {
-                        console.warn('handleInsertImage: HEIC conversion failed, attempting copy with original file', conversionError);
+                        console.warn('[handleInsertImage] HEIC conversion failed, using original file', conversionError);
                         extension = 'jpg';
                     }
                 }
 
-                const sourceFile = new File(workingUri);
-                if (!sourceFile.exists) {
+                // 4. Save image to document directory using MediaService
+                const filename = await MediaService.moveImageToDocumentDirectory(workingUri);
+                console.log('[handleInsertImage] Image saved to document directory:', filename);
+
+                // 5. Read file as Base64 for WebView display
+                const base64DataUri = await MediaService.readImageAsBase64(filename);
+                if (!base64DataUri) {
+                    console.error('[handleInsertImage] Failed to read image as Base64:', filename);
                     continue;
                 }
 
-                const timeStamp = Date.now();
-                const random = Math.random().toString(36).slice(2, 8);
-
-                const fileName = `image_${timeStamp}_${random}.${extension}`;
-                const destinationFile = new File(imagesDir, fileName);
-                await sourceFile.copy(destinationFile);
-
-                let finalUri = destinationFile.uri;
-                if (Platform.OS === 'android') {
-                    // eslint-disable-next-line import/namespace
-                    const canMakeContentUri = typeof FileSystem.makeContentUriAsync === 'function';
-                    if (canMakeContentUri) {
-                        try {
-                            // eslint-disable-next-line import/namespace
-                            finalUri = await FileSystem.makeContentUriAsync(destinationFile.uri);
-                        } catch (androidUriError) {
-                            console.warn('makeContentUriAsync failed, falling back to file URI', androidUriError);
-                            finalUri = destinationFile.uri.startsWith('file://')
-                                ? destinationFile.uri
-                                : `file://${destinationFile.uri}`;
-                        }
-                    } else {
-                        finalUri = destinationFile.uri.startsWith('file://')
-                            ? destinationFile.uri
-                            : `file://${destinationFile.uri}`;
-                    }
-                } else {
-                    const clean = destinationFile.uri.replace(/^file:\/\//, '');
-                    finalUri = `file://${clean}`;
-                }
-
-                console.log('handleInsertImage: finalUri ->', finalUri, 'type:', typeof finalUri);
-
+                // 6. Insert image into editor with Base64 (for display) and filename (for storage)
                 if (editorRef.current) {
-                    const publicUri = await getPublicUrlForFileUri(destinationFile.uri);
                     const style = 'max-width:100%; height:auto; display:block; margin:12px 0; border-radius:8px;';
-                    editorRef.current.insertImage(publicUri, style);
+                    // Insert with Base64 for immediate display
+                    editorRef.current.insertImage(base64DataUri, style);
 
-                    const fileAttrValue = JSON.stringify(finalUri);
+                    // Set data-filename attribute for storage reference
+                    const escapedFilename = filename.replace(/"/g, '&quot;');
                     editorRef.current.commandDOM(`
                         (function() {
                             const register = window.whisperDiary && window.whisperDiary.bindImage;
                             const images = document.querySelectorAll('img');
                             const target = images[images.length - 1];
                             if (!target) { return; }
-                            target.setAttribute('data-file-uri', ${fileAttrValue});
+                            // Store filename in data-filename attribute for storage processing
+                            target.setAttribute('data-filename', '${escapedFilename}');
                             target.style.maxWidth = '100%';
                             target.style.height = 'auto';
                             target.style.display = 'block';
@@ -1104,6 +1062,8 @@ const AddEditDiaryScreen = () => {
                             setTimeout(scrollToBottom, 400);
                         })();
                     `);
+                    
+                    // Ensure editor focus
                     const ensureEditorFocus = () => {
                         if (editorRef.current?.focusContentEditor) {
                             editorRef.current.focusContentEditor();
@@ -1113,15 +1073,15 @@ const AddEditDiaryScreen = () => {
                     const t1 = setTimeout(ensureEditorFocus, 180);
                     const t2 = setTimeout(() => {
                         ensureEditorFocus();
-                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                        // RichEditor now handles internal scrolling automatically
                     }, 360);
                     const t3 = setTimeout(() => {
                         ensureEditorFocus();
-                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                        // RichEditor now handles internal scrolling automatically
                     }, 600);
                     const t4 = setTimeout(() => {
                         ensureEditorFocus();
-                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                        // RichEditor now handles internal scrolling automatically
                     }, 900);
                     setTimeout(() => {
                         clearTimeout(t1);
@@ -1132,7 +1092,7 @@ const AddEditDiaryScreen = () => {
                 }
             }
         } catch (error) {
-            console.error('handleInsertImage error:', error);
+            console.error('[handleInsertImage] Error:', error);
             Alert.alert('Error', error?.message || 'Failed to insert image. Please try again.');
         }
     };
@@ -1197,7 +1157,7 @@ const AddEditDiaryScreen = () => {
             if (editorRef.current?.focusContentEditor) {
                 editorRef.current.focusContentEditor();
             }
-            scrollViewRef.current?.scrollToEnd({ animated: true });
+            // RichEditor now handles internal scrolling automatically
         }, 100);
     }, []);
 
@@ -1206,6 +1166,17 @@ const AddEditDiaryScreen = () => {
             const raw = event?.nativeEvent?.data;
             if (!raw) return;
             const parsed = JSON.parse(raw);
+            
+            // Handle cursor position tracking for automatic scroll
+            if (parsed?.type === 'cursor-position') {
+                const scrollY = parsed.scrollY;
+                if (scrollY !== undefined && scrollY !== null) {
+                    handleCursorPosition(scrollY);
+                }
+                return;
+            }
+            
+            // Handle image tap
             if (parsed?.type === 'image-tap') {
                 const payload = {
                     fileUri: parsed.fileUri || '',
@@ -1227,7 +1198,7 @@ const AddEditDiaryScreen = () => {
         } catch (err) {
             console.warn('handleEditorMessage parse error', err);
         }
-    }, [removeImageByIdentifier]);
+    }, [removeImageByIdentifier, handleCursorPosition]);
 
     // --- Save logic ---
     const handleSave = useCallback(async () => {
@@ -1268,30 +1239,14 @@ const AddEditDiaryScreen = () => {
                 return;
             }
 
-            // Save content directly - already using file URIs (no Base64 conversion needed)
-            // This is the production-ready, scalable approach
-            let contentToSave = contentHtml;
-
-            // Clean up any temporary attributes or fix any URI issues before saving
-            // Ensure all file URIs are properly formatted
-            contentToSave = contentToSave.replace(/<img([^>]*?)>/gi, (match) => {
-                const dataMatch = match.match(/data-file-uri="([^"]*)"/i);
-                if (!dataMatch) {
-                    return match;
-                }
-
-                const fileUri = dataMatch[1].replace(/&quot;/g, '"');
-                const sanitized = fileUri.replace(/"/g, '&quot;');
-
-                let updated = match.replace(/data-file-uri="[^"]*"/i, '');
-
-                if (updated.match(/src="[^"]*"/i)) {
-                    updated = updated.replace(/src="[^"]*"/i, `src="${sanitized}"`);
-                } else {
-                    updated = updated.replace('<img', `<img src="${sanitized}"`);
-                }
-
-                return updated;
+            // Process HTML for storage: Replace Base64 images with file references
+            // This ensures database stores lightweight references instead of large Base64 strings
+            let contentToSave = MediaService.replaceHtmlImagesForStorage(contentHtml);
+            
+            console.log('[handleSave] Processed HTML for storage:', {
+                originalLength: contentHtml.length,
+                processedLength: contentToSave.length,
+                reduction: contentHtml.length - contentToSave.length,
             });
             
             // --- USE UNIFIED saveDiary FUNCTION ---
@@ -1711,39 +1666,44 @@ const AddEditDiaryScreen = () => {
                 }}
             />
 
-            {/* 2. ScrollView - Main content area with increased paddingBottom for content visibility */}
-            <ScrollView
-                ref={scrollViewRef}
+            {/* 2. KeyboardAvoidingView - MoodSelector fixed, RichEditor scrollable */}
+            <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                contentContainerStyle={{ flexGrow: 1, paddingBottom: 200 }}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}
-                scrollEnabled={true}
-                bounces={true}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={keyboardVerticalOffset}
             >
-                    <View style={styles.scrollContent}>
-                        <Animated.View
-                            style={{
-                                transform: [{ scale: moodSelectorScale }],
-                                marginBottom: moodSelectorMarginBottom,
-                            }}
-                        >
-                            <MoodSelector
-                                onSelectMood={handleMoodSelect}
-                                selectedMood={selectedMood}
-                                titleStyle={moodLabelTitleStyle}
-                                hideMoodLabels={isChildTheme}
-                                hideTitle={isChildTheme || isCyberpunkTheme}
-                                moodLabelStyle={{ fontFamily: bodyFontFamily }}
-                                containerStyle={isChildTheme ? { marginBottom: 0 } : null}
-                            />
-                        </Animated.View>
-                    {/* Title input removed: all themes now integrate title into content */}
+                {/* 1. MoodSelector - Fixed component, positioned above scroll view */}
+                <Animated.View
+                    style={{
+                        transform: [{ scale: moodSelectorScale }],
+                        marginBottom: moodSelectorMarginBottom,
+                    }}
+                >
+                    <MoodSelector
+                        onSelectMood={handleMoodSelect}
+                        selectedMood={selectedMood}
+                        titleStyle={moodLabelTitleStyle}
+                        hideMoodLabels={isChildTheme}
+                        hideTitle={isChildTheme || isCyberpunkTheme}
+                        moodLabelStyle={{ fontFamily: bodyFontFamily }}
+                        containerStyle={isChildTheme ? { marginBottom: 0 } : null}
+                    />
+                </Animated.View>
+                
+                {/* 2. ScrollView - Only wraps RichEditor for scrollable content */}
+                <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    showsVerticalScrollIndicator={true}
+                    scrollEnabled={true}
+                    bounces={true}
+                >
+                    {/* 3. RichEditor - The only scrollable content */}
                     <Animated.View
                         style={{
-                            flex: 1,
+                            paddingHorizontal: 16,
                             shadowColor: '#000000',
                             shadowOffset: { width: 0, height: 2 },
                             shadowRadius: 8,
@@ -1752,30 +1712,31 @@ const AddEditDiaryScreen = () => {
                         }}
                     >
                         <RichEditor
-                                ref={editorRef}
-                            initialContentHTML={contentHtml}
-                            onChange={(html) => {
-                                setContentHtml(html);
-                                // Sync title from content if h1 tag exists
-                                const extracted = extractTitleFromContent(html);
-                                if (extracted.title && extracted.title !== title.trim()) {
-                                    setTitle(extracted.title);
-                                }
-                            }}
-                            onFocus={() => {
-                                setIsEditorFocused(true);
-                                setEmojiTarget('content');
-                            }}
-                            onBlur={() => setIsEditorFocused(false)}
+                        ref={editorRef}
+                        initialContentHTML={contentHtml}
+                        onChange={(html) => {
+                            setContentHtml(html);
+                            // Sync title from content if h1 tag exists
+                            const extracted = extractTitleFromContent(html);
+                            if (extracted.title && extracted.title !== title.trim()) {
+                                setTitle(extracted.title);
+                            }
+                        }}
+                        onFocus={() => {
+                            setIsEditorFocused(true);
+                            setEmojiTarget('content');
+                        }}
+                        onBlur={() => setIsEditorFocused(false)}
                         onMessage={handleEditorMessage}
                         style={[
                             styles.editor,
                             {
-                                flex: 1,
                                 borderColor: isCyberpunkTheme ? '#00FFFF' : themeStyles.border,
                                 backgroundColor: isCyberpunkTheme ? 'transparent' : themeStyles.card,
                                 borderRadius: isCyberpunkTheme ? 0 : themeStyles.cardRadius, // Cyberpunk: square corners
                                 borderWidth: isCyberpunkTheme ? 1 : undefined,
+                                minHeight: 300, // Minimum height for initial display
+                                width: '100%', // Full width within ScrollView
                             },
                         ]}
                         editorStyle={{
@@ -1975,6 +1936,66 @@ const AddEditDiaryScreen = () => {
                                     fixImages();
                                 });
                                 observer.observe(document.body, { childList: true, subtree: true });
+
+                                // Cursor position tracking for automatic scroll
+                                var trackCursorPosition = function() {
+                                    var editorEl = document.querySelector('.pell-content');
+                                    if (!editorEl) { return; }
+                                    
+                                    var getCursorPosition = function() {
+                                        try {
+                                            var selection = window.getSelection();
+                                            if (!selection || selection.rangeCount === 0) { return null; }
+                                            
+                                            var range = selection.getRangeAt(0);
+                                            var rect = range.getBoundingClientRect();
+                                            var editorRect = editorEl.getBoundingClientRect();
+                                            
+                                            // Calculate cursor Y position relative to editor top
+                                            var cursorY = rect.top - editorRect.top + editorEl.scrollTop;
+                                            return cursorY;
+                                        } catch (e) {
+                                            return null;
+                                        }
+                                    };
+                                    
+                                    var sendCursorPosition = function() {
+                                        var cursorY = getCursorPosition();
+                                        if (cursorY !== null && cursorY !== undefined && window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+                                            window.ReactNativeWebView.postMessage(JSON.stringify({
+                                                type: 'cursor-position',
+                                                scrollY: cursorY
+                                            }));
+                                        }
+                                    };
+                                    
+                                    // Track cursor position on selection change (cursor movement)
+                                    document.addEventListener('selectionchange', function() {
+                                        // Debounce to avoid too many messages
+                                        if (window.whisperDiaryCursorTimeout) {
+                                            clearTimeout(window.whisperDiaryCursorTimeout);
+                                        }
+                                        window.whisperDiaryCursorTimeout = setTimeout(sendCursorPosition, 100);
+                                    });
+                                    
+                                    // Track cursor position on input (typing)
+                                    editorEl.addEventListener('input', function() {
+                                        setTimeout(sendCursorPosition, 50);
+                                    });
+                                    
+                                    // Track cursor position on click/tap
+                                    editorEl.addEventListener('click', function() {
+                                        setTimeout(sendCursorPosition, 50);
+                                    });
+                                    
+                                    // Track cursor position on focus
+                                    editorEl.addEventListener('focus', function() {
+                                        setTimeout(sendCursorPosition, 100);
+                                    });
+                                };
+                                
+                                // Initialize cursor tracking after a short delay to ensure editor is ready
+                                setTimeout(trackCursorPosition, 500);
                             })();
                         `}
                             placeholder={
@@ -1986,12 +2007,12 @@ const AddEditDiaryScreen = () => {
                             }
                             placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         useContainer={true}
-                        initialHeight={300} // CRITICAL: 减少初始高度，让编辑器更紧凑，节省空间
+                        initialHeight={300} // Initial height, will grow with content
                         containerStyle={styles.editorContainerStyle}
                         />
                     </Animated.View>
-                    </View>
                 </ScrollView>
+            </KeyboardAvoidingView>
 
                 {/* 3. Floating Footer - Absolute positioned, driven by keyboardHeight */}
                 <Animated.View 
