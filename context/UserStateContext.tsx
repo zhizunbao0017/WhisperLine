@@ -5,6 +5,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { UserStateModel } from '../models/UserState';
 import { RichEntry } from '../models/RichEntry';
 import { Companion } from '../models/PIE';
+import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
 
 const USER_STATE_STORAGE_KEY = '@WhisperLine:userState';
 const RICH_ENTRIES_STORAGE_KEY = '@WhisperLine:richEntries';
@@ -62,6 +63,55 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importMessage, setImportMessage] = useState('');
+
+  /**
+   * CRITICAL: Validate and fix primaryCompanionId in Zustand store
+   * This function ensures that the primaryCompanionId points to a valid companion
+   * or resets it to the default assistant if invalid.
+   * 
+   * This validation runs AFTER companions are loaded to ensure we have
+   * the complete picture of available companions.
+   * 
+   * @param userState - The loaded UserStateModel containing companions
+   */
+  const validateAndFixPrimaryCompanionId = useCallback(async (userState: UserStateModel) => {
+    try {
+      const { primaryCompanionId, setPrimaryCompanionId } = useUserStateStore.getState();
+      
+      console.log('[UserStateContext] 🔍 Validating primaryCompanionId:', primaryCompanionId);
+      
+      // Get available companion IDs (including default assistant)
+      const availableCompanionIds = new Set([
+        WHISPERLINE_ASSISTANT_ID, // Always available
+        ...Object.keys(userState.companions || {}), // User-created companions
+      ]);
+      
+      console.log('[UserStateContext] Available companion IDs:', Array.from(availableCompanionIds));
+      
+      // Check if primaryCompanionId points to a valid companion
+      if (!primaryCompanionId || !availableCompanionIds.has(primaryCompanionId)) {
+        console.warn('[UserStateContext] ⚠️ primaryCompanionId is invalid or points to non-existent companion.');
+        console.warn('[UserStateContext] Invalid ID:', primaryCompanionId);
+        console.warn('[UserStateContext] Resetting to default assistant:', WHISPERLINE_ASSISTANT_ID);
+        
+        // Reset to default assistant
+        setPrimaryCompanionId(WHISPERLINE_ASSISTANT_ID);
+        
+        console.log('[UserStateContext] ✅ primaryCompanionId has been reset to default assistant.');
+      } else {
+        console.log('[UserStateContext] ✅ primaryCompanionId is valid:', primaryCompanionId);
+      }
+    } catch (error) {
+      console.error('[UserStateContext] ❌ Failed to validate primaryCompanionId:', error);
+      // On error, reset to safe default
+      try {
+        const { setPrimaryCompanionId } = useUserStateStore.getState();
+        setPrimaryCompanionId(WHISPERLINE_ASSISTANT_ID);
+      } catch (resetError) {
+        console.error('[UserStateContext] ❌ Failed to reset primaryCompanionId:', resetError);
+      }
+    }
+  }, []);
 
   const loadUserState = useCallback(async () => {
     try {
@@ -202,8 +252,23 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 }
               }
               
-              // Clean up legacy fields (keep for now for safety, but mark as deprecated)
-              // We'll remove these in a future version
+              // CRITICAL: Clean up legacy fields to prevent data pollution
+              // Remove deprecated fields that might cause issues
+              const legacyFields = ['legacyAvatarUri', 'avatarIdentifier'];
+              legacyFields.forEach((field) => {
+                if (field in companion) {
+                  console.log(`[UserStateContext] Removing legacy field "${field}" from companion ${companionId}`);
+                  delete companion[field];
+                  stateWasModified = true;
+                }
+              });
+              
+              // Ensure avatarUri is also cleaned if avatar exists (to prevent confusion)
+              // avatarUri is kept for backward compatibility but should not be used if avatar exists
+              if (companion.avatar && companion.avatarUri) {
+                // Keep avatarUri for backward compatibility, but log that avatar takes precedence
+                console.log(`[UserStateContext] Companion ${companionId} has both avatar and avatarUri. avatar takes precedence.`);
+              }
               
               // Add valid companion to the cleaned object
               validCompanions[companionId] = companion;
@@ -250,6 +315,10 @@ export const UserStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           
           setUserState(parsed);
           console.log('UserStateContext: UserState loaded successfully');
+          
+          // CRITICAL: Validate primaryCompanionId after loading companions
+          // This ensures the Zustand store's primaryCompanionId points to a valid companion
+          await validateAndFixPrimaryCompanionId(parsed);
         } catch (parseError) {
           console.warn('UserStateContext: failed to parse user state', parseError);
           setUserState(createEmptyUserState());

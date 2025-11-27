@@ -5,9 +5,10 @@ import React, { memo, useCallback, useContext, useEffect, useLayoutEffect, useMe
 import {
     ActivityIndicator,
     Alert,
+    Animated,
     Button,
     Image,
-    KeyboardAvoidingView,
+    Keyboard,
     Modal,
     Platform,
     Pressable,
@@ -18,7 +19,7 @@ import {
     TouchableWithoutFeedback,
     View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- 核心依赖 ---
 import * as FileSystem from 'expo-file-system';
@@ -28,6 +29,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- 组件和 Context ---
@@ -335,6 +337,7 @@ const AddEditDiaryScreen = () => {
     const currentAvatar = themeContext?.currentAvatar;
     const isChildTheme = themeContext?.theme === 'child';
     const isCyberpunkTheme = themeContext?.theme === 'cyberpunk';
+    
     const headingFontFamily = themeStyles.headingFontFamily ?? 'System';
     const bodyFontFamily = themeStyles.bodyFontFamily ?? 'System';
     const buttonFontFamily = themeStyles.buttonFontFamily ?? headingFontFamily;
@@ -360,6 +363,8 @@ const AddEditDiaryScreen = () => {
                     borderWidth: StyleSheet.hairlineWidth,
                     borderColor: '#F3D5C1',
                     overflow: 'hidden',
+                    width: '100%', // Ensure full width
+                    minHeight: 50, // Ensure minimum height
                 };
             }
             
@@ -383,6 +388,8 @@ const AddEditDiaryScreen = () => {
                 backgroundColor: themeStyles.surface,
                 borderRadius: isCyberpunkTheme ? 0 : themeStyles.cardRadius,
                 overflow: 'hidden',
+                width: '100%', // Ensure full width
+                minHeight: 50, // Ensure minimum height
             };
         },
         [isChildTheme, isCyberpunkTheme, themeStyles.surface, themeStyles.cardRadius, themeStyles.toolbarStyle]
@@ -481,6 +488,8 @@ const AddEditDiaryScreen = () => {
     ), [initialTitleAndContent.content]);
 
     // --- State ---
+    // 1. 创建一个 state 来存储 Header 的实际高度
+    const [headerHeight, setHeaderHeight] = useState(0);
     const [isEditMode, setIsEditMode] = useState(!!existingDiary);
     const [title, setTitle] = useState(
         initialTitleAndContent.title ||
@@ -492,6 +501,7 @@ const AddEditDiaryScreen = () => {
     const initialContentRef = useRef(processedInitialContent);
     const hasRemappedInitialHtml = useRef(false);
     const [isSaving, setIsSaving] = useState(false); // Prevent duplicate saves
+    const [isEditorFocused, setIsEditorFocused] = useState(false); // Track editor focus state for UX enhancement
     const [selectedMood, setSelectedMood] = useState(
         existingDiary?.mood || intentDraft?.mood || null
     );
@@ -516,6 +526,80 @@ const AddEditDiaryScreen = () => {
     const { primaryCompanionId } = useUserStateStore();
     // State for Focus Selection Modal
     const [isFocusModalVisible, setFocusModalVisible] = useState(false);
+    
+    // Keyboard height animation - drives absolute positioned Footer
+    const keyboardHeight = useRef(new Animated.Value(0)).current;
+    const [isKeyboardUp, setIsKeyboardUp] = useState(false);
+    
+    // JS Keyboard Driver - for layout properties (height, margin, padding) that don't support native driver
+    const jsKeyboardDriver = useRef(new Animated.Value(0)).current;
+    
+    // Header animation interpolations - Create immersive editing experience
+    // Visual animations (transform, opacity) - use keyboardHeight directly
+    const headerScale = keyboardHeight.interpolate({
+        inputRange: [0, 300], // Keyboard typically around 300px high
+        outputRange: [1, 0.6], // Scale down to 60% when keyboard is up
+        extrapolate: 'clamp',
+    });
+    
+    const headerOpacity = keyboardHeight.interpolate({
+        inputRange: [0, 300],
+        outputRange: [1, 0.5], // Fade to 50% opacity for focus mode
+        extrapolate: 'clamp',
+    });
+    
+    // Layout animations (height, margin, padding) - use jsKeyboardDriver (0-1 range)
+    const headerContainerHeight = jsKeyboardDriver.interpolate({
+        inputRange: [0, 1],
+        outputRange: [250, 100], // Shrink from ~250px to 100px
+        extrapolate: 'clamp',
+    });
+    
+    const headerContainerMarginBottom = jsKeyboardDriver.interpolate({
+        inputRange: [0, 1],
+        outputRange: [20, 5], // Tighten bottom spacing from 20 to 5
+        extrapolate: 'clamp',
+    });
+    
+    const headerPaddingVertical = jsKeyboardDriver.interpolate({
+        inputRange: [0, 1],
+        outputRange: [24, 8], // Reduce padding from 24 to 8
+        extrapolate: 'clamp',
+    });
+    
+    // MoodSelector compression animation - optional space optimization
+    const moodSelectorScale = jsKeyboardDriver.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0.85], // Slight scale down to 85%
+        extrapolate: 'clamp',
+    });
+    
+    const moodSelectorMarginBottom = jsKeyboardDriver.interpolate({
+        inputRange: [0, 1],
+        outputRange: [25, 10], // Reduce bottom margin from 25 to 10
+        extrapolate: 'clamp',
+    });
+    
+    // Focus Mode: Background overlay opacity for immersive editing
+    const backgroundOverlayOpacity = keyboardHeight.interpolate({
+        inputRange: [0, 300],
+        outputRange: [0, 0.05], // Subtle darkening (5% opacity)
+        extrapolate: 'clamp',
+    });
+    
+    // Editor shadow elevation for focus mode
+    const editorShadowOpacity = keyboardHeight.interpolate({
+        inputRange: [0, 300],
+        outputRange: [0, 0.15], // Subtle shadow when keyboard is up
+        extrapolate: 'clamp',
+    });
+    
+    // Editor elevation for Android shadow (focus mode)
+    const editorElevation = keyboardHeight.interpolate({
+        inputRange: [0, 300], // When keyboard pops up
+        outputRange: [0, 8], // Increase elevation from 0 to 8
+        extrapolate: 'clamp',
+    });
     
     // Handle focus selection - the store update will trigger automatic re-render
     const handleFocusSelected = (selectedId: string) => {
@@ -734,6 +818,64 @@ const AddEditDiaryScreen = () => {
         setWeather(existingDiary?.weather || null);
         setSelectedCompanionIDs(existingCompanionIds);
     }, [existingDiary, existingCompanionIds]);
+
+    // Keyboard listener - Update keyboardHeight animation value
+    useEffect(() => {
+        const keyboardWillShowListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            (event) => {
+                const kbHeight = event.endCoordinates.height;
+                console.log('[AddEditDiaryScreen] Keyboard shown, height:', kbHeight);
+                setIsKeyboardUp(true);
+                
+                const animationDuration = event.duration || 250;
+                
+                // Animate both drivers simultaneously
+                Animated.parallel([
+                    Animated.timing(keyboardHeight, {
+                        toValue: kbHeight,
+                        duration: animationDuration,
+                        useNativeDriver: false, // bottom property doesn't support native driver
+                    }),
+                    Animated.timing(jsKeyboardDriver, {
+                        toValue: 1, // Drive layout animations to 1 (fully contracted)
+                        duration: animationDuration,
+                        useNativeDriver: false, // Layout properties don't support native driver
+                    }),
+                ]).start();
+            }
+        );
+
+        const keyboardWillHideListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            (event) => {
+                console.log('[AddEditDiaryScreen] Keyboard hidden');
+                setIsKeyboardUp(false);
+                
+                const animationDuration = event.duration || 250;
+                
+                // Reset both drivers simultaneously
+                Animated.parallel([
+                    Animated.timing(keyboardHeight, {
+                        toValue: 0,
+                        duration: animationDuration,
+                        useNativeDriver: false,
+                    }),
+                    Animated.timing(jsKeyboardDriver, {
+                        toValue: 0, // Reset layout animations to 0 (fully expanded)
+                        duration: animationDuration,
+                        useNativeDriver: false,
+                    }),
+                ]).start();
+            }
+        );
+
+        return () => {
+            keyboardWillShowListener.remove();
+            keyboardWillHideListener.remove();
+        };
+    }, [keyboardHeight, jsKeyboardDriver]);
+
 
     useEffect(() => {
         if (existingDiary && existingCompanionIds.length && !hasInitialPrimaryApplied) {
@@ -1096,6 +1238,14 @@ const AddEditDiaryScreen = () => {
         }
 
         try {
+            // Haptic Feedback: Provide subtle vibration when saving
+            try {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            } catch (error) {
+                // Haptics may not be available on all devices, ignore errors
+                console.log('Haptics not available:', error);
+            }
+            
             setIsSaving(true);
             console.log('handleSave called', {
                 canSubmit,
@@ -1254,6 +1404,14 @@ const AddEditDiaryScreen = () => {
 
     // --- Mood selection handler with auto weather fetch ---
     const handleMoodSelect = useCallback(async (mood) => {
+        // Haptic Feedback: Provide subtle vibration for better UX
+        try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch (error) {
+            // Haptics may not be available on all devices, ignore errors
+            console.log('Haptics not available:', error);
+        }
+        
         // Set the selected mood
         setSelectedMood(mood);
         
@@ -1492,47 +1650,110 @@ const AddEditDiaryScreen = () => {
         );
     });
 
-    return (
-        <View style={[styles.container, { backgroundColor: themeStyles.background }]}>
-            {/* Header area (outside KeyboardAvoidingView) */}
-            <Pressable
-                onPress={() => setFocusModalVisible(true)}
-                style={heroContainerStyle}
-            >
-                {getActiveFocusComponent()}
-            </Pressable>
+    // 2. 创建一个函数来处理 onLayout 事件
+    const handleHeaderLayout = useCallback((event) => {
+        const { height } = event.nativeEvent.layout;
+        // 只有在高度值有效时才更新，防止不必要的重渲染
+        if (height > 0 && height !== headerHeight) {
+            console.log('[AddEditDiaryScreen] Header height measured:', height);
+            setHeaderHeight(height);
+        }
+    }, [headerHeight]);
 
-            {/* Main content area with KeyboardAvoidingView */}
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 100 : 0}
+    // Calculate keyboardVerticalOffset: Use dynamically measured headerHeight + safe area top
+    // CRITICAL: Dynamic measurement ensures accurate keyboard avoidance
+    const keyboardVerticalOffset = Platform.OS === 'ios' ? insets.top + headerHeight : headerHeight;
+
+    return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: themeStyles.background }}>
+            {/* 1. Header - Animated for immersive editing experience with layout contraction */}
+            <Animated.View
+                style={{
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: headerContainerHeight, // Physical height contraction
+                    paddingVertical: headerPaddingVertical,
+                    marginBottom: headerContainerMarginBottom, // Tightened spacing
+                    transform: [{ scale: headerScale }], // Visual scale
+                    opacity: headerOpacity, // Visual opacity
+                    overflow: 'hidden', // Ensure content doesn't overflow when height shrinks
+                }}
+                onLayout={handleHeaderLayout}
             >
-                {/* Scrollable content area */}
-                <ScrollView 
-                    ref={scrollViewRef}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ flexGrow: 1 }}
-                    keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator={true}
-                    nestedScrollEnabled={true}
-                    scrollEnabled={true}
-                    bounces={true}
+                <Pressable
+                    onPress={() => setFocusModalVisible(true)}
+                    style={heroContainerStyle}
                 >
+                    <Animated.View 
+                        style={{ 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            transform: [{ scale: headerScale }],
+                        }}
+                    >
+                        {getActiveFocusComponent()}
+                    </Animated.View>
+                </Pressable>
+            </Animated.View>
+
+            {/* Focus Mode: Subtle background overlay when keyboard is up */}
+            <Animated.View
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: '#000000',
+                    opacity: backgroundOverlayOpacity,
+                    pointerEvents: 'none', // Don't block touches
+                    zIndex: 0,
+                }}
+            />
+
+            {/* 2. ScrollView - Main content area with increased paddingBottom for content visibility */}
+            <ScrollView
+                ref={scrollViewRef}
+                style={{ flex: 1 }}
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: 200 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+                scrollEnabled={true}
+                bounces={true}
+            >
                     <View style={styles.scrollContent}>
-                        <MoodSelector
-                        onSelectMood={handleMoodSelect}
-                        selectedMood={selectedMood}
-                        titleStyle={moodLabelTitleStyle}
-                        hideMoodLabels={isChildTheme}
-                        hideTitle={isChildTheme || isCyberpunkTheme}
-                        moodLabelStyle={{ fontFamily: bodyFontFamily }}
-                        containerStyle={isChildTheme ? { marginBottom: 28 } : null}
-                    />
+                        <Animated.View
+                            style={{
+                                transform: [{ scale: moodSelectorScale }],
+                                marginBottom: moodSelectorMarginBottom,
+                            }}
+                        >
+                            <MoodSelector
+                                onSelectMood={handleMoodSelect}
+                                selectedMood={selectedMood}
+                                titleStyle={moodLabelTitleStyle}
+                                hideMoodLabels={isChildTheme}
+                                hideTitle={isChildTheme || isCyberpunkTheme}
+                                moodLabelStyle={{ fontFamily: bodyFontFamily }}
+                                containerStyle={isChildTheme ? { marginBottom: 0 } : null}
+                            />
+                        </Animated.View>
                     {/* Title input removed: all themes now integrate title into content */}
-                    <RichEditor
-                            ref={editorRef}
-                        initialContentHTML={contentHtml}
+                    <Animated.View
+                        style={{
+                            flex: 1,
+                            shadowColor: '#000000',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowRadius: 8,
+                            shadowOpacity: editorShadowOpacity,
+                            elevation: editorElevation,
+                        }}
+                    >
+                        <RichEditor
+                                ref={editorRef}
+                            initialContentHTML={contentHtml}
                             onChange={(html) => {
                                 setContentHtml(html);
                                 // Sync title from content if h1 tag exists
@@ -1541,11 +1762,16 @@ const AddEditDiaryScreen = () => {
                                     setTitle(extracted.title);
                                 }
                             }}
-                        onFocus={() => setEmojiTarget('content')}
+                            onFocus={() => {
+                                setIsEditorFocused(true);
+                                setEmojiTarget('content');
+                            }}
+                            onBlur={() => setIsEditorFocused(false)}
                         onMessage={handleEditorMessage}
                         style={[
                             styles.editor,
                             {
+                                flex: 1,
                                 borderColor: isCyberpunkTheme ? '#00FFFF' : themeStyles.border,
                                 backgroundColor: isCyberpunkTheme ? 'transparent' : themeStyles.card,
                                 borderRadius: isCyberpunkTheme ? 0 : themeStyles.cardRadius, // Cyberpunk: square corners
@@ -1562,7 +1788,7 @@ const AddEditDiaryScreen = () => {
                                 font-size: 16px;
                                 line-height: 1.6;
                                 padding: 15px;
-                                min-height: 400px;
+                                min-height: 300px;
                                 height: auto;
                             `,
                             // Add CSS to ensure images and title display correctly
@@ -1760,27 +1986,44 @@ const AddEditDiaryScreen = () => {
                             }
                             placeholderTextColor={isChildTheme ? '#7090AC80' : themeStyles.inputPlaceholder}
                         useContainer={true}
-                        initialHeight={400}
+                        initialHeight={300} // CRITICAL: 减少初始高度，让编辑器更紧凑，节省空间
                         containerStyle={styles.editorContainerStyle}
                         />
+                    </Animated.View>
                     </View>
                 </ScrollView>
-                
-                {/* Fixed footer action area (outside ScrollView, inside KeyboardAvoidingView) */}
-                <View style={[
-                    styles.footer, 
-                    { 
-                        backgroundColor: themeStyles.surface, 
-                        borderTopColor: themeStyles.border,
-                        paddingTop: 12,
-                        paddingBottom: Math.max(insets.bottom, 16),
-                        paddingHorizontal: 20,
-                        width: '100%',
-                        alignSelf: 'stretch',
-                    }
-                ]}>
-                    {/* Rich Text Toolbar */}
-                    <View style={[styles.toolbarWrapper, toolbarContainerStyle]}>
+
+                {/* 3. Floating Footer - Absolute positioned, driven by keyboardHeight */}
+                <Animated.View 
+                    style={[
+                        styles.footer, 
+                        { 
+                            position: 'absolute',
+                            bottom: keyboardHeight,
+                            left: 0,
+                            right: 0,
+                            width: '100%',
+                            zIndex: 9999,
+                            backgroundColor: themeStyles.surface, 
+                            borderTopColor: themeStyles.border,
+                            paddingTop: 8,
+                            paddingBottom: Math.max(insets.bottom, 12),
+                            paddingHorizontal: 20,
+                        }
+                    ]}
+                >
+                    {/* RichToolbar - Shown when keyboard is up */}
+                    <View 
+                        style={[
+                            styles.toolbarWrapper, 
+                            toolbarContainerStyle,
+                            { 
+                                display: isKeyboardUp ? 'flex' : 'none',
+                                height: 50,
+                                width: '100%',
+                            }
+                        ]}
+                    >
                         <RichToolbar
                             getEditor={() => editorRef.current}
                             actions={[
@@ -1840,37 +2083,46 @@ const AddEditDiaryScreen = () => {
                                 height: 50,
                                 minHeight: 50,
                                 maxHeight: 50,
-                                paddingLeft: 8, // 左移图标以对齐（基础模版和儿童模版）
+                                paddingLeft: 8,
                                 paddingRight: 24,
                                 marginHorizontal: 0,
                                 paddingVertical: 0,
                                 marginVertical: 0,
                                 flexDirection: 'row',
                             }}
-                            style={isCyberpunkTheme ? {
-                                minHeight: 50,
-                                margin: 0,
-                                padding: 0,
-                                backgroundColor: 'transparent',
-                            } : {
-                                width: '100%',
-                                height: 50,
-                                minHeight: 50,
-                                maxHeight: 50,
-                                margin: 0,
-                                padding: 0,
-                            }}
+                            style={[
+                                isCyberpunkTheme ? {
+                                    minHeight: 50,
+                                    margin: 0,
+                                    padding: 0,
+                                    backgroundColor: 'transparent',
+                                } : {
+                                    width: '100%',
+                                    height: 50,
+                                    minHeight: 50,
+                                    maxHeight: 50,
+                                    margin: 0,
+                                    padding: 0,
+                                },
+                                {
+                                    position: 'relative',
+                                    bottom: 'auto',
+                                    left: 'auto',
+                                    right: 'auto',
+                                }
+                            ]}
                         />
                     </View>
                     
-                    {/* Save Button */}
-                    <TouchableOpacity 
-                        style={styles.saveButton}
-                        onPress={handleSave}
-                        activeOpacity={0.8}
-                        disabled={!saveEnabled || isSaving}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
+                    {/* Save Button - Shown when keyboard is down */}
+                    <View style={{ display: isKeyboardUp ? 'none' : 'flex' }}>
+                        <TouchableOpacity 
+                            style={styles.saveButton}
+                            onPress={handleSave}
+                            activeOpacity={0.8}
+                            disabled={!saveEnabled || isSaving}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
                         {isChildTheme ? (
                             <LinearGradient
                                 colors={['#FFAECC', '#FFD391']}
@@ -1880,21 +2132,40 @@ const AddEditDiaryScreen = () => {
                                     styles.saveButtonGradient,
                                     {
                                         opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
+                                        transform: isEditorFocused && saveEnabled && !isSaving ? [{ scale: 1.02 }] : [{ scale: 1 }],
                                     },
                                 ]}
                             >
-                                <Text
-                                    style={[
-                                        styles.saveButtonText,
-                                        {
-                                            fontFamily: headingFontFamily,
-                                            fontSize: 26,
-                                            color: '#4F6586',
-                                        },
-                                    ]}
-                                >
-                                    {isSaving ? "Saving..." : (isEditMode ? "Save Changes" : "Save Diary")}
-                                </Text>
+                                {isSaving ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                                        <ActivityIndicator size="small" color="#4F6586" style={{ marginRight: 8 }} />
+                                        <Text
+                                            style={[
+                                                styles.saveButtonText,
+                                                {
+                                                    fontFamily: headingFontFamily,
+                                                    fontSize: 26,
+                                                    color: '#4F6586',
+                                                },
+                                            ]}
+                                        >
+                                            Saving...
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text
+                                        style={[
+                                            styles.saveButtonText,
+                                            {
+                                                fontFamily: headingFontFamily,
+                                                fontSize: 26,
+                                                color: '#4F6586',
+                                            },
+                                        ]}
+                                    >
+                                        {isEditMode ? "Save Changes" : "Save Diary"}
+                                    </Text>
+                                )}
                             </LinearGradient>
                         ) : isCyberpunkTheme ? (
                             <View
@@ -1902,25 +2173,44 @@ const AddEditDiaryScreen = () => {
                                     styles.saveButtonContent,
                                     {
                                         backgroundColor: 'transparent',
-                                        borderRadius: 0, // Cyberpunk style: square corners
+                                        borderRadius: 0,
                                         borderWidth: 2,
-                                        borderColor: '#FF00FF',
+                                        borderColor: isEditorFocused && saveEnabled && !isSaving ? '#00FFFF' : '#FF00FF',
                                         opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
+                                        transform: isEditorFocused && saveEnabled && !isSaving ? [{ scale: 1.02 }] : [{ scale: 1 }],
                                     },
                                 ]}
                             >
-                                <Text
-                                    style={[
-                                        styles.saveButtonText,
-                                        {
-                                            color: '#FFFFFF',
-                                            fontFamily: buttonFontFamily,
-                                            fontSize: 20,
-                                        },
-                                    ]}
-                                >
-                                    {isSaving ? "Saving..." : (isEditMode ? "Save Changes" : "Save Diary")}
-                                </Text>
+                                {isSaving ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                                        <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                                        <Text
+                                            style={[
+                                                styles.saveButtonText,
+                                                {
+                                                    color: '#FFFFFF',
+                                                    fontFamily: buttonFontFamily,
+                                                    fontSize: 20,
+                                                },
+                                            ]}
+                                        >
+                                            Saving...
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text
+                                        style={[
+                                            styles.saveButtonText,
+                                            {
+                                                color: '#FFFFFF',
+                                                fontFamily: buttonFontFamily,
+                                                fontSize: 20,
+                                            },
+                                        ]}
+                                    >
+                                        {isEditMode ? "Save Changes" : "Save Diary"}
+                                    </Text>
+                                )}
                             </View>
                         ) : (
                             <View
@@ -1928,28 +2218,47 @@ const AddEditDiaryScreen = () => {
                                     styles.saveButtonContent,
                                     {
                                         backgroundColor: themeStyles.primary,
-                                        borderRadius: isCyberpunkTheme ? 0 : themeStyles.buttonRadius, // Cyberpunk: square corners
-                                        opacity: (saveEnabled && !isSaving) ? 1 : 0.4,
+                                        borderRadius: themeStyles.buttonRadius,
+                                        opacity: (saveEnabled && !isSaving) ? (isEditorFocused ? 1 : 0.9) : 0.4,
+                                        transform: isEditorFocused && saveEnabled && !isSaving ? [{ scale: 1.02 }] : [{ scale: 1 }],
                                     },
                                 ]}
                             >
-                                <Text
-                                    style={[
-                                        styles.saveButtonText,
-                                        {
-                                            color: themeStyles.primaryText,
-                                            fontFamily: buttonFontFamily,
-                                        },
-                                    ]}
-                                >
-                                    {isSaving ? "Saving..." : (isEditMode ? "Save Changes" : "Save Diary")}
-                                </Text>
+                                {isSaving ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                                        <ActivityIndicator size="small" color={themeStyles.primaryText} style={{ marginRight: 8 }} />
+                                        <Text
+                                            style={[
+                                                styles.saveButtonText,
+                                                {
+                                                    color: themeStyles.primaryText,
+                                                    fontFamily: buttonFontFamily,
+                                                },
+                                            ]}
+                                        >
+                                            Saving...
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text
+                                        style={[
+                                            styles.saveButtonText,
+                                            {
+                                                color: themeStyles.primaryText,
+                                                fontFamily: buttonFontFamily,
+                                            },
+                                        ]}
+                                    >
+                                        {isEditMode ? "Save Changes" : "Save Diary"}
+                                    </Text>
+                                )}
                             </View>
                         )}
-                    </TouchableOpacity>
-                </View>
+                        </TouchableOpacity>
+                    </View>
+                </Animated.View>
 
-                <Modal
+            <Modal
                     animationType="slide"
                     transparent
                     visible={isEmojiPickerVisible}
@@ -1992,8 +2301,7 @@ const AddEditDiaryScreen = () => {
                         </View>
                     </TouchableWithoutFeedback>
                 </Modal>
-            </KeyboardAvoidingView>
-            
+
             {/* Focus Selection Modal */}
             {themeContext && (
                 <FocusSelectionModal
@@ -2003,14 +2311,14 @@ const AddEditDiaryScreen = () => {
                     colors={themeContext.colors}
                 />
             )}
-        </View>
+        </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: 20, paddingTop: 0 }, // Content padding inside ScrollView
+    scrollContent: { padding: 20, paddingBottom: 0, paddingTop: 0 }, // Content padding inside ScrollView (paddingBottom moved to ScrollView contentContainerStyle)
     heroContainer: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -2097,22 +2405,22 @@ const styles = StyleSheet.create({
     input: { borderWidth: 1, borderRadius: 0, padding: 15, fontSize: 16, marginBottom: 20 }, // Cyberpunk: square corners
     editor: { 
         width: '100%',
-        minHeight: 400, 
+        minHeight: 300, // CRITICAL: 减少最小高度，让编辑器更灵活，节省空间
         borderWidth: 1, 
         borderRadius: 0, // Cyberpunk: square corners
         marginBottom: 20,
         overflow: 'hidden',
     },
     editorContainerStyle: {
-        minHeight: 400,
+        minHeight: 300, // CRITICAL: 与 editor 的 minHeight 保持一致
     },
     footer: {
         borderTopWidth: 1,
         paddingHorizontal: 0,
         paddingTop: 12,
         paddingBottom: 0, // Will be set dynamically with safe area insets
-        zIndex: 1000,
-        elevation: 10,
+        // CRITICAL FIX: 移除所有破坏性样式（zIndex, elevation, position, bottom, left, right）
+        // Footer 应该遵循正常的布局流，让 KeyboardAvoidingView 控制其位置
         width: '100%',
         alignSelf: 'stretch',
         flexDirection: 'column',
