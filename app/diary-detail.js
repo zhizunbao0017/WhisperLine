@@ -44,13 +44,17 @@ const DiaryDetailScreen = () => {
         console.log('[DiaryDetail] Diary ID:', diary?.id);
         console.log('[DiaryDetail] Diary companionIDs:', diary?.companionIDs);
         
-        // Ensure immediate navigation without delay
+        // Close the detail modal first, then navigate to editor
         try {
-            router.push({
-                pathname: '/add-edit-diary',
-                params: { diary: JSON.stringify(diary) },
-            });
-            console.log('[DiaryDetail] Navigation triggered successfully');
+            router.back(); // Close the current detail modal
+            // Use setTimeout to ensure back() completes before push()
+            setTimeout(() => {
+                router.push({
+                    pathname: '/add-edit-diary',
+                    params: { diary: JSON.stringify(diary) },
+                });
+                console.log('[DiaryDetail] Navigation triggered successfully');
+            }, 100);
         } catch (error) {
             console.error('[DiaryDetail] Navigation error:', error);
         }
