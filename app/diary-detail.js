@@ -1,11 +1,12 @@
 // app/diary-detail.js
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import RenderHTML from 'react-native-render-html';
 import { ThemeContext } from '../context/ThemeContext';
 import { ThemedText as Text } from '../components/ThemedText';
+import MediaService from '../services/MediaService';
 
 const DiaryDetailScreen = () => {
     const router = useRouter();
@@ -14,6 +15,20 @@ const DiaryDetailScreen = () => {
     const { width } = useWindowDimensions();
 
     const diary = params.diary ? JSON.parse(params.diary) : null;
+    
+    const [displayHtml, setDisplayHtml] = useState('');
+
+    useEffect(() => {
+        const prepareHtml = async () => {
+            if (diary?.content) {
+                const restored = await MediaService.restoreHtmlImagesForDisplay(diary.content);
+                setDisplayHtml(restored);
+            } else {
+                setDisplayHtml('');
+            }
+        };
+        prepareHtml();
+    }, [diary]);
 
     if (!diary) {
         return (
@@ -86,11 +101,11 @@ const DiaryDetailScreen = () => {
             
             {/* --- Diary content (includes title as <h1>) --- */}
             {/* --- KEY FIX: Content is the single source of truth, no separate title rendering --- */}
-            {diary.content ? (
+            {displayHtml ? (
                 <View style={styles.htmlContainer}>
                     <RenderHTML
                         contentWidth={width - 40}
-                        source={{ html: diary.content }}
+                        source={{ html: displayHtml }}
                         renderers={renderers}
                         ignoredDomTags={['ms-cmark-node']}
                         tagsStyles={{

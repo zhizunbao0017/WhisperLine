@@ -498,6 +498,7 @@ const AddEditDiaryScreen = () => {
     const initialContentRef = useRef(processedInitialContent);
     const hasRemappedInitialHtml = useRef(false);
     const [isSaving, setIsSaving] = useState(false); // Prevent duplicate saves
+    const [isLoading, setIsLoading] = useState(false); // Track content loading state
     const [isEditorFocused, setIsEditorFocused] = useState(false); // Track editor focus state for UX enhancement
     const [selectedMood, setSelectedMood] = useState(
         existingDiary?.mood || intentDraft?.mood || null
@@ -923,11 +924,23 @@ const AddEditDiaryScreen = () => {
     // Load and restore HTML images for display
     useEffect(() => {
         const loadAndRestoreContent = async () => {
-            // Restore file references to Base64 for WebView display
+            if (!processedInitialContent) {
+                setContentHtml('');
+                initialContentRef.current = '';
+                hasRemappedInitialHtml.current = false;
+                return;
+            }
+
+            setIsLoading(true); // 显示加载指示器
+            
+            // ！！！关键修复：await 异步的还原过程！！！
             const restoredContent = await MediaService.restoreHtmlImagesForDisplay(processedInitialContent);
-            setContentHtml(restoredContent);
+            
+            setContentHtml(restoredContent); // 现在设置的是包含所有图片数据的完整 HTML
             initialContentRef.current = restoredContent;
             hasRemappedInitialHtml.current = false;
+            
+            setIsLoading(false); // 隐藏加载指示器
         };
         
         loadAndRestoreContent();

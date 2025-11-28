@@ -674,43 +674,44 @@ class MediaService {
    */
   async restoreHtmlImagesForDisplay(htmlContent) {
     if (!htmlContent || typeof htmlContent !== 'string') {
-      return htmlContent;
+      return '';
     }
 
-    // Find all [LOCAL_FILE:filename] references
-    const localFilePattern = /\[LOCAL_FILE:([^\]]+)\]/g;
-    const matches = [...htmlContent.matchAll(localFilePattern)];
-    
-    if (matches.length === 0) {
-      // No local file references found, return as-is
-      return htmlContent;
+    // 1. 找到所有需要被替换的图片占位符
+    const imagePlaceholders = htmlContent.match(/\[LOCAL_FILE:([^\]]+)\]/g) || [];
+    if (imagePlaceholders.length === 0) {
+      return htmlContent; // 如果没有图片，直接返回
     }
 
-    // Extract unique filenames
-    const filenames = [...new Set(matches.map(match => match[1]))];
-    
-    // Read all images as Base64 in parallel
-    const imageDataMap = new Map();
-    await Promise.all(
-      filenames.map(async (filename) => {
-        const base64 = await this.readImageAsBase64(filename);
-        if (base64) {
-          imageDataMap.set(filename, base64);
-        }
-      })
+    // 2. 提取所有唯一的文件名
+    const uniqueFilenames = [...new Set(imagePlaceholders.map(p => p.replace('[LOCAL_FILE:', '').replace(']', '')))];
+
+    // 3. 并行地、异步地读取所有图片文件为 Base64
+    const fileReadPromises = uniqueFilenames.map(filename => 
+      this.readImageAsBase64(filename).then(base64 => ({ filename, base64 }))
     );
+    
+    const results = await Promise.all(fileReadPromises);
 
-    // Replace all [LOCAL_FILE:filename] with Base64 data URIs
+    // 4. 创建一个从文件名到 Base64 的映射，方便快速查找
+    const filenameToBase64Map = results.reduce((map, item) => {
+      if (item.base64) {
+        map[item.filename] = item.base64; // readImageAsBase64 already returns data URI format
+      }
+      return map;
+    }, {});
+
+    // 5. 执行替换，生成最终的 HTML
     let restoredHtml = htmlContent;
-    for (const [filename, base64] of imageDataMap.entries()) {
-      const placeholder = `[LOCAL_FILE:${filename}]`;
-      restoredHtml = restoredHtml.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), base64);
+    for (const filename in filenameToBase64Map) {
+      const placeholderRegex = new RegExp(`\\[LOCAL_FILE:${filename}\\]`, 'g');
+      restoredHtml = restoredHtml.replace(placeholderRegex, filenameToBase64Map[filename]);
     }
 
     console.log('[MediaService] Restored HTML for display:', {
       originalLength: htmlContent.length,
       restoredLength: restoredHtml.length,
-      imagesRestored: imageDataMap.size,
+      imagesRestored: Object.keys(filenameToBase64Map).length,
     });
 
     return restoredHtml;
