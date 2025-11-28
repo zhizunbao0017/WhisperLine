@@ -8,7 +8,6 @@ import {
     Animated,
     Image,
     Keyboard,
-    KeyboardAvoidingView,
     Modal,
     Platform,
     Pressable,
@@ -944,7 +943,7 @@ const AddEditDiaryScreen = () => {
         };
         
         loadAndRestoreContent();
-    }, [processedInitialContent]);
+    }, [processedInitialContent, existingDiary?.id]); // 添加 existingDiary?.id 确保当日记数据加载时能正确触发
 
     // Note: ScrollView removed - RichEditor now handles internal scrolling automatically
     // No need to scroll to top on mount/focus since RichEditor manages its own scroll position
@@ -1628,9 +1627,8 @@ const AddEditDiaryScreen = () => {
         }
     }, [headerHeight]);
 
-    // Calculate keyboardVerticalOffset: Use dynamically measured headerHeight + safe area top
-    // CRITICAL: Dynamic measurement ensures accurate keyboard avoidance
-    const keyboardVerticalOffset = Platform.OS === 'ios' ? insets.top + headerHeight : headerHeight;
+    // Note: keyboardVerticalOffset removed - no longer using KeyboardAvoidingView
+    // Dynamic paddingBottom in Animated.ScrollView handles keyboard avoidance
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: themeStyles.background }}>
@@ -1679,41 +1677,42 @@ const AddEditDiaryScreen = () => {
                 }}
             />
 
-            {/* 2. KeyboardAvoidingView - MoodSelector fixed, RichEditor scrollable */}
-            <KeyboardAvoidingView
+            {/* 2. Animated.ScrollView - Dynamic paddingBottom ensures content is always scrollable */}
+            <Animated.ScrollView
                 style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={keyboardVerticalOffset}
+                contentContainerStyle={{ flexGrow: 1 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                showsVerticalScrollIndicator={true}
+                scrollEnabled={true}
+                bounces={true}
             >
-                {/* 1. MoodSelector - Fixed component, positioned above scroll view */}
+                {/* Content wrapper with dynamic paddingBottom */}
                 <Animated.View
                     style={{
-                        transform: [{ scale: moodSelectorScale }],
-                        marginBottom: moodSelectorMarginBottom,
+                        // ！！！关键修复：动态底部内边距 = 键盘高度 + 工具栏高度 + 缓冲空间
+                        paddingBottom: Animated.add(keyboardHeight, 150),
                     }}
                 >
-                    <MoodSelector
-                        onSelectMood={handleMoodSelect}
-                        selectedMood={selectedMood}
-                        titleStyle={moodLabelTitleStyle}
-                        hideMoodLabels={isChildTheme}
-                        hideTitle={isChildTheme || isCyberpunkTheme}
-                        moodLabelStyle={{ fontFamily: bodyFontFamily }}
-                        containerStyle={isChildTheme ? { marginBottom: 0 } : null}
-                    />
-                </Animated.View>
-                
-                {/* 2. ScrollView - Only wraps RichEditor for scrollable content */}
-                <ScrollView
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ paddingBottom: 100 }}
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="interactive"
-                    showsVerticalScrollIndicator={true}
-                    scrollEnabled={true}
-                    bounces={true}
-                >
-                    {/* 3. RichEditor - The only scrollable content */}
+                    {/* 1. MoodSelector - Now inside ScrollView for unified scrolling */}
+                    <Animated.View
+                        style={{
+                            transform: [{ scale: moodSelectorScale }],
+                            marginBottom: moodSelectorMarginBottom,
+                        }}
+                    >
+                        <MoodSelector
+                            onSelectMood={handleMoodSelect}
+                            selectedMood={selectedMood}
+                            titleStyle={moodLabelTitleStyle}
+                            hideMoodLabels={isChildTheme}
+                            hideTitle={isChildTheme || isCyberpunkTheme}
+                            moodLabelStyle={{ fontFamily: bodyFontFamily }}
+                            containerStyle={isChildTheme ? { marginBottom: 0 } : null}
+                        />
+                    </Animated.View>
+                    
+                    {/* 2. RichEditor - Scrollable content */}
                     <Animated.View
                         style={{
                             paddingHorizontal: 16,
@@ -2024,10 +2023,10 @@ const AddEditDiaryScreen = () => {
                         containerStyle={styles.editorContainerStyle}
                         />
                     </Animated.View>
-                </ScrollView>
-            </KeyboardAvoidingView>
+                </Animated.View>
+            </Animated.ScrollView>
 
-                {/* 3. Floating Footer - Absolute positioned, driven by keyboardHeight */}
+            {/* 3. Floating Footer - Absolute positioned, driven by keyboardHeight */}
                 <Animated.View 
                     style={[
                         styles.footer, 
@@ -2454,7 +2453,7 @@ const styles = StyleSheet.create({
         paddingTop: 12,
         paddingBottom: 0, // Will be set dynamically with safe area insets
         // CRITICAL FIX: 移除所有破坏性样式（zIndex, elevation, position, bottom, left, right）
-        // Footer 应该遵循正常的布局流，让 KeyboardAvoidingView 控制其位置
+        // Footer 使用绝对定位，由 keyboardHeight 动画值驱动
         width: '100%',
         alignSelf: 'stretch',
         flexDirection: 'column',

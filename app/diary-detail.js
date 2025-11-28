@@ -28,7 +28,7 @@ const DiaryDetailScreen = () => {
             }
         };
         prepareHtml();
-    }, [diary]);
+    }, [params.diary, diary?.id]); // 依赖 params.diary（数据源）和 diary?.id 确保当日记数据加载时能正确触发
 
     if (!diary) {
         return (
