@@ -669,49 +669,56 @@ class MediaService {
    * Restore file references in HTML to Base64 for display
    * Converts: <img src="[LOCAL_FILE:123.jpg]" data-filename="123.jpg" />
    * To: <img src="data:image/jpeg;base64,..." data-filename="123.jpg" />
+   * 
+   * PERFORMANCE OPTIMIZED: Uses parallel file reading with Promise.all
+   * to maximize performance and prevent JS thread blocking.
+   * 
    * @param {string} htmlContent - HTML content with file references
    * @returns {Promise<string>} HTML content with Base64 images restored
    */
   async restoreHtmlImagesForDisplay(htmlContent) {
-    if (!htmlContent || typeof htmlContent !== 'string') {
-      return '';
+    if (!htmlContent || !htmlContent.includes('[LOCAL_FILE:')) {
+      return htmlContent || '';
     }
 
-    // 1. 找到所有需要被替换的图片占位符
-    const imagePlaceholders = htmlContent.match(/\[LOCAL_FILE:([^\]]+)\]/g) || [];
-    if (imagePlaceholders.length === 0) {
-      return htmlContent; // 如果没有图片，直接返回
-    }
-
-    // 2. 提取所有唯一的文件名
-    const uniqueFilenames = [...new Set(imagePlaceholders.map(p => p.replace('[LOCAL_FILE:', '').replace(']', '')))];
-
-    // 3. 并行地、异步地读取所有图片文件为 Base64
-    const fileReadPromises = uniqueFilenames.map(filename => 
-      this.readImageAsBase64(filename).then(base64 => ({ filename, base64 }))
-    );
+    // 1. 使用正则表达式一次性捕获所有唯一的文件名
+    const filenames = [...new Set(Array.from(htmlContent.matchAll(/\[LOCAL_FILE:([^\]]+)\]/g), m => m[1]))];
     
+    if (filenames.length === 0) {
+      return htmlContent;
+    }
+
+    // 2. 为每个文件名创建一个并行的、异步的读取任务
+    const fileReadPromises = filenames.map(async (filename) => {
+      try {
+        const base64 = await this.readImageAsBase64(filename);
+        if (base64) {
+          return { filename, base64 }; // readImageAsBase64 already returns full data URI format
+        }
+      } catch (error) {
+        console.error(`[MediaService] Failed to read image ${filename}:`, error);
+      }
+      return { filename, base64: null }; // 如果读取失败，返回 null
+    });
+
+    // 3. 等待所有读取任务并行完成
     const results = await Promise.all(fileReadPromises);
 
-    // 4. 创建一个从文件名到 Base64 的映射，方便快速查找
-    const filenameToBase64Map = results.reduce((map, item) => {
-      if (item.base64) {
-        map[item.filename] = item.base64; // readImageAsBase64 already returns data URI format
-      }
-      return map;
-    }, {});
-
-    // 5. 执行替换，生成最终的 HTML
+    // 4. 一次性执行所有替换操作
     let restoredHtml = htmlContent;
-    for (const filename in filenameToBase64Map) {
-      const placeholderRegex = new RegExp(`\\[LOCAL_FILE:${filename}\\]`, 'g');
-      restoredHtml = restoredHtml.replace(placeholderRegex, filenameToBase64Map[filename]);
+    for (const { filename, base64 } of results) {
+      if (base64) {
+        const placeholderRegex = new RegExp(`\\[LOCAL_FILE:${filename}\\]`, 'g');
+        restoredHtml = restoredHtml.replace(placeholderRegex, base64);
+      }
+      // 如果 base64 为 null (读取失败)，可以选择保留占位符或替换为错误提示
     }
 
     console.log('[MediaService] Restored HTML for display:', {
       originalLength: htmlContent.length,
       restoredLength: restoredHtml.length,
-      imagesRestored: Object.keys(filenameToBase64Map).length,
+      imagesRestored: results.filter(r => r.base64 !== null).length,
+      imagesFailed: results.filter(r => r.base64 === null).length,
     });
 
     return restoredHtml;
