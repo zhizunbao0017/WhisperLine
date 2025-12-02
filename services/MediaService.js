@@ -6,6 +6,7 @@
 // TODO: Migrate to new File/Directory API in future Expo SDK update
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Platform, Alert, Linking } from 'react-native';
 
 /**
@@ -558,7 +559,33 @@ class MediaService {
   }
 
   /**
+   * Compress image aggressively to reduce memory usage
+   * Limits width to 800px and reduces quality to 30% to prevent memory overflow
+   * @param {string} uri - Source image URI
+   * @returns {Promise<string>} Compressed image URI
+   */
+  async _compressImage(uri) {
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 800 } }], // Limit max width to 800px, height auto-scales
+        { compress: 0.3, format: ImageManipulator.SaveFormat.JPEG } // 30% quality
+      );
+      console.log('[MediaService] Image compressed successfully:', {
+        originalUri: uri,
+        compressedUri: result.uri,
+      });
+      return result.uri;
+    } catch (error) {
+      console.error('[MediaService] Failed to compress image:', error);
+      // If compression fails, return original URI as fallback
+      return uri;
+    }
+  }
+
+  /**
    * Move image from temporary URI to document directory
+   * CRITICAL: Compresses image before saving to reduce memory usage and prevent crashes
    * @param {string} tmpUri - Temporary URI from image picker
    * @returns {Promise<string>} Filename (e.g., "uuid.jpg")
    */
@@ -566,21 +593,24 @@ class MediaService {
     try {
       await this.ensureDiaryImagesDir();
 
-      // Generate unique filename
+      // CRITICAL STEP: Compress image before saving to prevent memory overflow
+      const compressedUri = await this._compressImage(tmpUri);
+
+      // Generate unique filename (always use .jpg since compression converts to JPEG)
       const timestamp = Date.now();
       const randomId = this._generateShortRandomId();
-      const extension = this._getFileExtension(tmpUri);
-      const filename = `${timestamp}_${randomId}${extension}`;
+      const filename = `${timestamp}_${randomId}.jpg`;
       const destPath = `${this.DIARY_IMAGES_PATH}${filename}`;
 
-      // Copy file to permanent storage
+      // Copy compressed file to permanent storage
       await FileSystem.copyAsync({
-        from: tmpUri,
+        from: compressedUri,
         to: destPath,
       });
 
-      console.log('[MediaService] Image moved to document directory:', {
-        tmpUri,
+      console.log('[MediaService] Image compressed and moved to document directory:', {
+        originalUri: tmpUri,
+        compressedUri,
         filename,
         destPath,
       });
@@ -670,8 +700,9 @@ class MediaService {
    * Converts: <img src="[LOCAL_FILE:123.jpg]" data-filename="123.jpg" />
    * To: <img src="data:image/jpeg;base64,..." data-filename="123.jpg" />
    * 
-   * PERFORMANCE OPTIMIZED: Uses parallel file reading with Promise.all
-   * to maximize performance and prevent JS thread blocking.
+   * MEMORY OPTIMIZED: Uses serial processing instead of Promise.all
+   * to prevent memory overflow when loading multiple images.
+   * Processes images one by one to keep peak memory usage low.
    * 
    * @param {string} htmlContent - HTML content with file references
    * @returns {Promise<string>} HTML content with Base64 images restored
@@ -688,37 +719,36 @@ class MediaService {
       return htmlContent;
     }
 
-    // 2. 为每个文件名创建一个并行的、异步的读取任务
-    const fileReadPromises = filenames.map(async (filename) => {
+    // 2. CRITICAL: Use serial processing instead of Promise.all
+    // Process images one by one to prevent memory overflow
+    let restoredHtml = htmlContent;
+    let imagesRestored = 0;
+    let imagesFailed = 0;
+
+    for (const filename of filenames) {
       try {
         const base64 = await this.readImageAsBase64(filename);
         if (base64) {
-          return { filename, base64 }; // readImageAsBase64 already returns full data URI format
+          // Replace all occurrences of this placeholder with Base64 data URI
+          restoredHtml = restoredHtml.split(`[LOCAL_FILE:${filename}]`).join(base64);
+          imagesRestored++;
+        } else {
+          imagesFailed++;
+          console.warn(`[MediaService] Failed to load image ${filename}: file not found or empty`);
         }
       } catch (error) {
+        imagesFailed++;
         console.error(`[MediaService] Failed to read image ${filename}:`, error);
+        // Keep placeholder if read fails
       }
-      return { filename, base64: null }; // 如果读取失败，返回 null
-    });
-
-    // 3. 等待所有读取任务并行完成
-    const results = await Promise.all(fileReadPromises);
-
-    // 4. 一次性执行所有替换操作
-    let restoredHtml = htmlContent;
-    for (const { filename, base64 } of results) {
-      if (base64) {
-        const placeholderRegex = new RegExp(`\\[LOCAL_FILE:${filename}\\]`, 'g');
-        restoredHtml = restoredHtml.replace(placeholderRegex, base64);
-      }
-      // 如果 base64 为 null (读取失败)，可以选择保留占位符或替换为错误提示
     }
 
-    console.log('[MediaService] Restored HTML for display:', {
+    console.log('[MediaService] Restored HTML for display (serial processing):', {
       originalLength: htmlContent.length,
       restoredLength: restoredHtml.length,
-      imagesRestored: results.filter(r => r.base64 !== null).length,
-      imagesFailed: results.filter(r => r.base64 === null).length,
+      imagesRestored,
+      imagesFailed,
+      totalImages: filenames.length,
     });
 
     return restoredHtml;
