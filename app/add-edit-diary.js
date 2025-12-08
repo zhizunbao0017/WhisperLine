@@ -497,7 +497,7 @@ const AddEditDiaryScreen = () => {
     const initialContentRef = useRef(processedInitialContent);
     const hasRemappedInitialHtml = useRef(false);
     const [isSaving, setIsSaving] = useState(false); // Prevent duplicate saves
-    const [isLoading, setIsLoading] = useState(false); // Track content loading state
+    const [isLoading, setIsLoading] = useState(true); // Track content loading state - Start with true to prevent premature rendering
     const [isEditorFocused, setIsEditorFocused] = useState(false); // Track editor focus state for UX enhancement
     const [selectedMood, setSelectedMood] = useState(
         existingDiary?.mood || intentDraft?.mood || null
@@ -927,6 +927,7 @@ const AddEditDiaryScreen = () => {
                 setContentHtml('');
                 initialContentRef.current = '';
                 hasRemappedInitialHtml.current = false;
+                setIsLoading(false); // CRITICAL: Set loading to false when no content to load
                 return;
             }
 
@@ -1723,7 +1724,13 @@ const AddEditDiaryScreen = () => {
                             elevation: editorElevation,
                         }}
                     >
-                        <RichEditor
+                        {isLoading ? (
+                            // Loading state: Show ActivityIndicator while images are being restored
+                            <View style={{ marginTop: 50, alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+                                <ActivityIndicator size="large" color={themeStyles.primary} />
+                            </View>
+                        ) : (
+                            <RichEditor
                         ref={editorRef}
                         initialContentHTML={contentHtml}
                         onChange={(html) => {
@@ -2022,7 +2029,16 @@ const AddEditDiaryScreen = () => {
                         initialHeight={300} // Initial height, will grow with content
                         containerStyle={styles.editorContainerStyle}
                         />
+                        )}
                     </Animated.View>
+                    
+                    {/* Bottom Spacer: Ensures content can always scroll to the bottom, even when keyboard is up */}
+                    <Animated.View 
+                        style={{ 
+                            height: Animated.add(keyboardHeight, 100),
+                            width: '100%',
+                        }} 
+                    />
                 </Animated.View>
             </Animated.ScrollView>
 
