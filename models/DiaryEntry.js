@@ -19,6 +19,7 @@ class DiaryEntry {
     themeId = undefined,
     captureType = null,
     captureMeta = null,
+    chapterId = null,
   } = {}) {
     const resolvedContentHTML = typeof contentHTML === 'string' && contentHTML.length > 0
       ? contentHTML
@@ -40,6 +41,7 @@ class DiaryEntry {
     this.themeID = DiaryEntry.normalizeThemeID(themeID ?? themeId ?? null);
     this.captureType = captureType ?? null;
     this.captureMeta = captureMeta ? { ...captureMeta } : null;
+    this.chapterId = chapterId || null;
   }
 
   static generateId() {
@@ -128,6 +130,7 @@ class DiaryEntry {
       themeID: this.themeID,
       captureType: this.captureType,
       captureMeta: this.captureMeta ? { ...this.captureMeta } : null,
+      chapterId: this.chapterId || null,
     };
   }
 }

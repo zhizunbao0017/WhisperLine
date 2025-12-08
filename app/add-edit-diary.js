@@ -29,6 +29,7 @@ import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor'
 
 // --- 组件和 Context ---
 import MoodSelector from '../components/MoodSelector';
+import ChapterSelector from '../components/ChapterSelector';
 // Removed CompanionSelectorCarousel import - companion selection moved to settings
 import { useThemeStyles } from '@/hooks/useThemeStyles';
 import { FocusSelectionModal } from '../components/FocusSelectionModal';
@@ -42,6 +43,7 @@ import { ensureStaticServer, getPublicUrlForFileUri } from '../services/staticSe
 import themeAnalysisService from '../services/ThemeAnalysisService';
 import { getCurrentWeather } from '../services/weatherService';
 import useUserStateStore, { WHISPERLINE_ASSISTANT_ID } from '../src/stores/userState';
+import useChapterStore from '../src/stores/useChapterStore';
 
 const DEFAULT_HERO_IMAGE = require('../assets/images/ai_avatar.png');
 
@@ -285,6 +287,11 @@ const AddEditDiaryScreen = () => {
         if (!raw) return undefined;
         return Array.isArray(raw) ? raw[0] : raw;
     }, [params]);
+    const chapterIdParam = useMemo(() => {
+        const raw = params?.chapterId;
+        if (!raw) return undefined;
+        return Array.isArray(raw) ? raw[0] : raw;
+    }, [params]);
     const promptParam = useMemo(() => {
         const raw = params?.prompt;
         if (!raw) return undefined;
@@ -516,6 +523,9 @@ const AddEditDiaryScreen = () => {
     const prevCompanionsHashRef = useRef('');
     const [selectedThemeId, setSelectedThemeId] = useState(
         existingDiary?.themeID ?? existingDiary?.themeId ?? null
+    );
+    const [selectedChapterId, setSelectedChapterId] = useState(
+        existingDiary?.chapterId ?? chapterIdParam ?? null
     );
     // CRITICAL: Removed heroVisual state - will derive from live context data on every render
     const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
@@ -1303,6 +1313,7 @@ const AddEditDiaryScreen = () => {
                 weather: weather,
                 companionIDs: selectedCompanionIDs,
                 themeID: selectedThemeId ?? null,
+                chapterId: selectedChapterId ?? null,
                 createdAt: isEditMode ? existingDiary.createdAt : createdAtOverride,
             });
             
@@ -1712,6 +1723,14 @@ const AddEditDiaryScreen = () => {
                             containerStyle={isChildTheme ? { marginBottom: 0 } : null}
                         />
                     </Animated.View>
+                    
+                    {/* Chapter Selector */}
+                    <ChapterSelector
+                        selectedChapterId={selectedChapterId}
+                        onSelectChapter={setSelectedChapterId}
+                        themeStyles={themeStyles}
+                        headingFontFamily={headingFontFamily}
+                    />
                     
                     {/* 2. RichEditor - Scrollable content */}
                     <Animated.View
