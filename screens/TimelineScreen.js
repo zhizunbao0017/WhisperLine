@@ -14,6 +14,7 @@ import QuickCaptureContextValue from '../context/QuickCaptureContext';
 import { ThemedText as Text } from '../components/ThemedText';
 import OnThisDay from '../components/OnThisDay';
 import LongPressCoachMark from '../components/LongPressCoachMark';
+import ActiveChapterHero from '../components/ActiveChapterHero';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -285,6 +286,7 @@ const TimelineScreen = () => {
                 ListHeaderComponent={
                     <>
                         <OnThisDay />
+                        <ActiveChapterHero colors={colors} />
                         {renderCalendarHeader()}
                     </>
                 }

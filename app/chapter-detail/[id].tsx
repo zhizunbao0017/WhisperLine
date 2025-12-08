@@ -22,6 +22,7 @@ import { DiaryContext } from '../../context/DiaryContext';
 import { ThemeContext } from '../../context/ThemeContext';
 import MediaService from '../../services/MediaService';
 import FloatingActionButton from '../../components/FloatingActionButton';
+import ChapterInsights from '../../src/components/ChapterInsights';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HEADER_HEIGHT = 300;
@@ -257,6 +258,11 @@ const ChapterDetailScreen: React.FC = () => {
             </>
           )}
         </View>
+
+        {/* Chapter Insights - Smart Curation */}
+        {chapterEntries.length > 0 && (
+          <ChapterInsights entries={chapterEntries} themeColors={colors} />
+        )}
 
         {/* Entries List */}
         <View style={styles.entriesSection}>

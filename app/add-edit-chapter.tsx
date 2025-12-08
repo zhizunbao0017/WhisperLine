@@ -24,6 +24,7 @@ import { Chapter, ChapterType } from '../src/types';
 import useChapterStore from '../src/stores/useChapterStore';
 import MediaService from '../services/MediaService';
 import { ThemeContext } from '../context/ThemeContext';
+import { useUserState } from '../context/UserStateContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COVER_HEIGHT = (SCREEN_WIDTH - 32) * (9 / 16); // 16:9 aspect ratio
@@ -62,6 +63,7 @@ const AddEditChapterScreen: React.FC = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { colors } = useContext(ThemeContext);
+  const userStateContext = useUserState();
   const chapterId = params.id as string | undefined;
   const isEditMode = !!chapterId;
 
@@ -75,6 +77,7 @@ const AddEditChapterScreen: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<ChapterType>('theme');
+  const [linkedFocusId, setLinkedFocusId] = useState<string | null>(null);
   const [coverImageUri, setCoverImageUri] = useState<string | null>(null);
   const [coverImageFilename, setCoverImageFilename] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -89,6 +92,7 @@ const AddEditChapterScreen: React.FC = () => {
         setTitle(existingChapter.title);
         setDescription(existingChapter.description || '');
         setType(existingChapter.type);
+        setLinkedFocusId(existingChapter.linkedFocusId || null);
         setCoverImageFilename(existingChapter.coverImage || null);
         
         // Load existing cover image
@@ -186,6 +190,7 @@ const AddEditChapterScreen: React.FC = () => {
         type,
         status: 'ongoing',
         coverImage: finalCoverImageFilename || undefined,
+        linkedFocusId: type === 'relationship' && linkedFocusId ? linkedFocusId : undefined,
       };
 
       if (isEditMode && chapterId) {
@@ -377,6 +382,53 @@ const AddEditChapterScreen: React.FC = () => {
               })}
             </View>
           </View>
+
+          {/* B.5. Linked Focus Selector (only for Relationship type) */}
+          {type === 'relationship' && (
+            <View style={styles.inputSection}>
+              <Text style={[styles.sectionLabel, { color: colors.text }]}>Link to Key Person</Text>
+              <Text style={[styles.sectionHint, { color: colors.text }]}>
+                Select a person to automatically link diary entries when they are your Active Focus
+              </Text>
+              <View style={styles.companionList}>
+                {userStateContext?.userState?.companions &&
+                  Object.values(userStateContext.userState.companions).length > 0 ? (
+                  Object.values(userStateContext.userState.companions).map((companion) => (
+                    <TouchableOpacity
+                      key={companion.id}
+                      style={[
+                        styles.companionItem,
+                        {
+                          borderColor: linkedFocusId === companion.id ? colors.primary : colors.border,
+                          backgroundColor:
+                            linkedFocusId === companion.id
+                              ? colors.primary + '10'
+                              : colors.card,
+                        },
+                      ]}
+                      onPress={() => setLinkedFocusId(linkedFocusId === companion.id ? null : companion.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.companionAvatar}>
+                        <Ionicons name="person" size={20} color={colors.primary} />
+                      </View>
+                      <Text style={[styles.companionName, { color: colors.text }]}>{companion.name}</Text>
+                      {linkedFocusId === companion.id && (
+                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={styles.emptyCompanions}>
+                    <Ionicons name="people-outline" size={32} color={colors.text} style={{ opacity: 0.3 }} />
+                    <Text style={[styles.emptyCompanionsText, { color: colors.text }]}>
+                      No key people available.{'\n'}Create a key person in Settings first.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
 
           {/* C. Information Input */}
           <View style={styles.inputSection}>
@@ -601,6 +653,47 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     paddingVertical: 12,
     paddingHorizontal: 4,
+  },
+  sectionHint: {
+    fontSize: 13,
+    opacity: 0.7,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  companionList: {
+    gap: 8,
+  },
+  companionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  companionAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  companionName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  emptyCompanions: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  emptyCompanionsText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 12,
+    opacity: 0.7,
+    lineHeight: 20,
   },
   descriptionInput: {
     fontSize: 16,

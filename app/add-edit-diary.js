@@ -527,10 +527,16 @@ const AddEditDiaryScreen = () => {
     const [selectedChapterId, setSelectedChapterId] = useState(
         existingDiary?.chapterId ?? chapterIdParam ?? null
     );
+    // Suggested chapter ID from keyword sniffing
+    const [suggestedChapterId, setSuggestedChapterId] = useState<string | null>(null);
+    // Debounce timer for keyword sniffing
+    const keywordSniffTimerRef = useRef<NodeJS.Timeout | null>(null);
     // CRITICAL: Removed heroVisual state - will derive from live context data on every render
     const [hasInitialPrimaryApplied, setHasInitialPrimaryApplied] = useState(false);
     // CRITICAL: Use unified focus model - get primaryCompanionId from Zustand store
     const { primaryCompanionId } = useUserStateStore();
+    // Get chapters for auto-linking and keyword sniffing
+    const chapters = useChapterStore((state) => state.chapters);
     // State for Focus Selection Modal
     const [isFocusModalVisible, setFocusModalVisible] = useState(false);
     
@@ -836,6 +842,25 @@ const AddEditDiaryScreen = () => {
         setSelectedCompanionIDs(existingCompanionIds);
     }, [existingDiary, existingCompanionIds]);
 
+    // Focus Auto-Link: Automatically link to relationship Chapter if Active Focus matches
+    useEffect(() => {
+        // Only auto-link for new entries (not editing), and if no chapter is manually selected
+        if (!isEditMode && !selectedChapterId && primaryCompanionId) {
+            const relatedChapter = chapters.find(
+                (c) =>
+                    c.status === 'ongoing' &&
+                    c.type === 'relationship' &&
+                    c.linkedFocusId === primaryCompanionId
+            );
+
+            if (relatedChapter) {
+                setSelectedChapterId(relatedChapter.id);
+                console.log('[AddEditDiaryScreen] ✅ Auto-linked to Chapter:', relatedChapter.title);
+                // Optional: Show subtle notification (can be enhanced with toast/alert)
+            }
+        }
+    }, [isEditMode, selectedChapterId, primaryCompanionId, chapters]);
+
     // Keyboard listener - Update keyboardHeight animation value
     useEffect(() => {
         const keyboardWillShowListener = Keyboard.addListener(
@@ -892,6 +917,15 @@ const AddEditDiaryScreen = () => {
             keyboardWillHideListener.remove();
         };
     }, [keyboardHeight, jsKeyboardDriver]);
+
+    // Cleanup keyword sniffing timer on unmount
+    useEffect(() => {
+        return () => {
+            if (keywordSniffTimerRef.current) {
+                clearTimeout(keywordSniffTimerRef.current);
+            }
+        };
+    }, []);
 
 
     useEffect(() => {
@@ -1730,6 +1764,7 @@ const AddEditDiaryScreen = () => {
                         onSelectChapter={setSelectedChapterId}
                         themeStyles={themeStyles}
                         headingFontFamily={headingFontFamily}
+                        suggestedChapterId={suggestedChapterId}
                     />
                     
                     {/* 2. RichEditor - Scrollable content */}
@@ -1758,6 +1793,55 @@ const AddEditDiaryScreen = () => {
                             const extracted = extractTitleFromContent(html);
                             if (extracted.title && extracted.title !== title.trim()) {
                                 setTitle(extracted.title);
+                            }
+
+                            // Keyword Sniffing: Detect Chapter titles in content
+                            // Only suggest if no chapter is manually selected
+                            if (!selectedChapterId && !isEditMode) {
+                                // Clear previous timer
+                                if (keywordSniffTimerRef.current) {
+                                    clearTimeout(keywordSniffTimerRef.current);
+                                }
+
+                                // Debounce keyword sniffing (wait 500ms after user stops typing)
+                                keywordSniffTimerRef.current = setTimeout(() => {
+                                    const plainText = extractTextFromHTML(html).toLowerCase();
+                                    if (plainText.length < 10) {
+                                        // Too short, clear suggestion
+                                        setSuggestedChapterId(null);
+                                        return;
+                                    }
+
+                                    // Find ongoing chapters and check if their titles appear in content
+                                    const ongoingChapters = chapters.filter((c) => c.status === 'ongoing');
+                                    let matchedChapter = null;
+
+                                    for (const chapter of ongoingChapters) {
+                                        if (!chapter.title) continue;
+                                        
+                                        // Extract keywords from chapter title (split by spaces, remove common words)
+                                        const titleWords = chapter.title
+                                            .toLowerCase()
+                                            .split(/\s+/)
+                                            .filter((word) => word.length > 2); // Only words longer than 2 chars
+
+                                        // Check if at least one keyword appears in content
+                                        const hasMatch = titleWords.some((word) => plainText.includes(word));
+                                        
+                                        if (hasMatch) {
+                                            matchedChapter = chapter;
+                                            break; // Use first match
+                                        }
+                                    }
+
+                                    setSuggestedChapterId(matchedChapter?.id || null);
+                                    if (matchedChapter) {
+                                        console.log('[AddEditDiaryScreen] ✨ Suggested Chapter:', matchedChapter.title);
+                                    }
+                                }, 500);
+                            } else {
+                                // Clear suggestion if chapter is manually selected
+                                setSuggestedChapterId(null);
                             }
                         }}
                         onFocus={() => {
